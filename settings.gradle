@@ -1,0 +1,12 @@
+pluginManagement {
+    repositories {
+        gradlePluginPortal()
+        if (providers.gradleProperty('forge').isPresent()) {
+            maven { url = 'https://maven.minecraftforge.net/' }
+        }
+    }
+}
+rootProject.name = 'discraft'
+include 'core'
+// Keep the offline, loader-independent slice usable without Forge/Mojang downloads.
+if (providers.gradleProperty('forge').isPresent()) { include 'forge' }

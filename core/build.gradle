@@ -1,0 +1,17 @@
+plugins { id 'java-library' }
+java { toolchain.languageVersion = JavaLanguageVersion.of(17) }
+// A dependency-free executable suite so the security/media slice also runs offline.
+tasks.register('coreTest', JavaExec) {
+    dependsOn testClasses
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'dev.discraft.core.CoreTest'
+    jvmArgs '-ea', '-Djava.awt.headless=true'
+}
+tasks.named('check') { dependsOn coreTest }
+tasks.register('previewSmoke', JavaExec) {
+    dependsOn testClasses
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'dev.discraft.core.PreviewHarness'
+    args rootProject.layout.buildDirectory.dir('evidence').get().asFile.absolutePath
+    jvmArgs '-Djava.awt.headless=false'
+}
