@@ -1,0 +1,99 @@
+name: Forge 1.20.1 CI
+
+on:
+  pull_request:
+  push:
+    branches: [main, 'feat/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  core:
+    name: Core tests (JDK 17)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+      - name: Run behavior checks and build core
+        run: |
+          mkdir -p build/evidence
+          ./gradlew :core:build --console=plain | tee build/evidence/core-tests.txt
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: core-tests-${{ github.sha }}
+          path: |
+            core/build/reports/
+            build/evidence/core-tests.txt
+          if-no-files-found: warn
+          retention-days: 14
+
+  forge:
+    name: Forge build and reobfuscation (JDK 17)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+      - name: Build and reobfuscate Forge 1.20.1 mod
+        run: ./gradlew -Pforge :forge:build :forge:reobfJar --console=plain
+      - name: Check packaged mod contents
+        run: python3 scripts/check-mod-jar.py
+      - name: Upload mod JAR
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: forge-1.20.1-mod-${{ github.sha }}
+          path: forge/build/libs/discraft-forge-1.20.1-0.1.0-dev.jar
+          if-no-files-found: error
+          retention-days: 14
+
+  client:
+    name: Minecraft client acceptance (JDK 17)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      LIBGL_ALWAYS_SOFTWARE: 'true'
+      ALSOFT_DRIVERS: 'null'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+      - name: Install virtual display and software renderer
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb xauth libgl1-mesa-dri libglx-mesa0 libopenal1
+      - name: Run real Minecraft acceptance
+        run: xvfb-run -a -s '-screen 0 1280x900x24 -nolisten tcp' ./scripts/verify-forge.sh --client
+      - name: Upload client evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: minecraft-client-evidence-${{ github.sha }}
+          path: build/evidence/minecraft/
+          if-no-files-found: warn
+          retention-days: 14

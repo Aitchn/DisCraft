@@ -2,7 +2,7 @@
 
 First implementation targets **Minecraft 1.20.1 / Forge 47.4.0 / Java 17**. The Forge adapter now compiles, reobfuscates, and runs in the real Minecraft client under Xvfb/Mesa. The mod JAR is `forge/build/libs/discraft-forge-1.20.1-0.1.0-dev.jar`. The 49 core checks and 25 client acceptance checks pass. This is a local mock preview; world/server integration and a separately installed production launcher have not been tested.
 
-There is no Discord connection. All messages, custom emoji and media come from an in-process fixture peer. Sending executes the mock transport and produces a separate peer reply; a simulated relay echo is suppressed. No Discord app, bot, OAuth grant, credentials, deployment, release or remote push has been created.
+There is no Discord connection. All messages, custom emoji and media come from an in-process fixture peer. Sending executes the mock transport and produces a separate peer reply; a simulated relay echo is suppressed. This preview requires no Discord app, bot, OAuth grant or credentials. It performs no Discord delivery.
 
 | Feature | Implemented behavior | Verification |
 | --- | --- | --- |
@@ -18,12 +18,10 @@ There is no Discord connection. All messages, custom emoji and media come from a
 
 ## Build and test the independent slice
 
-Use JDK 17. The checked-in official Forge 1.20.1 branch Wrapper selects Gradle 8.8 and verifies its distribution SHA-256. Its first run requires the already-permitted Gradle distribution domains; subsequent core builds use no third-party dependencies.
+Use JDK 17. The checked-in official Forge 1.20.1 branch Wrapper selects Gradle 8.8 and verifies its distribution SHA-256. Its first run downloads the Gradle distribution; subsequent core builds use no third-party dependencies.
 
 ```bash
-# In the prepared cloud workspace:
-source /workspace/discraft-env/activate.sh
-use_jdk 17
+# Select JDK 17 in JAVA_HOME before building.
 ./gradlew :core:build
 
 # After the wrapper is cached:
@@ -33,7 +31,7 @@ use_jdk 17
 
 `core:coreTest` is an executable, dependency-free behavioral suite wired into `check`/`build`; it is not a JUnit suite. The core JAR is `core/build/libs/core-0.1.0-dev.jar`, **not a Minecraft mod**. `--ui` runs an independent Swing acceptance harness using Xvfb when available. It drives PNG and GIF attach/send controls, observes the mock replies, captures actual rendered animation frames and checks image differences. This harness is a verification tool rather than a second Minecraft adapter.
 
-Saved results: [validation report](docs/VALIDATION.md), [core build](docs/evidence/core-build.txt), [GUI result](docs/evidence/preview-result.txt), [frame 0](docs/evidence/preview-frame0.png), [frame 1](docs/evidence/preview-frame1.png).
+See [CI and validation](docs/CI.md) for checks, artifacts and verification limits. Historical environment logs and screenshots are retained in the local handoff rather than published in source history.
 
 ## Forge build and usage
 
@@ -54,6 +52,6 @@ In the client:
 4. For your own PNG/JPEG/GIF, place a regular file in `run/discraft-uploads/`, enter its filename and choose **Attach file**. Subdirectories, absolute paths and symlinks are rejected. **Demo GIF** attaches a bundled fixture without external files.
 5. The attachment status confirms bounded decode. **Send** forwards it to the mock peer; the transcript shows your message and a distinct mock reply. There is no Discord delivery.
 
-Actual Minecraft evidence is in [the current validation record](docs/VALIDATION-FORGE.md), including inbound PNG/GIF captures, text/custom emoji, PNG/GIF round trips, errors, and reopening. The acceptance driver invokes real widget handlers and dispatches the registered F8 mapping; it does not simulate OS mouse/keyboard hardware. Unicode strings are preserved; glyph availability depends on Minecraft fonts. Real Discord delivery, in-world use, dedicated servers, and independent production-launcher installation remain unverified.
+Minecraft acceptance produces CI artifacts with inbound PNG/GIF captures, text/custom emoji, PNG/GIF round trips, errors, and reopening. See [CI and validation](docs/CI.md). The acceptance driver invokes real widget handlers and dispatches the registered F8 mapping; it does not simulate OS mouse/keyboard hardware. Unicode strings are preserved; glyph availability depends on Minecraft fonts. Real Discord delivery, in-world use, dedicated servers, and independent production-launcher installation remain unverified.
 
 See [architecture/security](docs/ARCHITECTURE.md) for the trusted relay boundary, policy limits and next integration steps.
