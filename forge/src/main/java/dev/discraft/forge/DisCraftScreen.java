@@ -59,9 +59,9 @@ public final class DisCraftScreen extends Screen {
         path.setMaxLength(240); path.setValue(file); path.setHint(Component.literal("File inside discraft-uploads/"));
         addRenderableWidget(Button.builder(Component.literal("Attach file"), button -> attach(null)).bounds(width - 212, height - 50, 96, 20).build());
         addRenderableWidget(Button.builder(Component.literal("Demo GIF"), button -> attach("dance.gif")).bounds(width - 110, height - 50, 98, 20).build());
-        addRenderableWidget(Button.builder(Component.literal(":discraft:"), button -> text.insertText(":discraft:"))).bounds(12, 28, 85, 20).build());
-        addRenderableWidget(Button.builder(Component.literal(":dance:"), button -> text.insertText(":dance:"))).bounds(103, 28, 75, 20).build());
-        addRenderableWidget(Button.builder(Component.literal("Clear attachment"), button -> { pending = null; status = "Attachment cleared"; })).bounds(184, 28, 120, 20).build());
+        addRenderableWidget(Button.builder(Component.literal(":discraft:"), button -> text.insertText(":discraft:")).bounds(12, 28, 85, 20).build());
+        addRenderableWidget(Button.builder(Component.literal(":dance:"), button -> text.insertText(":dance:")).bounds(103, 28, 75, 20).build());
+        addRenderableWidget(Button.builder(Component.literal("Clear attachment"), button -> { pending = null; status = "Attachment cleared"; }).bounds(184, 28, 120, 20).build());
         addRenderableWidget(Button.builder(Component.literal("Back"), button -> onClose()).bounds(width - 62, 6, 50, 20).build());
         setInitialFocus(text);
     }

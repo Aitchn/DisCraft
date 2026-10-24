@@ -1,10 +1,14 @@
 // Adapted from the official 1.20.1 MDK; provenance in vendor/forge-mdk/README.md.
 plugins {
     id 'java'
-    id 'net.minecraftforge.gradle' version '[6.0,6.2)'
+    id 'net.minecraftforge.gradle' version '6.0.54'
 }
 base { archivesName = 'discraft-forge-1.20.1' }
 java.toolchain.languageVersion = JavaLanguageVersion.of(17)
+// Client acceptance driver is opt-in and never shipped in the mod JAR.
+if (providers.gradleProperty('smoke').isPresent()) {
+    sourceSets.main.java.srcDir 'src/smoke/java'
+}
 minecraft {
     mappings channel: 'official', version: '1.20.1'
     copyIdeResources = true
@@ -14,7 +18,12 @@ minecraft {
             property 'forge.logging.console.level', 'info'
             mods { discraft { source sourceSets.main; source project(':core').sourceSets.main } }
         }
-        client {}
+        client {
+            if (providers.gradleProperty('smoke').isPresent()) {
+                property 'discraft.smoke', 'true'
+                args '--width', '1100', '--height', '800'
+            }
+        }
         server { args '--nogui' }
     }
 }
@@ -23,6 +32,7 @@ dependencies {
     implementation project(':core')
 }
 tasks.named('jar', Jar) {
+    exclude 'dev/discraft/forge/smoke/**'
     from project(':core').sourceSets.main.output
     finalizedBy 'reobfJar'
 }
