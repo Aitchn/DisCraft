@@ -35,11 +35,12 @@ public final class ClientBridge {
         var all=new LinkedHashMap<String,Content.CustomEmoji>();for(var r:history)for(var e:r.catalog().values())if(e.id().matches("[0-9]{15,22}"))all.put(e.id(),e);
         var list=new ArrayList<>(all.values());if(index>=list.size())return "";var e=list.get(index);return "<"+(e.animated()?"a":"")+":"+e.name()+":"+e.id()+">";
     }
-    public static String send(String text,Attachment attachment)throws Exception{
+    public static String send(String text,Attachment attachment)throws Exception{return send(text,attachment,List.of());}
+    public static String send(String text,Attachment attachment,List<Mention> mentions)throws Exception{
         long epoch=generation;var connection=Minecraft.getInstance().getConnection();
         if(!available())throw new IOException("Server bridge disabled, unavailable, or player not authorized");
         if(pending.size()>=4)throw new IOException("Too many pending sends");
-        UUID id=UUID.randomUUID();byte[] bytes=RelayRecord.draft(id,text,attachment).encode();
+        UUID id=UUID.randomUUID();byte[] bytes=new RelayRecord(id,"draft",text,attachment==null?List.of():List.of(attachment),Map.of(),Map.of(),null,mentions).encode();
         var accepted=new CompletableFuture<String>();pending.put(id,accepted);
         Minecraft.getInstance().execute(()->{
             if(epoch!=generation||Minecraft.getInstance().getConnection()!=connection||!available()){accepted.completeExceptionally(new IOException("Connection changed"));return;}

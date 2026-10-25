@@ -2,7 +2,7 @@ package dev.discraft.forge.server;
 
 import com.google.gson.*;
 import dev.discraft.core.*;
-import dev.discraft.forge.bridge.RelayRecord;
+import dev.discraft.forge.bridge.*;
 import java.io.*;
 import java.net.*;
 import java.net.http.*;
@@ -71,14 +71,20 @@ public final class DiscordBotAdapter implements DiscordAdapter {
     @Override public RelayRecord prepare(RelayRecord record)throws Exception{
         ready();var message=new JsonObject();message.addProperty("id",record.id().toString());message.addProperty("content",record.text());
         var author=new JsonObject();author.addProperty("username","Minecraft");message.add("author",author);
-        var parsed=convert(message);
-        var prepared=new RelayRecord(record.id(),record.author(),record.text().isBlank()&&!record.attachments().isEmpty()?"":parsed.text(),record.attachments(),parsed.catalog(),parsed.emoji());prepared.encode();return prepared;
+        var parsed=convert(message,record.mentions());
+        var prepared=new RelayRecord(record.id(),record.author(),record.text().isBlank()&&!record.attachments().isEmpty()?"":parsed.text(),record.attachments(),parsed.catalog(),parsed.emoji(),record.actor(),parsed.mentions());prepared.encode();return prepared;
     }
     @Override public void send(RelayRecord message)throws Exception{
-        ready();var payload=new JsonObject();String text=message.text();for(var entry:message.catalog().entrySet()){var c=entry.getValue();text=text.replace(":"+entry.getKey()+":","<"+(c.animated()?"a":"")+":"+c.name()+":"+c.id()+">");}
+        ready();var payload=new JsonObject();var text=new StringBuilder();var users=new JsonArray();var mentioned=new LinkedHashSet<String>();int at=0;
+        for(var mention:message.mentions()){
+            text.append(expandEmoji(message.text().substring(at,mention.start()),message.catalog()));
+            if(mention.target().kind()==ActorRef.Kind.DISCORD){text.append("<@").append(mention.target().id()).append('>');mentioned.add(mention.target().id());}
+            else text.append(mention.target().label());at=mention.end();
+        }
+        text.append(expandEmoji(message.text().substring(at),message.catalog()));mentioned.forEach(users::add);
         payload.addProperty("content","[Minecraft "+message.author()+"] "+text);
         payload.addProperty("tts",false);payload.addProperty("nonce",message.id().toString().replace("-","").substring(0,24));payload.addProperty("enforce_nonce",true);
-        var mentions=new JsonObject();mentions.add("parse",new JsonArray());payload.add("allowed_mentions",mentions);
+        var mentions=new JsonObject();mentions.add("parse",new JsonArray());mentions.add("users",users);payload.add("allowed_mentions",mentions);
         if(message.attachments().isEmpty()){request("POST","channels/"+channel+"/messages",payload.toString().getBytes(StandardCharsets.UTF_8),"application/json");return;}
         var file=message.attachments().get(0);if(file.bytes().length>RelayRecord.FILE_BYTES)throw new IOException("Bridge file budget exceeded");
         String name=file.name().replaceAll("[^A-Za-z0-9_.-]","_");if(name.length()>80)name=name.substring(0,80);
@@ -88,6 +94,7 @@ public final class DiscordBotAdapter implements DiscordAdapter {
         bytes.write(file.bytes());bytes.write(("\r\n--"+boundary+"--\r\n").getBytes(StandardCharsets.UTF_8));
         request("POST","channels/"+channel+"/messages",bytes.toByteArray(),"multipart/form-data; boundary="+boundary);
     }
+    private static String expandEmoji(String text,Map<String,Content.CustomEmoji> catalog){for(var entry:catalog.entrySet()){var c=entry.getValue();text=text.replace(":"+entry.getKey()+":","<"+(c.animated()?"a":"")+":"+c.name()+":"+c.id()+">");}return text;}
     @Override public List<RelayRecord> poll()throws Exception{
         if(closed||terminal||System.nanoTime()<nextPoll||System.nanoTime()<blockedUntil)return List.of();
         try{
@@ -109,11 +116,16 @@ public final class DiscordBotAdapter implements DiscordAdapter {
             failures=0;nextPoll=0;return records;
         }catch(Exception unavailable){failures=Math.min(6,failures+1);nextPoll=System.nanoTime()+Math.min(60,1L<<failures)*1_000_000_000L;throw new IOException("Discord polling temporarily unavailable");}
     }
-    private RelayRecord convert(JsonObject m)throws Exception{
+    private RelayRecord convert(JsonObject m)throws Exception{return convert(m,List.of());}
+    private record Edit(int end,int delta) {}
+    private RelayRecord convert(JsonObject m,List<Mention> inputMentions)throws Exception{
         String text=m.has("content")?m.get("content").getAsString():"";Limits.text(text,2000,"Discord content");
+        var edits=new ArrayList<Edit>();
         var budget=new ConversionBudget();var resolved=new HashMap<EmojiKey,Optional<Attachment>>();
         var catalog=new LinkedHashMap<String,Content.CustomEmoji>();var emoji=new HashMap<String,Attachment>();var matcher=EMOJI.matcher(text);var converted=new StringBuffer();
         while(matcher.find()){
+            boolean inside=false;for(var mention:inputMentions)if(matcher.start()<mention.end()&&matcher.end()>mention.start()){inside=true;break;}
+            if(inside){matcher.appendReplacement(converted,java.util.regex.Matcher.quoteReplacement(matcher.group()));continue;}
             String id=matcher.group(3);boolean animated=!matcher.group(1).isEmpty();
             var identity=new EmojiKey(id,animated);String alias=(animated?"a":"e")+id,key="emoji-"+id+(animated?".gif":".png");
             var image=resolved.get(identity);
@@ -122,10 +134,12 @@ public final class DiscordBotAdapter implements DiscordAdapter {
                 catch(Exception unsupported){image=Optional.empty();}
                 resolved.put(identity,image); // Negative results must be cached as well as successful decodes.
             }
+            String replacement;
             if(image.isPresent()){
                 catalog.putIfAbsent(alias,new Content.CustomEmoji(id,matcher.group(2),animated,key));emoji.putIfAbsent(key,image.get());
-                matcher.appendReplacement(converted,":"+alias+":");
-            }else matcher.appendReplacement(converted,java.util.regex.Matcher.quoteReplacement(":"+matcher.group(2)+":"));
+                replacement=":"+alias+":";
+            }else replacement=":"+matcher.group(2)+":";
+            matcher.appendReplacement(converted,java.util.regex.Matcher.quoteReplacement(replacement));edits.add(new Edit(matcher.end(),replacement.length()-(matcher.end()-matcher.start())));
         }
         matcher.appendTail(converted);var files=new ArrayList<Attachment>();
         if(m.has("attachments"))for(var f:m.getAsJsonArray("attachments")){
@@ -136,7 +150,9 @@ public final class DiscordBotAdapter implements DiscordAdapter {
         }
         if(converted.toString().isBlank()&&files.isEmpty())converted.append("[Discord content/media unavailable]");
         String author=m.getAsJsonObject("author").get("username").getAsString();
-        var record=new RelayRecord(UUID.nameUUIDFromBytes(("discord:"+m.get("id").getAsString()).getBytes(StandardCharsets.UTF_8)),"Discord: "+author,converted.toString(),files,catalog,emoji);
+        var mentions=new ArrayList<Mention>();for(var mention:inputMentions){int delta=edits.stream().filter(e->e.end()<=mention.start()).mapToInt(Edit::delta).sum();mentions.add(new Mention(mention.start()+delta,mention.end()+delta,mention.target()));}
+        var authorJson=m.getAsJsonObject("author");ActorRef actor=authorJson.has("id")?new ActorRef(ActorRef.Kind.DISCORD,authorJson.get("id").getAsString(),author):null;
+        var record=new RelayRecord(UUID.nameUUIDFromBytes(("discord:"+m.get("id").getAsString()).getBytes(StandardCharsets.UTF_8)),"Discord: "+author,converted.toString(),files,catalog,emoji,actor,mentions);
         record.encode();return record;
     }
     private byte[] fetchMedia(URI uri)throws Exception{

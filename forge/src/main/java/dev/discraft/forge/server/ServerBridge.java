@@ -25,6 +25,7 @@ public final class ServerBridge {
     private static final Map<UUID,Transfer> transfers=new HashMap<>();
     private static final Map<UUID,Peer> peers=new HashMap<>();
     private static final Deque<RelayRecord> history=new ArrayDeque<>();
+    private static final Map<String,ActorRef> actors=new LinkedHashMap<>();
     private static final Set<String> requests=new LinkedHashSet<>();
     private static final AtomicBoolean polling=new AtomicBoolean();
     private static long nextPoll;
@@ -57,12 +58,12 @@ public final class ServerBridge {
         nextPoll=0;polling.set(false);
     }
     @SubscribeEvent public static void stop(ServerStoppingEvent event){
-        peers.values().forEach(p->p.alive.set(false));peers.clear();transfers.clear();history.clear();requests.clear();
+        peers.values().forEach(p->p.alive.set(false));peers.clear();transfers.clear();history.clear();requests.clear();actors.clear();
         if(adapter!=null)adapter.close();if(worker!=null)worker.shutdownNow();adapter=null;server=null;mode="disabled";
     }
     @SubscribeEvent public static void login(PlayerEvent.PlayerLoggedInEvent event){
         if(!(event.getEntity() instanceof ServerPlayer p))return;
-        peers.put(p.getUUID(),new Peer());
+        peers.put(p.getUUID(),new Peer());var actor=new ActorRef(ActorRef.Kind.MINECRAFT,p.getUUID().toString(),p.getGameProfile().getName());remember(actor);
         BridgeNetwork.notice(p,STATUS,adapter!=null&&allowed(p),"SERVER "+mode.toUpperCase(Locale.ROOT)+(allowed(p)?"":" (not authorized)"));
         if(allowed(p))for(var record:history)deliver(p,record);
     }
@@ -95,16 +96,17 @@ public final class ServerBridge {
         if(transfer==null||!transfer.id.equals(packet.id())||transfer.bytes.length!=packet.total()||transfer.used!=packet.offset()||packet.bytes().length>transfer.bytes.length-transfer.used){reject(p,packet.id(),"Invalid upload sequence");return;}
         System.arraycopy(packet.bytes(),0,transfer.bytes,transfer.used,packet.bytes().length);transfer.used+=packet.bytes().length;
         if(transfer.used!=transfer.bytes.length)return;
-        transfers.remove(uuid);byte[] bytes=transfer.bytes;String author=p.getGameProfile().getName();var active=server;var transport=adapter;
+        transfers.remove(uuid);byte[] bytes=transfer.bytes;String author=p.getGameProfile().getName();var active=server;var transport=adapter;var knownActors=Map.copyOf(actors);var sender=new ActorRef(ActorRef.Kind.MINECRAFT,uuid.toString(),author);
         try {worker.execute(()->{
             try {
                 if(!peer.alive.get())return;
                 var draft=RelayRecord.decode(bytes);
-                if(!draft.id().equals(packet.id())||!draft.author().equals("draft")||!draft.catalog().isEmpty()||!draft.emoji().isEmpty())throw new IllegalArgumentException();
+                if(!draft.id().equals(packet.id())||!draft.author().equals("draft")||!draft.catalog().isEmpty()||!draft.emoji().isEmpty()||draft.actor()!=null)throw new IllegalArgumentException();
                 Limits.text(draft.text(),1800,"bridge text");
+                for(var mention:draft.mentions())if(!mention.target().equals(knownActors.get(mention.target().key())))throw new IllegalArgumentException("Unknown or spoofed mention identity");
                 Map<String,Content.CustomEmoji> catalog=mode.equals("test")?MockTransport.EMOJI:Map.of();var emoji=new HashMap<String,Attachment>();
                 for(var c:catalog.values())emoji.put(c.mediaKey(),Attachment.fromResource(c.mediaKey()));
-                var record=transport.prepare(new RelayRecord(UUID.randomUUID(),author,draft.text(),draft.attachments(),catalog,emoji));record.encode();
+                var record=transport.prepare(new RelayRecord(UUID.randomUUID(),author,draft.text(),draft.attachments(),catalog,emoji,sender,draft.mentions()));record.encode();
                 if(!peer.alive.get())return;
                 transport.send(record);
                 active.execute(()->{if(server!=active)return;publish(record);if(peer.alive.get())BridgeNetwork.notice(p,packet.id(),true,"Accepted by SERVER "+mode.toUpperCase(Locale.ROOT));});
@@ -112,7 +114,9 @@ public final class ServerBridge {
         });}catch(RejectedExecutionException full){BridgeNetwork.notice(p,packet.id(),false,"Bridge queue full");}
     }
     private static void reject(ServerPlayer p,UUID id,String why){transfers.remove(p.getUUID());BridgeNetwork.notice(p,id,false,why);}
+    private static void remember(ActorRef actor){if(actor==null)return;actors.put(actor.key(),actor);while(actors.size()>128)actors.remove(actors.keySet().iterator().next());}
     private static void publish(RelayRecord record){
+        remember(record.actor());for(var mention:record.mentions())remember(mention.target());
         if(history.stream().anyMatch(r->r.id().equals(record.id())))return;
         history.addLast(record);
         while(history.size()>12||history.stream().mapToLong(r->r.message().attachments().stream().mapToLong(a->(long)a.media().width()*a.media().height()*a.media().frames().size()).sum()+r.emoji().values().stream().mapToLong(a->(long)a.media().width()*a.media().height()*a.media().frames().size()).sum()).sum()>2*Limits.MEDIA_TOTAL_PIXELS)history.removeFirst();
