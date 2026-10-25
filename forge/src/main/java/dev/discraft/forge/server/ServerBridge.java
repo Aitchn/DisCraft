@@ -50,7 +50,10 @@ public final class ServerBridge {
             if(mode.equals("test")&&Boolean.getBoolean("discraft.multiplayerSmoke"))adapter=new TestDiscordAdapter();
             else if(mode.equals("discord")&&Boolean.getBoolean("discraft.discord.enabled")&&server.isDedicatedServer()&&server.usesAuthentication())adapter=DiscordBotAdapter.fromEnvironment();
             else {mode="disabled";adapter=null;}
-        } catch(Exception failure){mode="disabled";adapter=null;}
+        } catch(Exception failure){
+            if(mode.equals("test")&&Boolean.getBoolean("discraft.multiplayerSmoke"))throw new IllegalStateException("DisCraft TEST adapter initialization failed",failure);
+            mode="disabled";adapter=null;
+        }
         nextPoll=0;polling.set(false);
     }
     @SubscribeEvent public static void stop(ServerStoppingEvent event){

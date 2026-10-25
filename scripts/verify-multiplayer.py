@@ -63,6 +63,8 @@ try:
     alice=launch('Alice');bob=launch('Bob');deadline=time.monotonic()+250
     last_states={}
     while alice.poll() is None or bob.poll() is None:
+        for role,p in (('Alice',alice),('Bob',bob)):
+            assert p.poll() is None or p.returncode==0,f'{role} exited with {p.returncode}; see {role}.log'
         for role in ('Alice','Bob'):
             states=[line for line in (OUT/(role+'.log')).read_text(errors='replace').splitlines() if line.startswith('MULTIPLAYER ')]
             if states and states[-1]!=last_states.get(role):

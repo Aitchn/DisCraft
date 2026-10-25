@@ -71,6 +71,8 @@ abstract class BridgeRunExport extends net.minecraftforge.gradle.common.util.run
     }
 }
 tasks.register('exportBridgeLaunch') {
+    // Exported launch classpaths need dependency resources/JARs, not just Java compilation.
+    dependsOn ':core:jar'
     def serverRole = providers.gradleProperty('bridgeRole').getOrElse('server') == 'server'
     dependsOn serverRole ? ['prepareRunServer', 'prepareRunServerCompile'] : ['prepareRunClient', 'prepareRunClientCompile']
     doLast {
