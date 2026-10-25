@@ -29,7 +29,7 @@ public final class MultiplayerAcceptance {
     private static final UUID REPLAY=UUID.randomUUID();
     private static CompletableFuture<String> request;
     private static final List<CompletableFuture<String>> flooded=new ArrayList<>();
-    private static int stage,ticks,historyBeforeClose;
+    private static int stage,ticks,historyBeforeClose,nativeTicks,nativeFirstFrame;
     private static DisCraftScreen previous;
     private static final long deadline=System.nanoTime()+240_000_000_000L;
     private static boolean done;
@@ -57,6 +57,7 @@ public final class MultiplayerAcceptance {
                 MC.setScreen(new DisCraftScreen(null));stage=stage==1?2:13;return;
             }
             if(stage==11){if(MC.getConnection()!=null)return;check(ClientBridge.snapshot().isEmpty(),"Disconnect clears old server history");connect();stage=12;return;}
+            if(stage>=20){nativeChat();return;}
             if(!(MC.screen instanceof DisCraftScreen screen)||(Boolean)field(screen,"busy"))return;
             var messages=ClientBridge.snapshot();
             if(ROLE.equals("Bob")){bob(screen,messages);return;}
@@ -126,7 +127,7 @@ public final class MultiplayerAcceptance {
                 }
                 case 14 -> {
                     if(!request.isDone())return;check(request.isCompletedExceptionally()&&count(messages,"reconnect-replay")==0,"Server replay window survives client reconnect");
-                    capture("Alice-reconnected.png");finish();
+                    capture("Alice-reconnected.png");screen.onClose();MC.options.guiScale().set(2);MC.resizeDisplay();NativeComposer.openBridge();MC.gui.getChat().scrollChat(8);stage=20;
                 }
             }
         }catch(Throwable failure){done=true;try{Files.createDirectories(OUT);capture(ROLE+"-failure.png");Files.writeString(OUT.resolve(ROLE+"-result.txt"),String.join("\n",checks)+"\nFAIL stage "+stage+": "+failure+"\n");}catch(Exception ignored){}failure.printStackTrace();MC.stop();}
@@ -147,6 +148,43 @@ public final class MultiplayerAcceptance {
             }
             case 5 -> {if(Files.exists(OUT.resolve("Alice-done")))finish();}
         }
+    }
+    private static void nativeChat()throws Exception{
+        if(stage==20){
+            if(++nativeTicks<30)return;
+            check(MC.screen.getClass()==ChatScreen.class,"Native vanilla ChatScreen presents authoritative bridge messages");
+            check(NativeChat.renderedTiles>0,"Native chat area renders inline emoji/media cells");nativeFirstFrame=nativeFrame();check(nativeFirstFrame>=0,"Actual native chat GIF texture is visible while scrolled");capture("Native-chat-GIF-emoji-frame0.png");stage=21;nativeTicks=0;return;
+        }
+        if(stage==21){
+            if(++nativeTicks<4||nativeFrame()==nativeFirstFrame)return;check(true,"Native chat GIF uploaded a different real animation frame");capture("Native-chat-GIF-emoji-frame1.png");
+            var uploads=MC.gameDirectory.toPath().resolve("discraft-uploads");Files.createDirectories(uploads);
+            try(var in=Attachment.class.getResourceAsStream("/fixtures/landscape.png")){Files.copy(in,uploads.resolve("landscape.png"),StandardCopyOption.REPLACE_EXISTING);}
+            var file=MC.screen.children().stream().filter(w->w instanceof EditBox e&&e.getMessage().getString().equals("Attachment filename")).map(w->(EditBox)w).findFirst().orElseThrow();file.setValue("landscape.png");click("Attach");stage=22;return;
+        }
+        if(stage==22){
+            var selected=NativeComposer.class.getDeclaredField("attachment");selected.setAccessible(true);if(selected.get(null)==null)return;
+            MC.gui.getChat().resetChatScroll();var input=MC.screen.children().stream().filter(w->w instanceof EditBox).map(w->(EditBox)w).findFirst().orElseThrow();input.setValue("native T 世界 :discraft: :dance:");MC.screen.keyPressed(org.lwjgl.glfw.GLFW.GLFW_KEY_ENTER,0,0);stage=23;return;
+        }
+        if(stage==23){
+            if(ClientBridge.snapshot().stream().noneMatch(m->m.author().equals("Alice")&&Content.plain(m.content()).startsWith("native T")&&!m.attachments().isEmpty()))return;
+            check(true,"Vanilla ChatScreen Enter sends PNG and emoji through authoritative server packets");MC.setScreen(new ChatScreen(""));stage=24;nativeTicks=0;return;
+        }
+        if(stage==24){
+            if(++nativeTicks<30)return;capture("Native-chat-PNG-send.png");click("To: bridge");
+            MC.screen.children().stream().filter(w->w instanceof EditBox).map(w->(EditBox)w).findFirst().orElseThrow().setValue("vanilla-only smoke");MC.screen.keyPressed(org.lwjgl.glfw.GLFW.GLFW_KEY_ENTER,0,0);stage=25;return;
+        }
+        if(stage==25){
+            if(!nativeText("vanilla-only smoke"))return;
+            check(ClientBridge.snapshot().stream().noneMatch(m->Content.plain(m.content()).contains("vanilla-only smoke")),"Ordinary native chat still uses vanilla server chat without bridge duplication");
+            NativeComposer.openBridge();MC.screen.children().stream().filter(w->w instanceof EditBox).map(w->(EditBox)w).findFirst().orElseThrow().setValue("/list");MC.screen.keyPressed(org.lwjgl.glfw.GLFW.GLFW_KEY_ENTER,0,0);stage=26;return;
+        }
+        if(stage==26){if(!nativeText("players online"))return;check(true,"Slash command remains a real vanilla server command while bridge target is selected");finish();}
+    }
+    private static int nativeFrame()throws Exception{
+        var f=NativeChat.class.getDeclaredField("textures");f.setAccessible(true);var entries=(Map<?,?>)field(f.get(null),"entries");var e=entries.get(ClientBridge.emoji("dance.gif").digest());if(e==null)return -1;var get=e.getClass().getDeclaredMethod("frame");get.setAccessible(true);return (Integer)get.invoke(e);
+    }
+    @SuppressWarnings("unchecked") private static boolean nativeText(String value)throws Exception{
+        var f=net.minecraftforge.fml.util.ObfuscationReflectionHelper.findField(net.minecraft.client.gui.components.ChatComponent.class,"f_93760_");return ((List<net.minecraft.client.GuiMessage>)f.get(MC.gui.getChat())).stream().anyMatch(m->m.content().getString().contains(value));
     }
     private static int count(List<Message> messages,String start){return (int)messages.stream().filter(m->m.author().equals("Alice")&&Content.plain(m.content()).startsWith(start)).count();}
     @SuppressWarnings("unchecked") private static CompletableFuture<String> raw(RelayRecord record)throws Exception{

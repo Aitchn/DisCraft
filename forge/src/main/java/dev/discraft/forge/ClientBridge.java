@@ -26,7 +26,7 @@ public final class ClientBridge {
     private static final class Assembly {final int total;final byte[] bytes;final long started=System.nanoTime();int at;Assembly(int total){this.total=total;bytes=new byte[total];}}
     @SubscribeEvent public static void login(ClientPlayerNetworkEvent.LoggingIn e){reset("Awaiting server bridge");}
     @SubscribeEvent public static void logout(ClientPlayerNetworkEvent.LoggingOut e){reset("Disconnected");}
-    private static void reset(String reason){generation++;enabled=false;status=reason;history.clear();seen.clear();transfers.clear();decoder.getQueue().clear();pending.values().forEach(f->f.completeExceptionally(new IOException(reason)));pending.clear();}
+    private static void reset(String reason){NativeChat.reset();generation++;enabled=false;status=reason;history.clear();seen.clear();transfers.clear();decoder.getQueue().clear();pending.values().forEach(f->f.completeExceptionally(new IOException(reason)));pending.clear();}
     public static String status(){return status;}
     public static boolean available(){var c=Minecraft.getInstance().getConnection();return enabled&&c!=null&&BridgeNetwork.CHANNEL.isRemotePresent(c.getConnection());}
     public static List<Message> snapshot(){return history.stream().map(RelayRecord::message).toList();}
@@ -58,6 +58,7 @@ public final class ClientBridge {
         try{decoder.execute(()->{try{var r=RelayRecord.decode(a.bytes);if(!r.id().equals(p.id()))throw new IOException();Minecraft.getInstance().execute(()->{
             if(epoch!=generation||seen.contains(r.id()))return;seen.add(r.id());if(seen.size()>256)seen.remove(seen.iterator().next());history.addLast(r);
             while(history.size()>12||history.stream().mapToLong(ClientBridge::pixels).sum()>2*Limits.MEDIA_TOTAL_PIXELS)history.removeFirst();
+            NativeChat.receive(r,history);
         });}catch(Exception invalid){Minecraft.getInstance().execute(()->{if(epoch==generation)status="Rejected invalid server media";});}});}catch(RejectedExecutionException full){status="Client decode queue full";}
     }
     private static long pixels(RelayRecord r){return java.util.stream.Stream.concat(r.attachments().stream(),r.emoji().values().stream()).mapToLong(a->(long)a.media().width()*a.media().height()*a.media().frames().size()).sum();}

@@ -16,7 +16,7 @@ public final class ClientEvents {
         if (event.phase == TickEvent.Phase.END) {
             while (ClientRegistration.OPEN.consumeClick()) {
                 var minecraft = Minecraft.getInstance();
-                if (!(minecraft.screen instanceof DisCraftScreen)) minecraft.setScreen(new DisCraftScreen(minecraft.screen));
+                NativeComposer.openBridge();
             }
         }
     }

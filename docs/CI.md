@@ -7,7 +7,7 @@ The workflow uses Ubuntu 24.04, Temurin JDK17, Gradle 8.8 and SHA-pinned Actions
 | Core tests | `:core:build`, including 49 executable behavior assertions | Core output/reports |
 | Forge build/reobfuscation | `:forge:build :forge:reobfJar`, including 37 local REST/wire protocol checks; validate packaged client/server/core/media classes and exclude test drivers | Installable mod JAR |
 | Minecraft client acceptance | Real Xvfb/Mesa client, 36 original mock-preview checks including latch-controlled Clear/send-edit races | Native screenshots and result summary |
-| Dedicated server and two clients | Real server and Alice/Bob clients, 23+4 checks through actual game packets | Server/client logs, screenshots and separate result summaries |
+| Dedicated server and two clients | Real server and Alice/Bob clients, 30+4 checks through actual game packets, including native chat media, vanilla Enter, ordinary chat and a real slash command | Server/client logs, screenshots and separate result summaries |
 
 The multiplayer controller reserves a loopback port and creates a separate ignored offline test profile. It strips live Discord credentials/config from child environments and selects only the server-owned TEST adapter. This is genuine game networking with a fixture service peer, not live Discord. It does not alter production server/security or runtime network settings. A pure vanilla binary is not part of this test.
 
