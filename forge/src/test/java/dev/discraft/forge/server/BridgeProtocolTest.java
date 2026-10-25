@@ -23,15 +23,16 @@ public final class BridgeProtocolTest {
         rejected(()->RelayRecord.decode(new byte[RelayRecord.MAX_BYTES+1]),"Oversize packet rejected before decode");
         byte[] trailing=Arrays.copyOf(original.encode(),original.encode().length+1);rejected(()->RelayRecord.decode(trailing),"Trailing bytes rejected");
         var server=HttpServer.create(new InetSocketAddress("127.0.0.1",0),0);String base="http://127.0.0.1:"+server.getAddress().getPort()+"/api/v10/";
-        var posts=new ArrayList<byte[]>();var auth=new AtomicBoolean(true);var bot=new AtomicBoolean(true);var code=new AtomicInteger(200);var requests=new AtomicInteger();
+        var posts=new ArrayList<byte[]>();var auth=new AtomicBoolean(true);var bot=new AtomicBoolean(true);var code=new AtomicInteger(200);var requests=new AtomicInteger();var lastQuery=new AtomicReference<String>("");
         String channel="1234567890123456";String first="2234567890123456",last="3234567890123456";
         server.createContext("/",exchange->{
             try{
-                requests.incrementAndGet();String path=exchange.getRequestURI().getPath();byte[] response;
+                requests.incrementAndGet();lastQuery.set(String.valueOf(exchange.getRequestURI().getQuery()));String path=exchange.getRequestURI().getPath();byte[] response;
                 int status=code.getAndSet(200);
                 if(path.contains("/emoji/")){if(exchange.getRequestHeaders().getFirst("Authorization")!=null)auth.set(false);response=Attachment.fromResource(path.endsWith("2222222222222222")?"dance.gif":"emoji.png").bytes();}
                 else if(path.equals("/file.png")){if(exchange.getRequestHeaders().getFirst("Authorization")!=null)auth.set(false);response=Attachment.fromResource("landscape.png").bytes();}
                 else if(path.equals("/huge")){response=new byte[RelayRecord.MAX_BYTES+1];}
+                else if(path.equals("/redirect")){status=302;exchange.getResponseHeaders().set("Location","http://127.0.0.1:"+server.getAddress().getPort()+"/file.png");response=new byte[]{0};}
                 else {
                     auth.compareAndSet(true,("Bot discraft-local-test-token").equals(exchange.getRequestHeaders().getFirst("Authorization")));
                     if(exchange.getRequestMethod().equals("POST")){posts.add(exchange.getRequestBody().readAllBytes());response=("{\"id\":\""+last+"\"}").getBytes(StandardCharsets.UTF_8);}
@@ -58,10 +59,15 @@ public final class BridgeProtocolTest {
             var incoming=adapter.poll();check(incoming.size()==1,"REST ignores bot and webhook loops");var received=incoming.get(0);
             check(received.catalog().size()==2&&received.emoji().values().stream().anyMatch(a->a.media().animated()),"Official custom static and animated emoji fetched and decoded");
             check(received.attachments().get(0).media().format().equals("png"),"Bounded REST attachment decode");
+            check(adapter.poll().isEmpty(),"REST duplicate IDs are suppressed across polling");
+            code.set(500);rejected(adapter::poll,"Transient REST outage reported without resetting cursor");int beforeRetry=requests.get();
+            check(adapter.poll().isEmpty()&&requests.get()==beforeRetry,"Polling backoff prevents immediate reconnect requests");
+            Thread.sleep(2100);check(adapter.poll().isEmpty()&&lastQuery.get().contains("after=3234567890123458"),"Polling reconnect retains cursor and does not replay old messages");
             var outbound=adapter.prepare(RelayRecord.draft(UUID.randomUUID(),"World <:smile:1111111111111111>",gif));adapter.send(outbound);
             String multipart=new String(posts.get(0),StandardCharsets.ISO_8859_1);
             check(multipart.contains("files[0]")&&multipart.contains("allowed_mentions")&&multipart.contains("enforce_nonce")&&multipart.contains("<:smile:1111111111111111>"),"Real multipart send preserves official emoji markup and suppresses mentions");
             var fetch=DiscordBotAdapter.class.getDeclaredMethod("fetchMedia",URI.class);fetch.setAccessible(true);
+            int redirectBefore=requests.get();rejected(()->fetch.invoke(adapter,URI.create("http://127.0.0.1:"+server.getAddress().getPort()+"/redirect")),"Media redirect rejected");check(requests.get()==redirectBefore+1,"Media redirect is not followed");
             rejected(()->fetch.invoke(adapter,URI.create("http://127.0.0.1:"+server.getAddress().getPort()+"/huge")),"Oversize HTTP response stream cancelled");
             try(var production=new DiscordBotAdapter(URI.create("https://discord.com/api/v10/"),channel,"discraft-local-test-token",false)){
                 int beforeFetch=requests.get();rejected(()->fetch.invoke(production,URI.create("http://127.0.0.1/file")),"Production media rejects loopback before HTTP");

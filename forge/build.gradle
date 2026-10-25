@@ -54,16 +54,29 @@ tasks.register('bridgeProtocolTest', JavaExec) {
 }
 tasks.named('check') { dependsOn bridgeProtocolTest }
 
-// Export launch arguments after Forge prepares its generated classpath/arg files.
-// Only the MOD_CLASSES environment key is retained; never export credentials or the host environment.
+// Forge 6.0.54 initializes JavaExec inside exec(), not during preparation.
+// Resolve its pinned RunConfig with the same token helpers, without launching a JVM.
+abstract class BridgeRunExport extends net.minecraftforge.gradle.common.util.runs.RunConfigGenerator {
+    static Map resolve(org.gradle.api.Project project, def run) {
+        def config = run.runConfig.get()
+        def tokens = configureTokensLazy(project, config, mapModClassesToGradle(project, config), run.minecraftArtifacts, run.runtimeClasspathArtifacts)
+        def jvm = config.jvmArgs.collect { config.replace(tokens, it) }
+        if (config.client) jvm.addAll(run.additionalClientArgs.get().collect { config.replace(tokens, it) })
+        config.properties.each { k,v -> jvm.add('-D' + k + '=' + config.replace(tokens, v)) }
+        def args = getArgsStream(config, tokens, false).collect(java.util.stream.Collectors.toList())
+        def classpath = project.files(config.allSources.collect { it.runtimeClasspath }).asPath
+        def command = [run.javaLauncher.get().executablePath.asFile.absolutePath] + jvm.findAll { !it.startsWith('-Xmx') } + ['-Xmx1G', '-cp', classpath, run.mainClass.get()] + args
+        def environment = config.environment.findAll { k,v -> k == 'MOD_CLASSES' }.collectEntries { k,v -> [(k): config.replace(tokens, v)] }
+        return [command: command, directory: config.workingDirectory, environment: environment]
+    }
+}
 tasks.register('exportBridgeLaunch') {
     def serverRole = providers.gradleProperty('bridgeRole').getOrElse('server') == 'server'
-    dependsOn serverRole ? 'prepareRunServerCompile' : 'prepareRunClientCompile'
+    dependsOn serverRole ? ['prepareRunServer', 'prepareRunServerCompile'] : ['prepareRunClient', 'prepareRunClientCompile']
     doLast {
         def run = tasks.named(serverRole ? 'runServer' : 'runClient', JavaExec).get()
         def target = rootProject.file('build/mp-launch-' + providers.gradleProperty('bridgeRole').getOrElse('server') + '.json')
         target.parentFile.mkdirs()
-        def command = [run.executable] + run.allJvmArgs.findAll { !it.startsWith('-Xmx') } + ['-Xmx1G', '-cp', run.classpath.asPath, run.mainClass.get()] + run.args
-        target.text = groovy.json.JsonOutput.toJson([command: command, directory: run.workingDir.absolutePath, environment: run.environment.findAll { k,v -> k == 'MOD_CLASSES' }])
+        target.text = groovy.json.JsonOutput.toJson(BridgeRunExport.resolve(project, run))
     }
 }

@@ -32,7 +32,7 @@ public final class DiscordBotAdapter implements DiscordAdapter {
     }
     // Only package-local tests may substitute an endpoint, and only a non-secret fixed test token is accepted.
     DiscordBotAdapter(URI api,String channel,String token,boolean localTest){
-        if(channel==null||!channel.matches("[0-9]{15,22}")||token==null||token.length()<20||token.length()>200||token.chars().anyMatch(Character::isWhitespace))throw new IllegalArgumentException("Invalid server Discord configuration");
+        if(channel==null||!channel.matches("[0-9]{15,22}")||token==null||token.length()<20||token.length()>200||token.chars().anyMatch(c->Character.isWhitespace(c)||Character.isISOControl(c)))throw new IllegalArgumentException("Invalid server Discord configuration");
         if(localTest&&(!api.getHost().equals("127.0.0.1")||!token.equals("discraft-local-test-token")))throw new IllegalArgumentException("Invalid test endpoint");
         if(!localTest&&!api.toString().equals("https://discord.com/api/v10/"))throw new IllegalArgumentException("Invalid Discord endpoint");
         this.api=api;this.channel=channel;this.token=token;this.localTest=localTest;
@@ -78,7 +78,7 @@ public final class DiscordBotAdapter implements DiscordAdapter {
             if(cursor==null){cursor=response.isEmpty()?"0":response.get(0).getAsJsonObject().get("id").getAsString();if(!cursor.matches("[0-9]{1,22}"))throw new IOException("Invalid cursor");return records;}
             var sorted=new ArrayList<JsonObject>();response.forEach(e->sorted.add(e.getAsJsonObject()));sorted.sort(Comparator.comparing(o->new java.math.BigInteger(o.get("id").getAsString())));
             for(var m:sorted){
-                String id=m.get("id").getAsString();if(!id.matches("[0-9]{1,22}"))continue;
+                String id=m.get("id").getAsString();if(!id.matches("[0-9]{1,22}")||new java.math.BigInteger(id).compareTo(new java.math.BigInteger(cursor))<=0)continue;
                 try{
                     var author=m.getAsJsonObject("author");
                     if(m.has("webhook_id")||author.has("bot")&&author.get("bot").getAsBoolean())continue;

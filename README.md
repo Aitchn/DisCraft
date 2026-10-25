@@ -1,6 +1,6 @@
 # DisCraft — Forge 1.20.1 local mock preview
 
-> This feature branch contains an incomplete [server/client bridge checkpoint](docs/SERVER-BRIDGE-WIP.md). Actual dedicated-server/multiple-client and live Discord acceptance are not yet established. The preview results below describe the previously accepted local mock.
+> This feature branch contains an incomplete [server/client bridge checkpoint](docs/SERVER-BRIDGE-WIP.md). Local dedicated-server/two-client validation now passes; live Discord delivery remains unverified, and CI/review for this feature is pending. The preview results below describe the previously accepted local mock.
 
 First implementation targets **Minecraft 1.20.1 / Forge 47.4.0 / Java 17**. The Forge adapter now compiles, reobfuscates, and runs in the real Minecraft client under Xvfb/Mesa. The mod JAR is `forge/build/libs/discraft-forge-1.20.1-0.1.0-dev.jar`. The 49 core checks and 36 client acceptance checks pass. This is a local mock preview; world/server integration and a separately installed production launcher have not been tested.
 

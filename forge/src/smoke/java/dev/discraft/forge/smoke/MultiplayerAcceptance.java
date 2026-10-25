@@ -28,6 +28,7 @@ public final class MultiplayerAcceptance {
     private static final Set<Integer> frames=new HashSet<>();
     private static final UUID REPLAY=UUID.randomUUID();
     private static CompletableFuture<String> request;
+    private static final List<CompletableFuture<String>> flooded=new ArrayList<>();
     private static int stage,ticks,historyBeforeClose;
     private static DisCraftScreen previous;
     private static final long deadline=System.nanoTime()+240_000_000_000L;
@@ -54,14 +55,17 @@ public final class MultiplayerAcceptance {
             switch(stage){
                 case 2 -> {
                     if(messages.isEmpty())return;
-                    check(ClientBridge.status().contains("SERVER TEST"),"Server explicitly identifies test transport");
-                    check(messages.stream().anyMatch(m->m.author().equals("TEST peer (not Discord)")),"Dedicated-server inbound peer traversed actual packets");
+
                     var first=messages.get(0);if(first.attachments().isEmpty())return;
                     Object entry=((Map<?,?>)field(field(screen,"textures"),"entries")).get(first.attachments().get(0).digest());if(entry==null)return;
                     var get=entry.getClass().getDeclaredMethod("frame");get.setAccessible(true);frames.add((Integer)get.invoke(entry));
                     if(frames.size()==1)capture("Alice-inbound-frame0.png");if(frames.size()<2)return;
-                    capture("Alice-inbound-frame1.png");check(true,"Actual network GIF rendered multiple Minecraft texture frames "+frames);
+                    capture("Alice-inbound-frame1.png");
+                    check(ClientBridge.status().contains("SERVER TEST"),"Server explicitly identifies test transport");
+                    check(messages.stream().anyMatch(m->m.author().equals("TEST peer (not Discord)")),"Dedicated-server inbound peer traversed actual packets");
+                    check(true,"Actual network GIF rendered multiple Minecraft texture frames "+frames);
                     check(ClientBridge.emoji("emoji.png")!=null&&ClientBridge.emoji("dance.gif")!=null,"Static and animated custom emoji arrived over server packets");
+                    check(((Map<?,?>)field(field(screen,"textures"),"entries")).containsKey(ClientBridge.emoji("emoji.png").digest()),"Network static custom emoji uploaded to Minecraft texture cache");
                     edit(screen,"text").setValue("alice-one 世界 :discraft: :dance:");click("Demo GIF");stage=3;
                 }
                 case 3 -> {click("Send");click("Send");edit(screen,"text").setValue("Draft while awaiting network ACK");stage=4;}
@@ -74,7 +78,7 @@ public final class MultiplayerAcceptance {
                 }
                 case 5 -> {
                     if(messages.stream().noneMatch(m->m.author().equals("Bob")&&Content.plain(m.content()).startsWith("bob-two")))return;
-                    check(true,"Second client PNG and Unicode arrived via dedicated server");capture("Alice-two-clients.png");
+                    check(messages.stream().anyMatch(m->m.author().equals("Bob")&&Content.plain(m.content()).equals("bob-two 世界 👋")),"Second client PNG and Unicode arrived via dedicated server");capture("Alice-two-clients.png");
                     request=raw(new RelayRecord(UUID.randomUUID(),"Administrator","forged-identity",List.of(),Map.of(),Map.of()));stage=6;
                 }
                 case 6 -> {
@@ -89,6 +93,19 @@ public final class MultiplayerAcceptance {
                 }
                 case 8 -> {
                     if(!request.isDone())return;check(request.isCompletedExceptionally()&&count(messages,"nonce-replayed")==0,"Replay rejected before transport delivery");
+                    UUID bad=UUID.randomUUID();request=watch(bad);BridgeNetwork.CHANNEL.sendToServer(new BridgeNetwork.Upload(bad,16,1,new byte[]{1}));stage=15;
+                }
+                case 15 -> {
+                    if(!request.isDone())return;check(request.isCompletedExceptionally(),"Server rejects out-of-order upload chunks");
+                    UUID bad=UUID.randomUUID();request=watch(bad);BridgeNetwork.CHANNEL.sendToServer(new BridgeNetwork.Upload(bad,RelayRecord.MAX_BYTES+1,0,new byte[]{1}));stage=16;
+                }
+                case 16 -> {
+                    if(!request.isDone())return;check(request.isCompletedExceptionally(),"Server rejects oversized upload header before allocation");
+                    for(int i=0;i<12;i++)flooded.add(raw(new RelayRecord(UUID.randomUUID(),"Imposter","invalid-rate-probe",List.of(),Map.of(),Map.of())));stage=17;
+                }
+                case 17 -> {
+                    if(flooded.stream().anyMatch(f->!f.isDone()))return;
+                    check(flooded.stream().anyMatch(f->{try{f.join();return false;}catch(Exception denied){return denied.toString().contains("rate limited");}}),"Server rate limits repeated real-network requests");
                     historyBeforeClose=messages.size();previous=screen;screen.onClose();MC.setScreen(new DisCraftScreen(null));stage=9;
                 }
                 case 9 -> {
@@ -125,8 +142,11 @@ public final class MultiplayerAcceptance {
     }
     private static int count(List<Message> messages,String start){return (int)messages.stream().filter(m->m.author().equals("Alice")&&Content.plain(m.content()).startsWith(start)).count();}
     @SuppressWarnings("unchecked") private static CompletableFuture<String> raw(RelayRecord record)throws Exception{
-        byte[] b=record.encode();var future=new CompletableFuture<String>();var field=ClientBridge.class.getDeclaredField("pending");field.setAccessible(true);((Map<UUID,CompletableFuture<String>>)field.get(null)).put(record.id(),future);
+        byte[] b=record.encode();var future=watch(record.id());
         for(int at=0;at<b.length;at+=BridgeNetwork.CHUNK)BridgeNetwork.CHANNEL.sendToServer(new BridgeNetwork.Upload(record.id(),b.length,at,Arrays.copyOfRange(b,at,Math.min(b.length,at+BridgeNetwork.CHUNK))));return future;
+    }
+    @SuppressWarnings("unchecked") private static CompletableFuture<String> watch(UUID id)throws Exception {
+        var future=new CompletableFuture<String>();var field=ClientBridge.class.getDeclaredField("pending");field.setAccessible(true);((Map<UUID,CompletableFuture<String>>)field.get(null)).put(id,future);return future;
     }
     private static void connect(){String address="127.0.0.1:"+System.getProperty("discraft.bridgePort","25579");ConnectScreen.startConnecting(new TitleScreen(),MC,ServerAddress.parseString(address),new ServerData("DisCraft loopback acceptance",address,false),false);}
     private static Object field(Object o,String n)throws Exception{var f=o.getClass().getDeclaredField(n);f.setAccessible(true);return f.get(o);}

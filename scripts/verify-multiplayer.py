@@ -7,6 +7,7 @@ ROOT=Path(__file__).resolve().parents[1]
 os.chdir(ROOT)
 OUT=ROOT/'build/evidence/multiplayer'
 OUT.mkdir(parents=True,exist_ok=True)
+(OUT/'result.txt').unlink(missing_ok=True)
 for name in ('Alice','Bob'):
     for suffix in ('-result.txt','-done','-sent'):
         (OUT/(name+suffix)).unlink(missing_ok=True)
