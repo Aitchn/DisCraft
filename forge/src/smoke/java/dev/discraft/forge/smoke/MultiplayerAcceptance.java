@@ -33,9 +33,14 @@ public final class MultiplayerAcceptance {
     private static DisCraftScreen previous;
     private static final long deadline=System.nanoTime()+240_000_000_000L;
     private static boolean done;
+    private static long lastDiagnostic;
     @SubscribeEvent public static void tick(TickEvent.ClientTickEvent event){
         if(!Boolean.getBoolean("discraft.multiplayerSmoke")||done||event.phase!=TickEvent.Phase.END)return;
         try{
+            if(System.nanoTime()-lastDiagnostic>5_000_000_000L){
+                lastDiagnostic=System.nanoTime();
+                System.out.println("MULTIPLAYER "+ROLE+" stage="+stage+" screen="+(MC.screen==null?"none":MC.screen.getClass().getSimpleName())+" player="+(MC.player!=null)+" overlay="+(MC.getOverlay()!=null)+" bridge="+ClientBridge.status()+" available="+ClientBridge.available()+" messages="+ClientBridge.snapshot().size());
+            }
             if(System.nanoTime()>deadline)throw new AssertionError("Timeout "+ROLE+" stage="+stage+" status="+ClientBridge.status());
             if(++ticks%2!=0)return;
             if(stage==0){
@@ -45,7 +50,10 @@ public final class MultiplayerAcceptance {
                 MC.options.guiScale().set(1);MC.options.renderDistance().set(2);MC.resizeDisplay();connect();stage=1;return;
             }
             if(stage==1||stage==12){
-                if(MC.player==null||!ClientBridge.available())return;
+                // Login packets can enable the bridge before vanilla finishes its terrain screen.
+                // Opening our screen then lets vanilla replace it, stranding the stage-2 gate.
+                if(MC.player==null||MC.level==null||!ClientBridge.available()||MC.screen!=null||MC.getOverlay()!=null)return;
+                check(true,"Vanilla join presentation completed before opening bridge");
                 MC.setScreen(new DisCraftScreen(null));stage=stage==1?2:13;return;
             }
             if(stage==11){if(MC.getConnection()!=null)return;check(ClientBridge.snapshot().isEmpty(),"Disconnect clears old server history");connect();stage=12;return;}

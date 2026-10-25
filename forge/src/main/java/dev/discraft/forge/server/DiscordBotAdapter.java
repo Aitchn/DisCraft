@@ -21,6 +21,26 @@ public final class DiscordBotAdapter implements DiscordAdapter {
     private final boolean localTest;
     private final ExecutorService io=Executors.newFixedThreadPool(2,r->{var t=new Thread(r,"DisCraft HTTP");t.setDaemon(true);return t;});
     private final HttpClient http;
+    // One bounded media worker also bounds DNS and decoding time seen by the server bridge.
+    private final ThreadPoolExecutor mediaWorker=new ThreadPoolExecutor(1,1,0,TimeUnit.SECONDS,new ArrayBlockingQueue<>(1),r->{var t=new Thread(r,"DisCraft media");t.setDaemon(true);return t;});
+    private static final int MEDIA_ATTEMPTS=8;
+    private static final long MEDIA_NANOS=TimeUnit.SECONDS.toNanos(6);
+    private record EmojiKey(String id,boolean animated) {}
+    private final class ConversionBudget {
+        final long deadline=System.nanoTime()+MEDIA_NANOS;int attempts;long pixels;
+        Attachment resolve(String name,URI uri)throws Exception{
+            if(attempts>=MEDIA_ATTEMPTS||System.nanoTime()>=deadline)throw new IOException("Conversion media budget exhausted");
+            attempts++;
+            Future<Attachment> pending=mediaWorker.submit(()->Attachment.of(name,fetchMedia(uri)));
+            try{
+                long remaining=deadline-System.nanoTime();if(remaining<=0)throw new TimeoutException();
+                var image=pending.get(remaining,TimeUnit.NANOSECONDS);
+                long count=(long)image.media().width()*image.media().height()*image.media().frames().size();
+                if(count>Limits.MEDIA_TOTAL_PIXELS-pixels)throw new IOException("Conversion pixel budget exhausted");
+                pixels+=count;return image;
+            }finally{if(!pending.isDone())pending.cancel(true);mediaWorker.purge();}
+        }
+    }
     private String cursor;
     private boolean initialized,terminal;
     private volatile boolean closed;
@@ -91,20 +111,28 @@ public final class DiscordBotAdapter implements DiscordAdapter {
     }
     private RelayRecord convert(JsonObject m)throws Exception{
         String text=m.has("content")?m.get("content").getAsString():"";Limits.text(text,2000,"Discord content");
+        var budget=new ConversionBudget();var resolved=new HashMap<EmojiKey,Optional<Attachment>>();
         var catalog=new LinkedHashMap<String,Content.CustomEmoji>();var emoji=new HashMap<String,Attachment>();var matcher=EMOJI.matcher(text);var converted=new StringBuffer();
         while(matcher.find()){
-            if(catalog.size()>=8){matcher.appendReplacement(converted,java.util.regex.Matcher.quoteReplacement(matcher.group()));continue;}
-            String id=matcher.group(3),alias="e"+id,key="emoji-"+id+(matcher.group(1).isEmpty()?".png":".gif");
-            try{
-                var image=Attachment.of(key,fetchMedia(URI.create(localTest?api.resolve("emoji/"+id).toString():"https://cdn.discordapp.com/emojis/"+id+(matcher.group(1).isEmpty()?".png":".gif")+"?size=64&quality=lossless")));
-                catalog.put(alias,new Content.CustomEmoji(id,matcher.group(2),!matcher.group(1).isEmpty(),key));emoji.put(key,image);
+            String id=matcher.group(3);boolean animated=!matcher.group(1).isEmpty();
+            var identity=new EmojiKey(id,animated);String alias=(animated?"a":"e")+id,key="emoji-"+id+(animated?".gif":".png");
+            var image=resolved.get(identity);
+            if(image==null){
+                try{image=Optional.of(budget.resolve(key,URI.create(localTest?api.resolve("emoji/"+id).toString():"https://cdn.discordapp.com/emojis/"+id+(animated?".gif":".png")+"?size=64&quality=lossless")));}
+                catch(Exception unsupported){image=Optional.empty();}
+                resolved.put(identity,image); // Negative results must be cached as well as successful decodes.
+            }
+            if(image.isPresent()){
+                catalog.putIfAbsent(alias,new Content.CustomEmoji(id,matcher.group(2),animated,key));emoji.putIfAbsent(key,image.get());
                 matcher.appendReplacement(converted,":"+alias+":");
-            }catch(Exception unsupported){matcher.appendReplacement(converted,java.util.regex.Matcher.quoteReplacement(":"+matcher.group(2)+":"));}
+            }else matcher.appendReplacement(converted,java.util.regex.Matcher.quoteReplacement(":"+matcher.group(2)+":"));
         }
         matcher.appendTail(converted);var files=new ArrayList<Attachment>();
         if(m.has("attachments"))for(var f:m.getAsJsonArray("attachments")){
-            if(!files.isEmpty())break;var a=f.getAsJsonObject();
-            try{if(a.get("size").getAsLong()>RelayRecord.FILE_BYTES)continue;files.add(Attachment.of(a.get("filename").getAsString(),fetchMedia(URI.create(a.get("url").getAsString()))));}catch(Exception unsupported){/* No arbitrary redirects or unsupported media fallback fetch. */}
+            if(!files.isEmpty()||budget.attempts>=MEDIA_ATTEMPTS||System.nanoTime()>=budget.deadline)break;
+            var a=f.getAsJsonObject();
+            try{if(a.get("size").getAsLong()>RelayRecord.FILE_BYTES)continue;files.add(budget.resolve(a.get("filename").getAsString(),URI.create(a.get("url").getAsString())));}
+            catch(Exception unsupported){/* Shared attempt/deadline budget includes unsuccessful attachment downloads. */}
         }
         if(converted.toString().isBlank()&&files.isEmpty())converted.append("[Discord content/media unavailable]");
         String author=m.getAsJsonObject("author").get("username").getAsString();
@@ -141,7 +169,7 @@ public final class DiscordBotAdapter implements DiscordAdapter {
         try{return future.get(12,TimeUnit.SECONDS);}catch(Exception failure){future.cancel(true);throw new IOException("Bounded HTTP request failed");}
     }
     private static JsonObject json(byte[] b){return JsonParser.parseString(new String(b,StandardCharsets.UTF_8)).getAsJsonObject();}
-    @Override public void close(){closed=true;io.shutdownNow();}
+    @Override public void close(){closed=true;mediaWorker.shutdownNow();io.shutdownNow();}
     private static final class LimitedBody implements HttpResponse.BodySubscriber<byte[]> {
         private final int max;private final ByteArrayOutputStream out=new ByteArrayOutputStream();private final CompletableFuture<byte[]> result=new CompletableFuture<>();private Flow.Subscription subscription;
         LimitedBody(int max){this.max=max;}

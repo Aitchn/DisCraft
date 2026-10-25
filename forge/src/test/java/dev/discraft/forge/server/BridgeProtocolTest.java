@@ -24,12 +24,13 @@ public final class BridgeProtocolTest {
         byte[] trailing=Arrays.copyOf(original.encode(),original.encode().length+1);rejected(()->RelayRecord.decode(trailing),"Trailing bytes rejected");
         var server=HttpServer.create(new InetSocketAddress("127.0.0.1",0),0);String base="http://127.0.0.1:"+server.getAddress().getPort()+"/api/v10/";
         var posts=new ArrayList<byte[]>();var auth=new AtomicBoolean(true);var bot=new AtomicBoolean(true);var code=new AtomicInteger(200);var requests=new AtomicInteger();var lastQuery=new AtomicReference<String>("");
+        var mediaMode=new AtomicReference<String>("ok");var mediaRequests=new AtomicInteger();
         String channel="1234567890123456";String first="2234567890123456",last="3234567890123456";
         server.createContext("/",exchange->{
             try{
                 requests.incrementAndGet();lastQuery.set(String.valueOf(exchange.getRequestURI().getQuery()));String path=exchange.getRequestURI().getPath();byte[] response;
                 int status=code.getAndSet(200);
-                if(path.contains("/emoji/")){if(exchange.getRequestHeaders().getFirst("Authorization")!=null)auth.set(false);response=Attachment.fromResource(path.endsWith("2222222222222222")?"dance.gif":"emoji.png").bytes();}
+                if(path.contains("/emoji/")){mediaRequests.incrementAndGet();if(mediaMode.get().equals("slow"))try{Thread.sleep(8000);}catch(InterruptedException interrupted){Thread.currentThread().interrupt();}if(mediaMode.get().equals("fail"))status=404;if(exchange.getRequestHeaders().getFirst("Authorization")!=null)auth.set(false);response=mediaMode.get().equals("invalid")?new byte[]{1,2,3}:Attachment.fromResource(path.endsWith("2222222222222222")?"dance.gif":"emoji.png").bytes();}
                 else if(path.equals("/file.png")){if(exchange.getRequestHeaders().getFirst("Authorization")!=null)auth.set(false);response=Attachment.fromResource("landscape.png").bytes();}
                 else if(path.equals("/huge")){response=new byte[RelayRecord.MAX_BYTES+1];}
                 else if(path.equals("/redirect")){status=302;exchange.getResponseHeaders().set("Location","http://127.0.0.1:"+server.getAddress().getPort()+"/file.png");response=new byte[]{0};}
@@ -73,6 +74,25 @@ public final class BridgeProtocolTest {
                 int beforeFetch=requests.get();rejected(()->fetch.invoke(production,URI.create("http://127.0.0.1/file")),"Production media rejects loopback before HTTP");
                 rejected(()->fetch.invoke(production,URI.create("https://cdn.discordapp.com@127.0.0.1/file")),"Production media rejects disguised host");check(requests.get()==beforeFetch,"Rejected SSRF targets make no requests");
             }
+            for(String mode:List.of("ok","fail","invalid")){
+                mediaMode.set(mode);int prior=mediaRequests.get();
+                var repeated=adapter.prepare(RelayRecord.draft(UUID.randomUUID(),"<:x:1111111111111111>".repeat(80),null));
+                check(mediaRequests.get()==prior+1,"Repeated "+mode+" emoji resolves once per conversion");
+                check(repeated.catalog().size()==(mode.equals("ok")?1:0),"Positive and negative "+mode+" emoji cache preserves result");
+            }
+            mediaMode.set("ok");int mixedBefore=mediaRequests.get();
+            var mixed=adapter.prepare(RelayRecord.draft(UUID.randomUUID(),"<:x:1111111111111111> <a:x:1111111111111111>",null));
+            check(mediaRequests.get()==mixedBefore+2&&mixed.catalog().size()==2,"Static and animated IDs have separate cache identities");
+            mediaMode.set("fail");var distinct=new StringBuilder();for(int i=0;i<40;i++)distinct.append("<:x:").append(1111111111111111L+i).append("> ");
+            int failedBefore=mediaRequests.get();adapter.prepare(RelayRecord.draft(UUID.randomUUID(),distinct.toString(),null));
+            check(mediaRequests.get()==failedBefore+8,"Distinct failed emoji bounded to eight total attempts");
+            mediaMode.set("ok");int validBefore=mediaRequests.get();
+            var validDistinct=adapter.prepare(RelayRecord.draft(UUID.randomUUID(),distinct.toString(),null));
+            check(mediaRequests.get()==validBefore+8&&validDistinct.catalog().size()==8,"Distinct successful emoji share eight-attempt work budget");
+            mediaMode.set("slow");long started=System.nanoTime();int slowBefore=mediaRequests.get();
+            var slow=adapter.prepare(RelayRecord.draft(UUID.randomUUID(),"<:x:1111111111111111>".repeat(80)+"<:y:2222222222222222>",null));
+            check(System.nanoTime()-started<java.util.concurrent.TimeUnit.SECONDS.toNanos(7)&&mediaRequests.get()==slowBefore+1&&slow.catalog().isEmpty(),"Slow repeated and unique emoji share six-second total deadline");
+            Thread.sleep(2200);mediaMode.set("ok");
             check(auth.get(),"Bot authorization is confined to REST and omitted on media requests");
             code.set(429);rejected(()->adapter.send(original),"429 rejected without automatic resend");int before=requests.get();rejected(()->adapter.send(original),"Shared rate-limit gate blocks early retries");check(requests.get()==before,"No HTTP call during retry_after");
         }
