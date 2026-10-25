@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Isolated loopback/offline acceptance; never configures or contacts a real Discord bot."""
 from pathlib import Path
-import json, os, signal, socket, subprocess, time
+import json, os, signal, socket, subprocess, time, zipfile, platform
 
 ROOT=Path(__file__).resolve().parents[1]
 os.chdir(ROOT)
@@ -52,7 +52,26 @@ def launch(role):
     directory=Path(launch['directory']);directory.mkdir(parents=True,exist_ok=True)
     child_env=environment.copy();child_env.update(launch['environment'])
     output=(OUT/(role+'.log')).open('w');logs.append(output)
-    p=subprocess.Popen(launch['command'],cwd=directory,env=child_env,stdin=subprocess.PIPE,stdout=output,stderr=subprocess.STDOUT)
+    command=launch['command']
+    if role!='server':
+        assert platform.system()=='Linux' and platform.machine() in ('x86_64','amd64'),'This headless acceptance currently requires Linux x64 natives'
+        # Forge early-display may resolve resources while the game layer is being built.
+        # Resolve the already-downloaded runtime JAR bytes before either client starts;
+        # never share a temporary extraction directory between the two JVMs.
+        natives=directory/'native-libraries';natives.mkdir(exist_ok=True)
+        cp=command[command.index('-cp')+1];copied=set()
+        for library in cp.split(os.pathsep):
+            if not library.endswith('-natives-linux.jar'):continue
+            with zipfile.ZipFile(library) as archive:
+                for entry in archive.infolist():
+                    if not entry.filename.startswith('linux/x64/') or not entry.filename.endswith('.so'):continue
+                    assert entry.file_size<64*1024*1024,'Unexpected native-library size'
+                    name=Path(entry.filename).name
+                    (natives/name).write_bytes(archive.read(entry));copied.add(name)
+        assert {'liblwjgl.so','liblwjgl_opengl.so','libglfw.so'}<=copied,'Runtime native libraries missing from exported classpath'
+        command=[command[0],'-Dorg.lwjgl.librarypath='+str(natives),'-Dorg.lwjgl.system.SharedLibraryExtractPath='+str(natives/'fallback')]+command[1:]
+        print(f'{role}: prepared {len(copied)} per-client runtime native libraries',flush=True)
+    p=subprocess.Popen(command,cwd=directory,env=child_env,stdin=subprocess.PIPE,stdout=output,stderr=subprocess.STDOUT)
     processes.append(p);return p
 try:
     server=launch('server');deadline=time.monotonic()+120
