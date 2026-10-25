@@ -2,6 +2,7 @@
 **/build/
 run/
 run-data/
+run-mp/
 .idea/
 *.iml
 *.log

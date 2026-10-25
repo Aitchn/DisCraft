@@ -15,6 +15,7 @@ import java.util.concurrent.*;
 /** Local mock preview, available from the title screen or F8. No world/server required. */
 public final class DisCraftScreen extends Screen {
     private final Screen parent;
+    private final boolean networked;
     private final ExecutorService worker = Executors.newSingleThreadExecutor(task -> {
         var thread = new Thread(task, "DisCraft media worker"); thread.setDaemon(true); return thread;
     });
@@ -32,11 +33,13 @@ public final class DisCraftScreen extends Screen {
     private boolean scrollToBottom;
     private final Path uploadRoot;
     public DisCraftScreen(Screen parent) {
-        super(Component.literal("DisCraft • LOCAL MOCK")); this.parent = parent;
+        super(Component.literal(Minecraft.getInstance().getConnection()==null?"DisCraft • LOCAL MOCK":"DisCraft • SERVER BRIDGE")); this.parent = parent;
+        networked=Minecraft.getInstance().getConnection()!=null;
         uploadRoot = Minecraft.getInstance().gameDirectory.toPath().resolve("discraft-uploads");
         worker.submit(() -> {
             try {
                 Files.createDirectories(uploadRoot);
+                if(networked){Minecraft.getInstance().execute(()->{if(!closed){busy=false;status=ClientBridge.status();}});return;}
                 var loadedEmoji = new HashMap<String, Attachment>();
                 for (var definition : MockTransport.EMOJI.values())
                     loadedEmoji.put(definition.mediaKey(), Attachment.fromResource(definition.mediaKey()));
@@ -62,8 +65,8 @@ public final class DisCraftScreen extends Screen {
         path.setMaxLength(240); path.setValue(file); path.setHint(Component.literal("File inside discraft-uploads/"));
         addRenderableWidget(Button.builder(Component.literal("Attach file"), button -> attach(null)).bounds(width - 212, height - 50, 96, 20).build());
         addRenderableWidget(Button.builder(Component.literal("Demo GIF"), button -> attach("dance.gif")).bounds(width - 110, height - 50, 98, 20).build());
-        addRenderableWidget(Button.builder(Component.literal(":discraft:"), button -> text.insertText(":discraft:")).bounds(12, 28, 85, 20).build());
-        addRenderableWidget(Button.builder(Component.literal(":dance:"), button -> text.insertText(":dance:")).bounds(103, 28, 75, 20).build());
+        addRenderableWidget(Button.builder(Component.literal(networked?"Emoji 1":":discraft:"), button -> text.insertText(networked?ClientBridge.emojiShortcut(0):":discraft:")).bounds(12, 28, 85, 20).build());
+        addRenderableWidget(Button.builder(Component.literal(networked?"Emoji 2":":dance:"), button -> text.insertText(networked?ClientBridge.emojiShortcut(1):":dance:")).bounds(103, 28, 75, 20).build());
         addRenderableWidget(Button.builder(Component.literal("Clear attachment"), button -> {
             attachmentRevision++; pending = null; status = "Attachment cleared";
         }).bounds(184, 28, 120, 20).build());
@@ -71,7 +74,7 @@ public final class DisCraftScreen extends Screen {
         setInitialFocus(text);
     }
     private void attach(String fixture) {
-        if (busy || session == null) return;
+        if (busy || (!networked && session == null)) return;
         String filename = path.getValue();
         long requestRevision = ++attachmentRevision;
         busy = true; status = "Validating and decoding media…";
@@ -94,19 +97,21 @@ public final class DisCraftScreen extends Screen {
         });
     }
     private void send() {
-        if (busy || session == null) return;
+        if (busy || (!networked && session == null)) return;
         String draft = text.getValue();
         long submittedDraftRevision = draftRevision;
         Attachment media = pending;
         busy = true;
         worker.submit(() -> {
             try {
-                session.send(draft, media == null ? List.of() : List.of(media)); session.poll();
+                String delivery;
+                if(networked) delivery=ClientBridge.send(draft,media);
+                else {session.send(draft, media == null ? List.of() : List.of(media)); session.poll();delivery="Sent to LOCAL MOCK; distinct peer reply received; relay echo suppressed.";}
                 Minecraft.getInstance().execute(() -> {
                     if (closed) return;
                     if (draftRevision == submittedDraftRevision) text.setValue("");
                     pending = null; busy = false; scrollToBottom = true;
-                    status = "Sent to LOCAL MOCK; distinct peer reply received; relay echo suppressed.";
+                    status = delivery;
                 });
             } catch (Exception failure) { finish("Send failed: " + failure.getMessage()); }
         });
@@ -128,7 +133,7 @@ public final class DisCraftScreen extends Screen {
         graphics.fill(0, 0, width, height, 0xee152033);
         graphics.drawString(font, title, 12, 9, 0xffa6c9ff, false);
         int top = 56, bottom = top + viewportHeight();
-        var messages = session == null ? List.<Message>of() : session.snapshot();
+        var messages = networked ? ClientBridge.snapshot() : session == null ? List.<Message>of() : session.snapshot();
         contentHeight = messages.stream().mapToInt(this::messageHeight).sum();
         if (scrollToBottom) { scroll = Math.max(0, contentHeight - viewportHeight()); scrollToBottom = false; }
         scroll = Math.max(0, Math.min(scroll, Math.max(0, contentHeight - viewportHeight())));
@@ -160,7 +165,7 @@ public final class DisCraftScreen extends Screen {
             for (var line : lines) { graphics.drawString(font, line, 20, row, 0xfff1f1f7, false); row += 10; }
             int x = 20;
             for (var definition : custom) {
-                Attachment asset = emoji.get(definition.mediaKey());
+                Attachment asset = networked ? ClientBridge.emoji(definition.mediaKey()) : emoji.get(definition.mediaKey());
                 if (asset != null && row + 24 >= top && row < bottom && x + 24 < width - 20)
                     drawMedia(graphics, asset, x, row, 24, 24);
                 x += 28;

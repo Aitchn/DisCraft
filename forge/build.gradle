@@ -6,7 +6,7 @@ plugins {
 base { archivesName = 'discraft-forge-1.20.1' }
 java.toolchain.languageVersion = JavaLanguageVersion.of(17)
 // Client acceptance driver is opt-in and never shipped in the mod JAR.
-if (providers.gradleProperty('smoke').isPresent()) {
+if (providers.gradleProperty('smoke').isPresent() || providers.gradleProperty('multiplayerSmoke').isPresent()) {
     sourceSets.main.java.srcDir 'src/smoke/java'
 }
 minecraft {
@@ -15,10 +15,19 @@ minecraft {
     runs {
         configureEach {
             workingDirectory rootProject.file('run')
+            if (providers.gradleProperty('multiplayerSmoke').isPresent()) {
+                workingDirectory rootProject.file('run-mp/' + providers.gradleProperty('bridgeRole').getOrElse('server'))
+                property 'discraft.multiplayerSmoke', 'true'
+                property 'discraft.bridgeRole', providers.gradleProperty('bridgeRole').getOrElse('server')
+                property 'discraft.bridgePort', providers.gradleProperty('bridgePort').getOrElse('25579')
+            }
             property 'forge.logging.console.level', 'info'
             mods { discraft { source sourceSets.main; source project(':core').sourceSets.main } }
         }
         client {
+            if (providers.gradleProperty('multiplayerSmoke').isPresent()) {
+                args '--width', '1100', '--height', '800', '--username', providers.gradleProperty('bridgeRole').getOrElse('Alice')
+            }
             if (providers.gradleProperty('smoke').isPresent()) {
                 property 'discraft.smoke', 'true'
                 args '--width', '1100', '--height', '800'
@@ -35,4 +44,26 @@ tasks.named('jar', Jar) {
     exclude 'dev/discraft/forge/smoke/**'
     from project(':core').sourceSets.main.output
     finalizedBy 'reobfJar'
+}
+
+tasks.register('bridgeProtocolTest', JavaExec) {
+    dependsOn testClasses
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'dev.discraft.forge.server.BridgeProtocolTest'
+    jvmArgs '-ea', '-Djava.awt.headless=true'
+}
+tasks.named('check') { dependsOn bridgeProtocolTest }
+
+// Export launch arguments after Forge prepares its generated classpath/arg files.
+// Only the MOD_CLASSES environment key is retained; never export credentials or the host environment.
+tasks.register('exportBridgeLaunch') {
+    def serverRole = providers.gradleProperty('bridgeRole').getOrElse('server') == 'server'
+    dependsOn serverRole ? 'prepareRunServerCompile' : 'prepareRunClientCompile'
+    doLast {
+        def run = tasks.named(serverRole ? 'runServer' : 'runClient', JavaExec).get()
+        def target = rootProject.file('build/mp-launch-' + providers.gradleProperty('bridgeRole').getOrElse('server') + '.json')
+        target.parentFile.mkdirs()
+        def command = [run.executable] + run.allJvmArgs.findAll { !it.startsWith('-Xmx') } + ['-Xmx1G', '-cp', run.classpath.asPath, run.mainClass.get()] + run.args
+        target.text = groovy.json.JsonOutput.toJson([command: command, directory: run.workingDir.absolutePath, environment: run.environment.findAll { k,v -> k == 'MOD_CLASSES' }])
+    }
 }
