@@ -1,6 +1,6 @@
 # DisCraft — Forge 1.20.1 local mock preview
 
-First implementation targets **Minecraft 1.20.1 / Forge 47.4.0 / Java 17**. The Forge adapter now compiles, reobfuscates, and runs in the real Minecraft client under Xvfb/Mesa. The mod JAR is `forge/build/libs/discraft-forge-1.20.1-0.1.0-dev.jar`. The 49 core checks and 25 client acceptance checks pass. This is a local mock preview; world/server integration and a separately installed production launcher have not been tested.
+First implementation targets **Minecraft 1.20.1 / Forge 47.4.0 / Java 17**. The Forge adapter now compiles, reobfuscates, and runs in the real Minecraft client under Xvfb/Mesa. The mod JAR is `forge/build/libs/discraft-forge-1.20.1-0.1.0-dev.jar`. The 49 core checks and 36 client acceptance checks pass. This is a local mock preview; world/server integration and a separately installed production launcher have not been tested.
 
 There is no Discord connection. All messages, custom emoji and media come from an in-process fixture peer. Sending executes the mock transport and produces a separate peer reply; a simulated relay echo is suppressed. This preview requires no Discord app, bot, OAuth grant or credentials. It performs no Discord delivery.
 

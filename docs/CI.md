@@ -10,6 +10,8 @@ The pull request workflow uses Ubuntu 24.04, Temurin JDK 17 and the checked-in G
 
 The client job downloads Minecraft's official assets and launches real Forge 47.4.0 / Minecraft 1.20.1 with the test-only `-Psmoke` driver. It uses actual screens, button handlers, EditBoxes, Enter handling and the registered F8 key mapping. It checks mock send/peer reply/echo suppression; PNG and GIF filename uploads and replies; custom emoji; empty text/corrupt file/path traversal errors; duplicate Send/Clear; closing, texture cleanup and a fresh reopened session. It does not simulate physical OS input. The driver is excluded from the distributed JAR.
 
+The client acceptance also gates the existing worker with latches to deterministically clear an attachment before decode completes and edit a draft before send completes. It checks that cancelled decode success/error callbacks cannot restore media or overwrite the Clear status, that new draft text and emoji survive send completion, and that editing away and back to the submitted text still counts as a new draft. These interactions occur while busy, rather than waiting for completion. The opt-in driver introduces no delay hooks into production code.
+
 Artifacts expire after 14 days. A skipped, pending, cancelled or failed job is not a pass. GitHub Actions results must be read for the latest PR head; historical local passes do not establish that CI passed. No branch protection is configured by this workflow. Suggested review gates are all three named jobs above; a maintainer must configure enforcement separately if desired.
 
 ## Local provenance
@@ -21,3 +23,9 @@ The previously empty remote required an empty initial main commit solely as a PR
 ## Limits
 
 This is an in-process local mock, not a Discord bridge. Real Discord/relay delivery, in-world use, dedicated-server classloading, a separately installed production-launcher mod JAR, exhaustive glyph coverage, and JPEG through the Minecraft UI remain unverified. JPEG decoding is covered by core behavior tests. Fabric and NeoForge are deferred. Minecraft may log stock background authentication or audio-device failures in a headless environment; none is evidence of Discord connectivity. No world creation or real credentials are needed for this acceptance.
+
+## Async editing fixes
+
+Independent review of `2951524b7b45a495940c3f6797a1410b85e34535` reported two P2 UI races: Clear could be undone by a late attachment decode callback, and a successful send could erase a draft edited after submission. The screen now invalidates attachment results using a request revision and clears sent text only if its draft revision is unchanged. Stale decode errors are ignored too. Revisions are maintained on the Minecraft UI thread, including edits that return to the original text value.
+
+The added real-client regression cases were first run against the unfixed source and failed on both races (five observable conditions). After the fix the same gated sequence passed, with 36 total client checks; core checks remained 49 and Forge build/reobfuscation plus packaged-mod validation passed locally. CI for each new head must still be checked independently. These fixes require reviewer reinspection of the new SHA; this local validation is not independent review approval.

@@ -24,6 +24,8 @@ public final class DisCraftScreen extends Screen {
     private ChatSession session;
     private EditBox text, path;
     private Attachment pending;
+    // UI-thread revisions distinguish in-flight snapshots from subsequent user edits.
+    private long attachmentRevision, draftRevision;
     private String status = "Loading bounded local fixtures…";
     private boolean busy = true, closed;
     private int scroll, contentHeight;
@@ -54,6 +56,7 @@ public final class DisCraftScreen extends Screen {
         String file = path == null ? "" : path.getValue();
         text = addRenderableWidget(new EditBox(font, 12, height - 76, Math.max(80, width - 100), 20, Component.literal("Message")));
         text.setMaxLength(4000); text.setValue(draft); text.setHint(Component.literal("Message • Unicode + :discraft: :dance:"));
+        text.setResponder(value -> draftRevision++);
         addRenderableWidget(Button.builder(Component.literal("Send"), button -> send()).bounds(width - 82, height - 76, 70, 20).build());
         path = addRenderableWidget(new EditBox(font, 12, height - 50, Math.max(80, width - 230), 20, Component.literal("Upload filename")));
         path.setMaxLength(240); path.setValue(file); path.setHint(Component.literal("File inside discraft-uploads/"));
@@ -61,28 +64,39 @@ public final class DisCraftScreen extends Screen {
         addRenderableWidget(Button.builder(Component.literal("Demo GIF"), button -> attach("dance.gif")).bounds(width - 110, height - 50, 98, 20).build());
         addRenderableWidget(Button.builder(Component.literal(":discraft:"), button -> text.insertText(":discraft:")).bounds(12, 28, 85, 20).build());
         addRenderableWidget(Button.builder(Component.literal(":dance:"), button -> text.insertText(":dance:")).bounds(103, 28, 75, 20).build());
-        addRenderableWidget(Button.builder(Component.literal("Clear attachment"), button -> { pending = null; status = "Attachment cleared"; }).bounds(184, 28, 120, 20).build());
+        addRenderableWidget(Button.builder(Component.literal("Clear attachment"), button -> {
+            attachmentRevision++; pending = null; status = "Attachment cleared";
+        }).bounds(184, 28, 120, 20).build());
         addRenderableWidget(Button.builder(Component.literal("Back"), button -> onClose()).bounds(width - 62, 6, 50, 20).build());
         setInitialFocus(text);
     }
     private void attach(String fixture) {
         if (busy || session == null) return;
         String filename = path.getValue();
+        long requestRevision = ++attachmentRevision;
         busy = true; status = "Validating and decoding media…";
         worker.submit(() -> {
             try {
                 var attachment = fixture == null ? Attachment.fromUpload(uploadRoot, filename) : Attachment.fromResource(fixture);
-                Minecraft.getInstance().execute(() -> {
-                    if (closed) return;
-                    pending = attachment; busy = false;
-                    status = "Attached " + attachment.name() + " • " + attachment.media().frames().size() + " frame(s). Press Send.";
-                });
-            } catch (Exception failure) { finish("Attachment rejected: " + failure.getMessage()); }
+                completeAttachment(requestRevision, attachment, null);
+            } catch (Exception failure) { completeAttachment(requestRevision, null, "Attachment rejected: " + failure.getMessage()); }
+        });
+    }
+    private void completeAttachment(long requestRevision, Attachment attachment, String failure) {
+        Minecraft.getInstance().execute(() -> {
+            if (closed) return;
+            // Clear invalidates the result but keeps busy until the worker actually finishes.
+            busy = false;
+            if (requestRevision != attachmentRevision) return;
+            if (failure != null) { status = failure; return; }
+            pending = attachment;
+            status = "Attached " + attachment.name() + " • " + attachment.media().frames().size() + " frame(s). Press Send.";
         });
     }
     private void send() {
         if (busy || session == null) return;
         String draft = text.getValue();
+        long submittedDraftRevision = draftRevision;
         Attachment media = pending;
         busy = true;
         worker.submit(() -> {
@@ -90,7 +104,8 @@ public final class DisCraftScreen extends Screen {
                 session.send(draft, media == null ? List.of() : List.of(media)); session.poll();
                 Minecraft.getInstance().execute(() -> {
                     if (closed) return;
-                    text.setValue(""); pending = null; busy = false; scrollToBottom = true;
+                    if (draftRevision == submittedDraftRevision) text.setValue("");
+                    pending = null; busy = false; scrollToBottom = true;
                     status = "Sent to LOCAL MOCK; distinct peer reply received; relay echo suppressed.";
                 });
             } catch (Exception failure) { finish("Send failed: " + failure.getMessage()); }

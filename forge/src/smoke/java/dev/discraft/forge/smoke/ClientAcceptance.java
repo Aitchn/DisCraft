@@ -17,6 +17,7 @@ import net.minecraftforge.fml.common.Mod;
 import org.lwjgl.glfw.GLFW;
 import java.nio.file.*;
 import java.util.*;
+import java.util.concurrent.*;
 
 /** Opt-in acceptance driver: real Minecraft widgets, renderer and local mock transport. */
 @Mod.EventBusSubscriber(modid = DisCraft.ID, value = Dist.CLIENT)
@@ -25,6 +26,8 @@ public final class ClientAcceptance {
     private static final Path OUT = Path.of("../build/evidence/minecraft").toAbsolutePath().normalize();
     private static final List<String> checks = new ArrayList<>();
     private static final Set<Integer> gifFrames = new HashSet<>();
+    private static final List<String> regressionFailures = new ArrayList<>();
+    private static String expectedDraft;
     private static int stage, ticks, checksBeforeSend;
     private static long deadline = System.nanoTime() + 240_000_000_000L;
     private static DisCraftScreen previous;
@@ -55,6 +58,7 @@ public final class ClientAcceptance {
                 capture("reopened.png");
                 screen.onClose();
                 check(MC.screen instanceof TitleScreen, "Second close returns to title");
+                check(regressionFailures.isEmpty(), "Async editing regressions: " + regressionFailures);
                 Files.writeString(OUT.resolve("result.txt"), String.join("\n", checks) + "\nPASS " + checks.size() + " checks\n");
                 done = true; MC.stop(); return;
             }
@@ -86,6 +90,7 @@ public final class ClientAcceptance {
                 }
                 case 3 -> {
                     check(messages.size() == checksBeforeSend + 2, "Enter sends once; concurrent repeated Send ignored; one distinct mock reply");
+                    check(edit(screen,"text").getValue().isEmpty(), "Successful send clears an unchanged draft");
                     check(messages.stream().noneMatch(m -> m.author().startsWith("Echo")), "Relay echo suppressed in client transcript");
                     check(messages.get(messages.size()-2).content().stream().filter(c -> c instanceof Content.CustomEmoji).count() == 2, "Static and animated custom emoji parsed in outgoing message");
                     capture("text-emoji.png");
@@ -136,6 +141,53 @@ public final class ClientAcceptance {
                     check(field(screen, "pending") == null, "Repeated clear remains safe");
                     click(":discraft:"); click(":dance:");
                     check(edit(screen,"text").getValue().contains(":discraft::dance:"), "Emoji buttons insert both shortcuts");
+                    CountDownLatch release = holdWorker(screen);
+                    try {
+                        click("Demo GIF");
+                        check(busy(screen), "Decode request stays busy behind deterministic worker gate");
+                        click("Clear attachment");
+                        check(field(screen,"pending") == null, "Clear operates before delayed decode completes");
+                    } finally { release.countDown(); }
+                    stage = 12;
+                }
+                case 12 -> {
+                    regressionCheck(field(screen,"pending") == null, "Delayed decode cannot resurrect a cleared attachment");
+                    regressionCheck(status(screen).equals("Attachment cleared"), "Cancelled decode cannot replace clear status");
+                    click("Clear attachment");
+                    CountDownLatch release = holdWorker(screen);
+                    try {
+                        edit(screen,"path").setValue("../escape.png"); click("Attach file"); click("Clear attachment");
+                    } finally { release.countDown(); }
+                    stage = 13;
+                }
+                case 13 -> {
+                    regressionCheck(status(screen).equals("Attachment cleared"), "Cancelled decode error cannot replace clear status");
+                    edit(screen,"text").setValue("Submitted before editing");
+                    checksBeforeSend = messages.size();
+                    CountDownLatch release = holdWorker(screen);
+                    try {
+                        click("Send");
+                        check(busy(screen), "Send stays busy behind deterministic worker gate");
+                        edit(screen,"text").setValue("Next draft "); click(":discraft:"); click(":dance:");
+                        expectedDraft = edit(screen,"text").getValue();
+                    } finally { release.countDown(); }
+                    stage = 15;
+                }
+                case 15 -> {
+                    check(messages.size() == checksBeforeSend + 2 && Content.plain(last(messages).content()).equals("Mock received: Submitted before editing"), "Delayed send transmits captured text and receives one peer reply");
+                    regressionCheck(edit(screen,"text").getValue().equals(expectedDraft), "Delayed send preserves newly edited draft and emoji shortcuts");
+                    edit(screen,"text").setValue("Same-value new draft");
+                    CountDownLatch release = holdWorker(screen);
+                    try {
+                        click("Send");
+                        edit(screen,"text").setValue("Temporary edit");
+                        edit(screen,"text").setValue("Same-value new draft");
+                    } finally { release.countDown(); }
+                    stage = 16;
+                }
+                case 16 -> {
+                    regressionCheck(edit(screen,"text").getValue().equals("Same-value new draft"), "Delayed send preserves edits even when text returns to the submitted value");
+                    capture("async-editing.png");
                     previous = screen; screen.onClose();
                     check(MC.screen instanceof TitleScreen, "Back closes chat to original title");
                     check((Boolean)field(screen,"closed") && session(screen).snapshot().isEmpty(), "Closed screen releases session history");
@@ -152,6 +204,23 @@ public final class ClientAcceptance {
             } catch (Throwable ignored) { }
             failure.printStackTrace(); MC.stop();
         }
+    }
+    private static CountDownLatch holdWorker(Screen screen) throws Exception {
+        var entered = new CountDownLatch(1);
+        var release = new CountDownLatch(1);
+        ((ExecutorService)field(screen,"worker")).submit(() -> {
+            entered.countDown();
+            try { release.await(); } catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); }
+        });
+        if (!entered.await(2, TimeUnit.SECONDS)) {
+            release.countDown(); throw new AssertionError("Worker gate did not start");
+        }
+        return release;
+    }
+    private static void regressionCheck(boolean condition, String name) {
+        if (condition) { check(true, name); return; }
+        regressionFailures.add(name); checks.add("FAIL " + name);
+        System.out.println("DISCRAFT_ACCEPTANCE FAIL " + name);
     }
     private static Message last(List<Message> messages) { return messages.get(messages.size()-1); }
     private static Object field(Object value, String name) throws Exception {
