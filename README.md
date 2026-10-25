@@ -1,59 +1,42 @@
-# DisCraft — Forge 1.20.1 local mock preview
+# DisCraft — Forge 1.20.1 server bridge preview
 
-> This feature branch contains an incomplete [server/client bridge checkpoint](docs/SERVER-BRIDGE-WIP.md). Local dedicated-server/two-client validation now passes; live Discord delivery remains unverified, and CI/review for this feature is pending. The preview results below describe the previously accepted local mock.
+DisCraft targets **Minecraft 1.20.1 / Forge 47.4.0 / Java 17**. A dedicated server validates and relays messages between modded clients and an optional **official Discord Bot REST v10 adapter**. Bot credentials are read only by an explicitly enabled, authenticated dedicated server; they are never included in game packets or client configuration.
 
-First implementation targets **Minecraft 1.20.1 / Forge 47.4.0 / Java 17**. The Forge adapter now compiles, reobfuscates, and runs in the real Minecraft client under Xvfb/Mesa. The mod JAR is `forge/build/libs/discraft-forge-1.20.1-0.1.0-dev.jar`. The 49 core checks and 36 client acceptance checks pass. This is a local mock preview; world/server integration and a separately installed production launcher have not been tested.
+Local validation has passed a real dedicated server plus Alice/Bob clients, 49 core checks, 27 loopback REST/wire checks and the original 36 client-preview checks. **Live Discord delivery has not been tested:** it needs an approved bot setup and a designated test channel. Test peers and the title-screen mock are explicitly labelled fixtures; they do not prove Discord connectivity.
 
-There is no Discord connection. All messages, custom emoji and media come from an in-process fixture peer. Sending executes the mock transport and produces a separate peer reply; a simulated relay echo is suppressed. This preview requires no Discord app, bot, OAuth grant or credentials. It performs no Discord delivery.
+| Capability | Current scope |
+| --- | --- |
+| Multiplayer | Server-authoritative player names/event IDs; actual game packets; upload validation, pacing, replay suppression, disconnect/reconnect |
+| Text and emoji | Unicode; incoming/outgoing Discord `<:name:id>` / `<a:name:id>` markup, bounded static/animated emoji images; two shortcuts for observed Discord emoji |
+| Media | One PNG/JPEG/GIF attachment per bridge message, **256 KiB encoded file limit**; bounded decode and animated Minecraft textures |
+| Discord | One designated guild text channel; REST polling for new human messages and multipart bot sends; conservative rate-limit/backoff handling |
+| Compatibility | Optional channel; plaintext receive fallback for clients without the channel. Pure vanilla interoperability is **not yet tested** |
+| Other Discord features | Gateway/resume, threads/DMs, edits/deletes/reactions, stickers, voice/video, WebP/APNG and guild-wide emoji search/discovery are **not implemented** |
 
-| Feature | Implemented behavior | Verification |
-| --- | --- | --- |
-| Text in both directions | Unicode text, parsed custom emoji, send/poll transport | Core tests + independent GUI send buttons |
-| Unicode/custom emoji | Code-point validation; `:discraft:` PNG and `:dance:` animated GIF definitions and rendering | Core checks and actual Minecraft custom texture rendering; font glyph coverage varies |
-| Still images | Content-sniffed PNG/JPEG, bounded decode, upload filename entry and thumbnail renderer | Core tests; PNG GUI attach/send/receive |
-| GIF | Decoded/composited frames, delays, disposal, animation loop; send entry | Core tests; actual GUI animation frame screenshots |
-| Chat entry | F8 key binding and title-screen “DisCraft mock” button; scrollable transcript, composer, emoji shortcuts | Actual Minecraft widget handlers and F8 key-mapping dispatch; close/reopen and duplicate actions pass |
-| Policy | Send/receive/media permissions, token bucket, bounded dedup/history, upload confinement, media limits | Core tests |
-| Real Discord / relay | Trust boundary and future protocol documented | **Not implemented or connected** |
-| Fabric / NeoForge | Shared core has no loader imports | **No adapter implemented** |
-| WebP, stickers, video, remote GIF provider, emoji search | Outside this preview | **Not implemented** |
+## Build and local checks
 
-## Build and test the independent slice
-
-Use JDK 17. The checked-in official Forge 1.20.1 branch Wrapper selects Gradle 8.8 and verifies its distribution SHA-256. Its first run downloads the Gradle distribution; subsequent core builds use no third-party dependencies.
+Select JDK 17 in `JAVA_HOME`. Gradle 8.8 and ForgeGradle 6.0.54 are pinned; the wrapper verifies its distribution checksum.
 
 ```bash
-# Select JDK 17 in JAVA_HOME before building.
 ./gradlew :core:build
-
-# After the wrapper is cached:
-./scripts/verify.sh
-./scripts/verify.sh --ui
-```
-
-`core:coreTest` is an executable, dependency-free behavioral suite wired into `check`/`build`; it is not a JUnit suite. The core JAR is `core/build/libs/core-0.1.0-dev.jar`, **not a Minecraft mod**. `--ui` runs an independent Swing acceptance harness using Xvfb when available. It drives PNG and GIF attach/send controls, observes the mock replies, captures actual rendered animation frames and checks image differences. This harness is a verification tool rather than a second Minecraft adapter.
-
-See [CI and validation](docs/CI.md) for checks, artifacts and verification limits. Historical environment logs and screenshots are retained in the local handoff rather than published in source history.
-
-## Forge build and usage
-
-```bash
 ./gradlew -Pforge :forge:build
-./gradlew -Pforge :forge:runClient
-# Automated real-client acceptance under Xvfb in the prepared environment:
+python3 scripts/check-mod-jar.py
+
+# Real client acceptance for the separate local mock preview (display/Xvfb needed):
 ./scripts/verify-forge.sh --client
+
+# Dedicated server plus two actual clients (display/Xvfb needed):
+xvfb-run -a -s '-screen 0 1280x900x24 -nolisten tcp' python3 scripts/verify-multiplayer.py
 ```
 
-The `-Pforge` switch includes the Forge subproject and its plugin repository; omitting it leaves the independent slice buildable without Forge. The mod JAR embeds `core` classes/resources and uses ForgeGradle reobfuscation. ForgeGradle is pinned to the successfully resolved version 6.0.54. `-Psmoke` includes an opt-in client acceptance driver, excluded from all mod JARs. The official MDK source and wrapper provenance are recorded in [vendor/forge-mdk](vendor/forge-mdk/README.md).
+The installable preview is `forge/build/libs/discraft-forge-1.20.1-0.1.0-dev.jar`; the core JAR alone is not a mod. Test drivers are excluded from the mod JAR. [CI](docs/CI.md) retains JAR/test artifacts for 14 days.
 
-In the client:
+## Use
 
-1. Open **DisCraft mock** on the title screen or press **F8** in game.
-2. Scroll to the two fixture messages, including an image and a three-frame GIF.
-3. Type Unicode text and insert `:discraft:` / `:dance:` with shortcuts. Press **Send** or Enter.
-4. For your own PNG/JPEG/GIF, place a regular file in `run/discraft-uploads/`, enter its filename and choose **Attach file**. Subdirectories, absolute paths and symlinks are rejected. **Demo GIF** attaches a bundled fixture without external files.
-5. The attachment status confirms bounded decode. **Send** forwards it to the mock peer; the transcript shows your message and a distinct mock reply. There is no Discord delivery.
+Install the same mod JAR on a Forge dedicated server and modded clients. The server bridge defaults to **disabled**. See [server configuration and limits](docs/SERVER-BRIDGE.md) before enabling Discord; never put a bot token in client config, command-line arguments, source, logs or chat.
 
-Minecraft acceptance produces CI artifacts with inbound PNG/GIF captures, text/custom emoji, PNG/GIF round trips, errors, and reopening. See [CI and validation](docs/CI.md). The acceptance driver invokes real widget handlers and dispatches the registered F8 mapping; it does not simulate OS mouse/keyboard hardware. Unicode strings are preserved; glyph availability depends on Minecraft fonts. Real Discord delivery, in-world use, dedicated servers, and independent production-launcher installation remain unverified.
+In a connected world, **F8** opens the **SERVER BRIDGE** composer. Only this composer is relayed; ordinary Minecraft chat is not forwarded. Place an image/GIF in the client's `discraft-uploads/`, enter its filename, attach and send. The server independently validates the bytes and derives identity from the actual player connection. A timeout can mean uncertain delivery; there is no automatic resend. Closing the composer does not retract a submitted message.
 
-See [architecture/security](docs/ARCHITECTURE.md) for the trusted relay boundary, policy limits and next integration steps.
+The title-screen **DisCraft mock** button is still a separate, in-process preview with bundled fixtures. It does not connect to a server or Discord. Unicode is preserved; glyph coverage depends on Minecraft fonts. Server-only/no-channel clients receive a limited plaintext fallback when authorized, but cannot submit through ordinary vanilla chat.
+
+See [architecture](docs/ARCHITECTURE.md), [server/operator guide](docs/SERVER-BRIDGE.md), and [CI/verification limits](docs/CI.md). Fabric, NeoForge and other Minecraft versions are deferred.

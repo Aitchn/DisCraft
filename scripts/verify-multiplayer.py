@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
 """Isolated loopback/offline acceptance; never configures or contacts a real Discord bot."""
 from pathlib import Path
-import json, os, socket, subprocess, time
+import json, os, signal, socket, subprocess, time
 
 ROOT=Path(__file__).resolve().parents[1]
 os.chdir(ROOT)
+# Let the existing finally block clean up child game JVMs on timeout/cancellation.
+def interrupted(signum, frame):
+    raise KeyboardInterrupt("Multiplayer acceptance interrupted")
+signal.signal(signal.SIGTERM, interrupted)
 OUT=ROOT/'build/evidence/multiplayer'
 OUT.mkdir(parents=True,exist_ok=True)
 (OUT/'result.txt').unlink(missing_ok=True)
@@ -16,10 +20,10 @@ with socket.socket() as reservation:
 environment=os.environ.copy()
 for secret in ('DISCRAFT_DISCORD_BOT_TOKEN','DISCRAFT_DISCORD_CHANNEL','DISCRAFT_ALLOWED_PLAYERS'):
     environment.pop(secret,None)
-environment.update(DISCRAFT_MODE='test',LIBGL_ALWAYS_SOFTWARE='true',ALSOFT_DRIVERS='null')
+environment.update(DISCRAFT_MODE='test',LIBGL_ALWAYS_SOFTWARE='true',ALSOFT_DRIVERS='null',LP_NUM_THREADS='2')
 for role in ('server','Alice','Bob'):
     with (OUT/(role+'-prepare.log')).open('w') as output:
-        subprocess.run(['./gradlew','-Pforge','-PmultiplayerSmoke','-PbridgeRole='+role,'-PbridgePort='+str(port),':forge:exportBridgeLaunch','--console=plain'],env=environment,stdout=output,stderr=subprocess.STDOUT,check=True,timeout=180)
+        subprocess.run(['./gradlew','-Pforge','-PmultiplayerSmoke','-PbridgeRole='+role,'-PbridgePort='+str(port),':forge:exportBridgeLaunch','--console=plain'],env=environment,stdout=output,stderr=subprocess.STDOUT,check=True,timeout=300)
 server_dir=ROOT/'run-mp/server';server_dir.mkdir(parents=True,exist_ok=True)
 (server_dir/'eula.txt').write_text('eula=true\n')
 (server_dir/'server.properties').write_text(f'''server-ip=127.0.0.1

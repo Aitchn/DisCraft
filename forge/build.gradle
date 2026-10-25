@@ -65,7 +65,7 @@ abstract class BridgeRunExport extends net.minecraftforge.gradle.common.util.run
         config.properties.each { k,v -> jvm.add('-D' + k + '=' + config.replace(tokens, v)) }
         def args = getArgsStream(config, tokens, false).collect(java.util.stream.Collectors.toList())
         def classpath = project.files(config.allSources.collect { it.runtimeClasspath }).asPath
-        def command = [run.javaLauncher.get().executablePath.asFile.absolutePath] + jvm.findAll { !it.startsWith('-Xmx') } + ['-Xmx1G', '-cp', classpath, run.mainClass.get()] + args
+        def command = [run.javaLauncher.get().executablePath.asFile.absolutePath] + jvm.findAll { !it.startsWith('-Xmx') } + ['-Xmx1G', '-XX:ActiveProcessorCount=2', '-cp', classpath, run.mainClass.get()] + args
         def environment = config.environment.findAll { k,v -> k == 'MOD_CLASSES' }.collectEntries { k,v -> [(k): config.replace(tokens, v)] }
         return [command: command, directory: config.workingDirectory, environment: environment]
     }
