@@ -39,7 +39,7 @@ public final class MultiplayerAcceptance {
         try{
             if(System.nanoTime()-lastDiagnostic>5_000_000_000L){
                 lastDiagnostic=System.nanoTime();
-                System.out.println("MULTIPLAYER "+ROLE+" stage="+stage+" screen="+(MC.screen==null?"none":MC.screen.getClass().getSimpleName())+" player="+(MC.player!=null)+" overlay="+(MC.getOverlay()!=null)+" bridge="+ClientBridge.status()+" available="+ClientBridge.available()+" messages="+ClientBridge.snapshot().size());
+                System.out.println("MULTIPLAYER "+ROLE+" stage="+stage+" nativePhase="+NativeChatRegression.phase()+" screen="+(MC.screen==null?"none":MC.screen.getClass().getSimpleName())+" player="+(MC.player!=null)+" overlay="+(MC.getOverlay()!=null)+" bridge="+ClientBridge.status()+" available="+ClientBridge.available()+" messages="+ClientBridge.snapshot().size());
             }
             if(System.nanoTime()>deadline)throw new AssertionError("Timeout "+ROLE+" stage="+stage+" status="+ClientBridge.status());
             if(++ticks%2!=0)return;
@@ -130,7 +130,7 @@ public final class MultiplayerAcceptance {
                     capture("Alice-reconnected.png");screen.onClose();MC.options.guiScale().set(2);MC.resizeDisplay();NativeComposer.openBridge();MC.gui.getChat().scrollChat(8);stage=20;
                 }
             }
-        }catch(Throwable failure){done=true;try{Files.createDirectories(OUT);capture(ROLE+"-failure.png");Files.writeString(OUT.resolve(ROLE+"-result.txt"),String.join("\n",checks)+"\nFAIL stage "+stage+": "+failure+"\n");}catch(Exception ignored){}failure.printStackTrace();MC.stop();}
+        }catch(Throwable failure){NativeChatRegression.cleanup();done=true;try{Files.createDirectories(OUT);capture(ROLE+"-failure.png");Files.writeString(OUT.resolve(ROLE+"-result.txt"),String.join("\n",checks)+"\nFAIL stage "+stage+": "+failure+"\n");}catch(Exception ignored){}failure.printStackTrace();MC.stop();}
     }
     private static void bob(DisCraftScreen screen,List<Message> messages)throws Exception{
         switch(stage){
@@ -178,7 +178,8 @@ public final class MultiplayerAcceptance {
             check(ClientBridge.snapshot().stream().noneMatch(m->Content.plain(m.content()).contains("vanilla-only smoke")),"Ordinary native chat still uses vanilla server chat without bridge duplication");
             NativeComposer.openBridge();MC.screen.children().stream().filter(w->w instanceof EditBox).map(w->(EditBox)w).findFirst().orElseThrow().setValue("/list");MC.screen.keyPressed(org.lwjgl.glfw.GLFW.GLFW_KEY_ENTER,0,0);stage=26;return;
         }
-        if(stage==26){if(!nativeText("players online"))return;check(true,"Slash command remains a real vanilla server command while bridge target is selected");finish();}
+        if(stage==26){if(!nativeText("players online"))return;check(true,"Slash command remains a real vanilla server command while bridge target is selected");NativeChatRegression.start(label->check(true,label));stage=40;}
+        if(stage==40&&NativeChatRegression.tick())finish();
     }
     private static int nativeFrame()throws Exception{
         var f=NativeChat.class.getDeclaredField("textures");f.setAccessible(true);var entries=(Map<?,?>)field(f.get(null),"entries");var e=entries.get(ClientBridge.emoji("dance.gif").digest());if(e==null)return -1;var get=e.getClass().getDeclaredMethod("frame");get.setAccessible(true);return (Integer)get.invoke(e);

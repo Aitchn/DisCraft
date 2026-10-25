@@ -67,6 +67,10 @@ public final class BridgeProtocolTest {
             var outbound=adapter.prepare(RelayRecord.draft(UUID.randomUUID(),"World <:smile:1111111111111111>",gif));adapter.send(outbound);
             String multipart=new String(posts.get(0),StandardCharsets.ISO_8859_1);
             check(multipart.contains("files[0]")&&multipart.contains("allowed_mentions")&&multipart.contains("enforce_nonce")&&multipart.contains("<:smile:1111111111111111>"),"Real multipart send preserves official emoji markup and suppresses mentions");
+            var captionless=adapter.prepare(RelayRecord.draft(UUID.randomUUID(),"",gif));
+            check(captionless.text().isEmpty()&&captionless.attachments().size()==1,"REST preparation preserves captionless attachments");
+            adapter.send(captionless);String imageOnly=new String(posts.get(posts.size()-1),StandardCharsets.ISO_8859_1);
+            check(imageOnly.contains("files[0]")&&!imageOnly.contains("content/media unavailable"),"Captionless multipart send does not invent an unavailable-content caption");
             var fetch=DiscordBotAdapter.class.getDeclaredMethod("fetchMedia",URI.class);fetch.setAccessible(true);
             int redirectBefore=requests.get();rejected(()->fetch.invoke(adapter,URI.create("http://127.0.0.1:"+server.getAddress().getPort()+"/redirect")),"Media redirect rejected");check(requests.get()==redirectBefore+1,"Media redirect is not followed");
             rejected(()->fetch.invoke(adapter,URI.create("http://127.0.0.1:"+server.getAddress().getPort()+"/huge")),"Oversize HTTP response stream cancelled");

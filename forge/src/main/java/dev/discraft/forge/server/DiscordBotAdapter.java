@@ -72,7 +72,7 @@ public final class DiscordBotAdapter implements DiscordAdapter {
         ready();var message=new JsonObject();message.addProperty("id",record.id().toString());message.addProperty("content",record.text());
         var author=new JsonObject();author.addProperty("username","Minecraft");message.add("author",author);
         var parsed=convert(message);
-        var prepared=new RelayRecord(record.id(),record.author(),parsed.text(),record.attachments(),parsed.catalog(),parsed.emoji());prepared.encode();return prepared;
+        var prepared=new RelayRecord(record.id(),record.author(),record.text().isBlank()&&!record.attachments().isEmpty()?"":parsed.text(),record.attachments(),parsed.catalog(),parsed.emoji());prepared.encode();return prepared;
     }
     @Override public void send(RelayRecord message)throws Exception{
         ready();var payload=new JsonObject();String text=message.text();for(var entry:message.catalog().entrySet()){var c=entry.getValue();text=text.replace(":"+entry.getKey()+":","<"+(c.animated()?"a":"")+":"+c.name()+":"+c.id()+">");}
