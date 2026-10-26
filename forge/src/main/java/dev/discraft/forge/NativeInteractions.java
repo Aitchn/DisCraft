@@ -24,13 +24,7 @@ public final class NativeInteractions {
     private record Item(String glyph,String name,String source,String value,Attachment media,boolean custom,boolean file,String id,boolean enabled) {}
     private record Hit(int x,int y,int w,int h,Item item) {}
     private static final List<Hit> hits=new ArrayList<>();
-    private static final String[][] UNICODE={
-        {"😀","😃","😄","😁","😆","😅","😂","🤣","🙂","🙃","😉","😊","😇","😍","🥰","😘","😋","😛","😜","🤪","😎","🤓","🤔","😐","😑","😶","😏","😒","🙄","😬","😌","😔","😪","😴","😷","🤒","🤕","🤢","🤮","🥺","😢","😭","😤","😡","🤯","😳","😱","😨"},
-        {"🐶","🐱","🐭","🐹","🐰","🦊","🐻","🐼","🐨","🐯","🦁","🐮","🐷","🐸","🐵","🐔"},
-        {"🍎","🍐","🍊","🍋","🍌","🍉","🍇","🍓","🍒","🍑","🥑","🍔","🍕","🍣","🍰","☕"},
-        {"⚽","🏀","🎮","🎲","🎵","🎸","🎨","🏆","🚗","🚲","✈","🚀","🏠","⛰","🌞","⭐"},
-        {"❤","💛","💚","💙","💜","✅","❌","❗","❓","✨","🔥","💯","👋","👍","👎","👏"}
-    };
+    private static String builtinKey="";private static List<Item> builtinItems=List.of();
     static void attach(ChatScreen owner,ScreenEvent.Init.Post event,EditBox nativeInput){
         screen=owner;input=nativeInput;input.setWidth(Math.max(40,owner.width-30));
         event.addListener(new Smiley(owner.width-23,owner.height-17));
@@ -44,7 +38,7 @@ public final class NativeInteractions {
     private static List<Item> items(){
         var list=new ArrayList<Item>();
         if(tab==1)return list;
-        if(tab==0){try{if(demoGif==null)demoGif=Attachment.fromResource("dance.gif");list.add(new Item("","dance.gif","本機示範 GIF（非遠端搜尋）","",demoGif,false,true,"",true));}catch(Exception ignored){}return list;}
+        if(tab==0){if(!ClientGuildEmoji.snapshot().fixture())return list;try{if(demoGif==null)demoGif=Attachment.fromResource("dance.gif");list.add(new Item("","dance.gif","本機示範 GIF（非遠端搜尋）","",demoGif,false,true,"",true));}catch(Exception ignored){}return list;}
         if(category==5){
             var snapshot=ClientGuildEmoji.snapshot();
             for(var entry:snapshot.entries()){
@@ -54,10 +48,10 @@ public final class NativeInteractions {
                 String name=":"+entry.name()+":";if(snapshot.entries().stream().filter(e->e.name().equalsIgnoreCase(entry.name())).count()>1)name+=" #"+entry.id().substring(entry.id().length()-6);
                 list.add(new Item("",name,source,entry.markup(),ClientGuildEmoji.preview(entry.id()),true,false,entry.id(),entry.usable()));
             }
-        }else for(String glyph:UNICODE[Math.min(category,UNICODE.length-1)])list.add(new Item(glyph,":"+Character.getName(glyph.codePointAt(0)).toLowerCase(Locale.ROOT).replace(' ','_')+":","Unicode · 本機",glyph,null,false,false,"",true));
+        }
         return list;
     }
-    private static List<Item> filtered(){String q=query.toLowerCase(Locale.ROOT);return items().stream().filter(i->q.isBlank()||(i.name()+i.source()+i.glyph()).toLowerCase(Locale.ROOT).contains(q)).toList();}
+    private static List<Item> filtered(){String q=query.toLowerCase(Locale.ROOT);if(tab==2&&category!=5){String key=category+"\n"+q;if(!key.equals(builtinKey)){builtinKey=key;builtinItems=TwemojiCatalog.entries().stream().filter(e->q.isBlank()?e.category()==category:(e.name()+" "+e.value()).toLowerCase(Locale.ROOT).contains(q)).map(e->new Item(e.value(),e.name(),"Twemoji "+TwemojiCatalog.VERSION,e.value(),null,false,false,"",true)).toList();}return builtinItems;}return items().stream().filter(i->q.isBlank()||(i.name()+i.source()+i.glyph()).toLowerCase(Locale.ROOT).contains(q)).toList();}
     private static void pick(Item item){
         if(!item.id().isEmpty()){
             var snapshot=ClientGuildEmoji.snapshot();var current=snapshot.find(item.id());if(current==null||!current.usable())return;
@@ -103,16 +97,16 @@ public final class NativeInteractions {
             if(guild){String[] filters={"全部","靜態","動畫"};for(int i=0;i<3;i++){if(guildFilter==i)g.fill(x+38+i*65,y+64,x+99+i*65,y+79,0xff4e5058);UiText.draw(g,filters[i],x+43+i*65,y+65,0xffdddddd);}
                 if(!ClientGuildEmoji.snapshot().ready())UiText.draw(g,"伺服器表情目錄暫不可用",x+42,y+91,0xffb5bac1);
             }
-            if(tab==1){UiText.draw(g,"尚未連接貼圖來源",x+48,y+85,0xffb5bac1);}else{
+            if(tab==1){UiText.draw(g,"尚未連接貼圖來源",x+48,y+85,0xffb5bac1);}else if(tab==0&&!ClientGuildEmoji.snapshot().fixture()){UiText.draw(g,"GIF 服務未啟用",x+48,y+85,0xffb5bac1);}else{
                 int cell=tab==0?80:28,columns=Math.max(1,(w-42)/cell),rows=Math.max(1,(h-96-header)/cell),maxScroll=Math.max(0,(all.size()+columns-1)/columns-rows);scroll=Math.min(scroll,maxScroll);
                 for(int row=0;row<rows;row++)for(int col=0;col<columns;col++){
                     int index=(row+scroll)*columns+col;if(index>=all.size())continue;var item=all.get(index);int ix=x+38+col*cell,iy=y+65+header+row*cell;var hit=new Hit(ix,iy,cell-2,cell-2,item);hits.add(hit);if(!item.id().isEmpty()&&item.enabled())visible.add(item.id());
                     if(inside(event.getMouseX(),event.getMouseY(),ix,iy,cell-2,cell-2)){g.fill(ix,iy,ix+cell-2,iy+cell-2,0xff4e5058);hover=item;}
-                    if(item.media()!=null)draw(g,item.media(),ix+3,iy+3,cell-8,cell-8);else if(!item.id().isEmpty()){g.drawCenteredString(MC.font,item.enabled()?"…":"×",ix+cell/2,iy+8,item.enabled()?0xffb5bac1:0xff66686b);}else{g.pose().pushPose();g.pose().translate(ix+3,iy+4,0);g.pose().scale(2,2,1);g.drawString(MC.font,item.glyph(),0,0,0xffffcf55,false);g.pose().popPose();}
+                    var builtin=item.glyph().isEmpty()?null:TwemojiCatalog.exact(item.glyph());var builtinImage=builtin==null?null:TwemojiCatalog.asset(builtin);if(builtinImage!=null)draw(g,builtinImage,ix+3,iy+3,cell-8,cell-8);else if(item.media()!=null)draw(g,item.media(),ix+3,iy+3,cell-8,cell-8);else if(!item.id().isEmpty()){g.drawCenteredString(MC.font,item.enabled()?"…":"×",ix+cell/2,iy+8,item.enabled()?0xffb5bac1:0xff66686b);}else{g.pose().pushPose();g.pose().translate(ix+3,iy+4,0);g.pose().scale(2,2,1);g.drawString(MC.font,item.glyph(),0,0,0xffffcf55,false);g.pose().popPose();}
                 }
             }
             ClientGuildEmoji.visible(visible);
-            if(hover!=null)UiText.draw(g,UiText.fit(hover.name()+" · "+hover.source(),w-16),x+8,y+h-20,0xffdbdee1);else UiText.draw(g,UiText.fit(tab==0?"本機示範 · 無遠端 GIF 搜尋":tab==1?"貼圖來源不可用":(guild?ClientGuildEmoji.snapshot().label()+" · "+all.size()+(ClientGuildEmoji.snapshot().complete()?"":" · 目錄已達上限"):"選擇表情 · Unicode"),w-16),x+8,y+h-20,0xffb5bac1);
+            if(hover!=null)UiText.draw(g,UiText.fit(hover.name()+" · "+hover.source(),w-16),x+8,y+h-20,0xffdbdee1);else UiText.draw(g,UiText.fit(tab==0?(ClientGuildEmoji.snapshot().fixture()?"TEST 本機示範 · 非 GIF 服務":"GIF 服務未啟用"):tab==1?"貼圖來源不可用":(guild?ClientGuildEmoji.snapshot().label()+" · "+all.size()+(ClientGuildEmoji.snapshot().complete()?"":" · 目錄已達上限"):"Twemoji "+TwemojiCatalog.VERSION+" · "+all.size()),w-16),x+8,y+h-20,0xffb5bac1);
         }finally{textures.end();}
     }
     private static void card(GuiGraphics g,int mx,int my){

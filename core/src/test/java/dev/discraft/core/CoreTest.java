@@ -14,7 +14,7 @@ import java.util.concurrent.atomic.AtomicLong;
 public final class CoreTest {
     private static int checks;
     public static void main(String[] args) throws Exception {
-        unicode(); media(); pipeline(); uploads();
+        TwemojiTest.run();unicode(); media(); pipeline(); uploads();
         System.out.println("PASS: " + checks + " behavioral checks (Unicode, media, GIF disposal, policy, pipeline, upload confinement)");
     }
     private static void check(boolean condition, String message) {

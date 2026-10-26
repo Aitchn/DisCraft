@@ -1,0 +1,6 @@
+Twemoji 17.0.3 PNG artwork: Copyright Twitter, Inc. and other contributors; maintained by Jason Sofonia, Justine De Caires and Twemoji contributors.
+Source: https://github.com/jdecked/twemoji/tree/v17.0.3
+Artwork: CC BY 4.0, https://creativecommons.org/licenses/by/4.0/ (full LICENSE-GRAPHICS.txt included). Code license: MIT (LICENSE-MIT.txt included); no upstream JavaScript is executed.
+Unicode 17.0 sequence/name data: Copyright 2025 Unicode, Inc.; Unicode License v3 in LICENSE-UNICODE.txt.
+Changes: PNG bytes unmodified; selected/indexed and rendered at interface sizes by DisCraft. The index includes explicit qualification aliases; text VS15 remains text.
+This is the same Twemoji artwork family used by Discord, not a claim of exact Discord release synchronization.

@@ -10,6 +10,13 @@ with zipfile.ZipFile(jar) as archive:
         'META-INF/mods.toml',
         'dev/discraft/forge/DisCraft.class',
         'dev/discraft/core/ChatSession.class',
+        'dev/discraft/core/TwemojiCatalog.class',
+        'twemoji/index.tsv',
+        'twemoji/NOTICE.txt',
+        'twemoji/LICENSE-GRAPHICS.txt',
+        'twemoji/LICENSE-MIT.txt',
+        'twemoji/LICENSE-UNICODE.txt',
+        'assets/discraft/font/selector.json',
         'dev/discraft/forge/bridge/BridgeNetwork.class',
         'dev/discraft/forge/bridge/NativeFallbackChat.class',
         'dev/discraft/forge/bridge/NativeItemComponents.class',
@@ -50,6 +57,7 @@ with zipfile.ZipFile(jar) as archive:
         'fixtures/emoji.png',
     }
     assert archive.getinfo('assets/discraft/font/ui.otf').file_size<10*1024*1024, 'UI font exceeded packaged resource budget'
+    assert len([n for n in names if n.startswith('twemoji/') and n.endswith('.png')])==3953, 'Pinned emoji inventory missing'
     assert required <= names, f'Missing mod contents: {required - names}'
     assert not any(name.endswith('discraft-server.properties') or 'ServerConfigTest' in name for name in names), 'Private config/test leaked into mod JAR'
     assert 'assets/discraft/textures/gui/smiley.png' not in names, 'Reference screenshot icon leaked into mod JAR'

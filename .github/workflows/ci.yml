@@ -138,6 +138,8 @@ jobs:
         run: timeout --kill-after=45s 1500 xvfb-run -a -s '-screen 0 1280x900x24 -nolisten tcp' python3 scripts/verify-multiplayer.py
       - name: Run native UI text, glyph metrics and resource reload checks
         run: timeout --kill-after=45s 600 xvfb-run -a -s '-screen 0 1800x1200x24 -nolisten tcp' python3 scripts/verify-ui-text.py --tag after
+      - name: Run pinned Twemoji native/picker/Unicode/reload acceptance
+        run: timeout --kill-after=45s 600 xvfb-run -a -s '-screen 0 1280x900x24 -nolisten tcp' python3 scripts/verify-twemoji.py
       - name: Run native item and advancement component hover acceptance
         run: timeout --kill-after=45s 600 xvfb-run -a -s '-screen 0 1280x900x24 -nolisten tcp' python3 scripts/verify-native-hover.py
       - name: Run native Discord member display and author click acceptance
@@ -152,6 +154,7 @@ jobs:
           path: |
             build/evidence/multiplayer/
             build/evidence/ui-text/
+            build/evidence/twemoji/
             build/evidence/native-hover/
             build/evidence/discord-author/
             build/evidence/optional-client/

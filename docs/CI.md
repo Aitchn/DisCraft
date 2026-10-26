@@ -100,3 +100,9 @@ This regression fails against the earlier text-matching implementation. The
 fixture also proves a reconnect changes the sender generation despite both old
 and new unsigned native indices being zero, and retains the sender-filter test
 while other recipients receive an unfiltered view.
+
+Pinned Unicode artwork is checked by the core suite (all 3,953 PNG checksums and
+actual production-loader decoding), then `scripts/verify-twemoji.py` exercises
+native ordinary/bridge chat, picker search/selection, guild coexistence, GUI
+scales, reload and cleanup in a real isolated server/client. Evidence is saved
+under `build/evidence/twemoji/`; it contacts no live Discord or external provider.

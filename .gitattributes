@@ -1,0 +1,2 @@
+# Preserve vendored license text byte-for-byte, including upstream whitespace.
+core/src/main/resources/twemoji/LICENSE-* -whitespace

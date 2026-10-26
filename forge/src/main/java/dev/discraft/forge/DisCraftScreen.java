@@ -134,6 +134,7 @@ public final class DisCraftScreen extends Screen {
         graphics.drawString(font, title, 12, 9, 0xffa6c9ff, false);
         int top = 56, bottom = top + viewportHeight();
         var messages = networked ? ClientBridge.snapshot() : session == null ? List.<Message>of() : session.snapshot();
+        retainUnicode(messages);
         contentHeight = messages.stream().mapToInt(this::messageHeight).sum();
         if (scrollToBottom) { scroll = Math.max(0, contentHeight - viewportHeight()); scrollToBottom = false; }
         scroll = Math.max(0, Math.min(scroll, Math.max(0, contentHeight - viewportHeight())));
@@ -149,20 +150,24 @@ public final class DisCraftScreen extends Screen {
         graphics.drawString(font, font.plainSubstrByWidth((busy ? "Working… " : "") + status, width - 24), 12, height - 20, 0xffc5ccdd, false);
         super.render(graphics, mouseX, mouseY, partialTick);
     }
+    private final Set<String> unicodeAllowed=new LinkedHashSet<>();
+    private record EmojiLines(List<net.minecraft.util.FormattedCharSequence> lines,Map<Integer,TwemojiCatalog.Entry> markers){}
+    private void retainUnicode(List<Message> messages){var wanted=new LinkedHashSet<String>();for(var message:messages)for(var part:TwemojiCatalog.parts(Content.plain(message.content())))if(part.emoji()!=null)wanted.add(part.emoji().asset());unicodeAllowed.retainAll(wanted);for(String key:wanted)if(unicodeAllowed.size()<TwemojiCatalog.CACHE_ENTRIES)unicodeAllowed.add(key);}
+    private EmojiLines emojiLines(String text){var component=Component.empty();var markers=new HashMap<Integer,TwemojiCatalog.Entry>();for(var part:TwemojiCatalog.parts(text)){if(part.emoji()==null||!unicodeAllowed.contains(part.emoji().asset()))component.append(NativeChat.emojiLiteral(part.text()));else{int color=0x350000+markers.size();markers.put(color,part.emoji());component.append(Component.literal("\u3000").withStyle(net.minecraft.network.chat.Style.EMPTY.withColor(color)));}}return new EmojiLines(font.split(component,Math.max(50,width-48)),markers);}
     private int messageHeight(Message message) {
-        int lines = font.split(Component.literal(Content.plain(message.content())), Math.max(50, width - 48)).size();
+        int lines = emojiLines(Content.plain(message.content())).lines().size();
         boolean custom = message.content().stream().anyMatch(c -> c instanceof Content.CustomEmoji);
         return 30 + lines * 10 + (custom ? 28 : 0) + message.attachments().size() * 92;
     }
     private int renderMessage(GuiGraphics graphics, Message message, int y, int top, int bottom) {
-        var lines = font.split(Component.literal(Content.plain(message.content())), Math.max(50, width - 48));
+        var preview=emojiLines(Content.plain(message.content()));var lines=preview.lines();
         var custom = message.content().stream().filter(c -> c instanceof Content.CustomEmoji).map(c -> (Content.CustomEmoji)c).toList();
         int cardHeight = 30 + lines.size() * 10 + (custom.isEmpty() ? 0 : 28) + message.attachments().size() * 92;
         if (y + cardHeight >= top && y < bottom) {
             graphics.fill(12, y, width - 12, y + cardHeight - 5, message.origin() == Message.Origin.CLIENT ? 0xff2c3d59 : 0xff233247);
             graphics.drawString(font, message.author(), 20, y + 6, 0xff92c5ff, false);
             int row = y + 20;
-            for (var line : lines) { graphics.drawString(font, line, 20, row, 0xfff1f1f7, false); row += 10; }
+            for (var line : lines) { graphics.drawString(font, line, 20, row, 0xfff1f1f7, false);if(row+10>=top&&row<bottom){final int baseline=row;final int[] advance={20};line.accept((index,style,point)->{var color=style.getColor();var entry=point==0x3000&&color!=null?preview.markers().get(color.getValue()):null;if(entry!=null){var image=TwemojiCatalog.asset(entry);if(image!=null)drawMedia(graphics,image,advance[0],baseline,Math.min(8,font.width("\u3000")),8);}advance[0]+=font.width(Component.literal(new String(Character.toChars(point))).setStyle(style));return true;});}row += 10; }
             int x = 20;
             for (var definition : custom) {
                 Attachment asset = networked ? ClientBridge.emoji(definition.mediaKey()) : emoji.get(definition.mediaKey());
