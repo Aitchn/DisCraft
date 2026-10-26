@@ -47,7 +47,7 @@ public final class BridgeProtocolTest {
         rejected(()->RelayRecord.decode(new byte[RelayRecord.MAX_BYTES+1]),"Oversize packet rejected before decode");
         byte[] trailing=Arrays.copyOf(original.encode(),original.encode().length+1);rejected(()->RelayRecord.decode(trailing),"Trailing bytes rejected");
         var server=HttpServer.create(new InetSocketAddress("127.0.0.1",0),0);String base="http://127.0.0.1:"+server.getAddress().getPort()+"/api/v10/";
-        var posts=new ArrayList<byte[]>();var auth=new AtomicBoolean(true);var bot=new AtomicBoolean(true);var code=new AtomicInteger(200);var requests=new AtomicInteger();var lastQuery=new AtomicReference<String>("");
+        var receiptValid=new AtomicBoolean(true);var posts=new ArrayList<byte[]>();var auth=new AtomicBoolean(true);var bot=new AtomicBoolean(true);var code=new AtomicInteger(200);var requests=new AtomicInteger();var lastQuery=new AtomicReference<String>("");
         var mediaMode=new AtomicReference<String>("ok");var mediaRequests=new AtomicInteger();
         String channel="1234567890123456";String first="2234567890123456",last="3234567890123456";
         server.createContext("/",exchange->{
@@ -60,7 +60,7 @@ public final class BridgeProtocolTest {
                 else if(path.equals("/redirect")){status=302;exchange.getResponseHeaders().set("Location","http://127.0.0.1:"+server.getAddress().getPort()+"/file.png");response=new byte[]{0};}
                 else {
                     auth.compareAndSet(true,("Bot discraft-local-test-token").equals(exchange.getRequestHeaders().getFirst("Authorization")));
-                    if(exchange.getRequestMethod().equals("POST")){posts.add(exchange.getRequestBody().readAllBytes());response=("{\"id\":\""+last+"\"}").getBytes(StandardCharsets.UTF_8);}
+                    if(exchange.getRequestMethod().equals("POST")){posts.add(exchange.getRequestBody().readAllBytes());response=("{\"id\":\""+(receiptValid.get()?last:"invalid")+"\"}").getBytes(StandardCharsets.UTF_8);}
                     else if(path.endsWith("/users/@me")){response=("{\"id\":\"9999999999999999\",\"bot\":"+bot.get()+"}").getBytes(StandardCharsets.UTF_8);}
                     else if(path.endsWith("/messages")){
                         if(exchange.getRequestURI().getQuery().contains("limit=1"))response=("[{\"id\":\""+first+"\"}]").getBytes(StandardCharsets.UTF_8);
@@ -88,7 +88,7 @@ public final class BridgeProtocolTest {
             code.set(500);rejected(adapter::poll,"Transient REST outage reported without resetting cursor");int beforeRetry=requests.get();
             check(adapter.poll().isEmpty()&&requests.get()==beforeRetry,"Polling backoff prevents immediate reconnect requests");
             Thread.sleep(2100);check(adapter.poll().isEmpty()&&lastQuery.get().contains("after=3234567890123458"),"Polling reconnect retains cursor and does not replay old messages");
-            var outbound=adapter.prepare(RelayRecord.draft(UUID.randomUUID(),"World <:smile:1111111111111111>",gif));adapter.send(outbound);
+            var outbound=adapter.prepare(RelayRecord.draft(UUID.randomUUID(),"World <:smile:1111111111111111>",gif));check(adapter.sendWithReceipt(outbound).equals(last),"Successful send returns exact message ID for scoped readback");
             String multipart=new String(posts.get(0),StandardCharsets.ISO_8859_1);
             check(multipart.contains("files[0]")&&multipart.contains("allowed_mentions")&&multipart.contains("enforce_nonce")&&multipart.contains("<:smile:1111111111111111>"),"Real multipart send preserves official emoji markup and suppresses mentions");
             var captionless=adapter.prepare(RelayRecord.draft(UUID.randomUUID(),"",gif));
@@ -146,6 +146,11 @@ public final class BridgeProtocolTest {
         }
         try(var adapter=new DiscordBotAdapter(URI.create(base),channel,"discraft-local-test-token",true)){
             adapter.poll();code.set(403);rejected(()->adapter.send(original),"Missing channel permissions fail closed");int before=requests.get();rejected(()->adapter.send(original),"Terminal permission failure requires operator correction");check(requests.get()==before,"No retry after 403");
+        }
+        try(var adapter=new DiscordBotAdapter(URI.create(base),channel,"discraft-local-test-token",true)){
+            receiptValid.set(false);int before=posts.size();
+            rejected(()->adapter.send(original),"Invalid receipt reports uncertain delivery");
+            check(posts.size()==before+1,"Invalid receipt never retries an already posted message");
         }
         } finally {server.stop(0);}
         System.out.println("PASS "+checks+" bridge protocol checks (loopback HTTP; not live Discord)");

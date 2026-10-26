@@ -75,7 +75,9 @@ public final class DiscordBotAdapter implements DiscordAdapter {
         var parsed=convert(message,record.mentions());
         var prepared=new RelayRecord(record.id(),record.author(),record.text().isBlank()&&!record.attachments().isEmpty()?"":parsed.text(),record.attachments(),parsed.catalog(),parsed.emoji(),record.actor(),parsed.mentions());prepared.encode();return prepared;
     }
-    @Override public void send(RelayRecord message)throws Exception{
+    @Override public void send(RelayRecord message)throws Exception{sendWithReceipt(message);}
+    // Receipt lets an explicit test harness read back only its own posts, without scanning history.
+    String sendWithReceipt(RelayRecord message)throws Exception{
         ready();var payload=new JsonObject();var text=new StringBuilder();var users=new JsonArray();var mentioned=new LinkedHashSet<String>();int at=0;
         for(var mention:message.mentions()){
             text.append(expandEmoji(message.text().substring(at,mention.start()),message.catalog()));
@@ -86,14 +88,18 @@ public final class DiscordBotAdapter implements DiscordAdapter {
         payload.addProperty("content","[Minecraft "+message.author()+"] "+text);
         payload.addProperty("tts",false);payload.addProperty("nonce",message.id().toString().replace("-","").substring(0,24));payload.addProperty("enforce_nonce",true);
         var mentions=new JsonObject();mentions.add("parse",new JsonArray());mentions.add("users",users);payload.add("allowed_mentions",mentions);
-        if(message.attachments().isEmpty()){request("POST","channels/"+channel+"/messages",payload.toString().getBytes(StandardCharsets.UTF_8),"application/json");return;}
+        if(message.attachments().isEmpty())return receipt(request("POST","channels/"+channel+"/messages",payload.toString().getBytes(StandardCharsets.UTF_8),"application/json"));
         var file=message.attachments().get(0);if(file.bytes().length>RelayRecord.FILE_BYTES)throw new IOException("Bridge file budget exceeded");
         String name=file.name().replaceAll("[^A-Za-z0-9_.-]","_");if(name.length()>80)name=name.substring(0,80);
         var files=new JsonArray();var description=new JsonObject();description.addProperty("id",0);description.addProperty("filename",name);description.addProperty("is_spoiler",file.name().startsWith("SPOILER_"));files.add(description);payload.add("attachments",files);
         String boundary="DisCraft"+UUID.randomUUID().toString().replace("-","");var bytes=new ByteArrayOutputStream();
         bytes.write(("--"+boundary+"\r\nContent-Disposition: form-data; name=\"payload_json\"\r\nContent-Type: application/json\r\n\r\n"+payload+"\r\n--"+boundary+"\r\nContent-Disposition: form-data; name=\"files[0]\"; filename=\""+name+"\"\r\nContent-Type: application/octet-stream\r\n\r\n").getBytes(StandardCharsets.UTF_8));
         bytes.write(file.bytes());bytes.write(("\r\n--"+boundary+"--\r\n").getBytes(StandardCharsets.UTF_8));
-        request("POST","channels/"+channel+"/messages",bytes.toByteArray(),"multipart/form-data; boundary="+boundary);
+        return receipt(request("POST","channels/"+channel+"/messages",bytes.toByteArray(),"multipart/form-data; boundary="+boundary));
+    }
+    private static String receipt(byte[] body)throws IOException{
+        try{String id=json(body).get("id").getAsString();if(id.matches("[0-9]{15,22}"))return id;}catch(Exception ignored){}
+        throw new IOException("Discord send receipt invalid; delivery uncertain, do not retry automatically");
     }
     private static String expandEmoji(String text,Map<String,Content.CustomEmoji> catalog){for(var entry:catalog.entrySet()){var c=entry.getValue();text=text.replace(":"+entry.getKey()+":","<"+(c.animated()?"a":"")+":"+c.name()+":"+c.id()+">");}return text;}
     @Override public List<RelayRecord> poll()throws Exception{
