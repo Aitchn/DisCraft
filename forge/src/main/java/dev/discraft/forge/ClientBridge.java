@@ -19,7 +19,7 @@ public final class ClientBridge {
     private static final Deque<RelayRecord> history=new ArrayDeque<>();
     private static final Map<UUID,CompletableFuture<String>> pending=new ConcurrentHashMap<>();
     private static final Set<UUID> seen=new LinkedHashSet<>();
-    private static final ThreadPoolExecutor decoder=new ThreadPoolExecutor(1,1,0,TimeUnit.SECONDS,new ArrayBlockingQueue<>(8),r->{var t=new Thread(r,"DisCraft client decoder");t.setDaemon(true);return t;});
+    private static final ThreadPoolExecutor decoder=new ThreadPoolExecutor(1,1,0,TimeUnit.SECONDS,new ArrayBlockingQueue<>(16),r->{var t=new Thread(r,"DisCraft client decoder");t.setDaemon(true);return t;});
     private static volatile long generation;
     private static volatile boolean enabled;
     private static volatile String status="Server bridge unavailable";
@@ -30,6 +30,7 @@ public final class ClientBridge {
     public static String status(){return status;}
     public static boolean available(){var c=Minecraft.getInstance().getConnection();return enabled&&c!=null&&BridgeNetwork.CHANNEL.isRemotePresent(c.getConnection());}
     public static List<Message> snapshot(){return history.stream().map(RelayRecord::message).toList();}
+    public static Map<String,Content.CustomEmoji> catalog(){var all=new LinkedHashMap<String,Content.CustomEmoji>();for(var r:history)all.putAll(r.catalog());return Map.copyOf(all);}
     public static Attachment emoji(String key){for(var r:history)if(r.emoji().containsKey(key))return r.emoji().get(key);return null;}
     public static String emojiShortcut(int index){
         var all=new LinkedHashMap<String,Content.CustomEmoji>();for(var r:history)for(var e:r.catalog().values())if(e.id().matches("[0-9]{15,22}"))all.put(e.id(),e);

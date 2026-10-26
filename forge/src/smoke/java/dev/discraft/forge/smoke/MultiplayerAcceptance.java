@@ -159,7 +159,7 @@ public final class MultiplayerAcceptance {
             if(++nativeTicks<4||nativeFrame()==nativeFirstFrame)return;check(true,"Native chat GIF uploaded a different real animation frame");capture("Native-chat-GIF-emoji-frame1.png");
             var uploads=MC.gameDirectory.toPath().resolve("discraft-uploads");Files.createDirectories(uploads);
             try(var in=Attachment.class.getResourceAsStream("/fixtures/landscape.png")){Files.copy(in,uploads.resolve("landscape.png"),StandardCopyOption.REPLACE_EXISTING);}
-            var file=MC.screen.children().stream().filter(w->w instanceof EditBox e&&e.getMessage().getString().equals("Attachment filename")).map(w->(EditBox)w).findFirst().orElseThrow();file.setValue("landscape.png");click("Attach");stage=22;return;
+            var attach=NativeComposer.class.getDeclaredMethod("attach",String.class);attach.setAccessible(true);attach.invoke(null,"landscape.png");stage=22;return;
         }
         if(stage==22){
             var selected=NativeComposer.class.getDeclaredField("attachment");selected.setAccessible(true);if(selected.get(null)==null)return;
@@ -170,7 +170,7 @@ public final class MultiplayerAcceptance {
             check(true,"Vanilla ChatScreen Enter sends PNG and emoji through authoritative server packets");MC.setScreen(new ChatScreen(""));stage=24;nativeTicks=0;return;
         }
         if(stage==24){
-            if(++nativeTicks<30)return;capture("Native-chat-PNG-send.png");click("To: bridge");
+            if(++nativeTicks<30)return;capture("Native-chat-PNG-send.png");
             MC.screen.children().stream().filter(w->w instanceof EditBox).map(w->(EditBox)w).findFirst().orElseThrow().setValue("vanilla-only smoke");MC.screen.keyPressed(org.lwjgl.glfw.GLFW.GLFW_KEY_ENTER,0,0);stage=25;return;
         }
         if(stage==25){
@@ -179,7 +179,12 @@ public final class MultiplayerAcceptance {
             NativeComposer.openBridge();MC.screen.children().stream().filter(w->w instanceof EditBox).map(w->(EditBox)w).findFirst().orElseThrow().setValue("/list");MC.screen.keyPressed(org.lwjgl.glfw.GLFW.GLFW_KEY_ENTER,0,0);stage=26;return;
         }
         if(stage==26){if(!nativeText("players online"))return;check(true,"Slash command remains a real vanilla server command while bridge target is selected");NativeChatRegression.start(label->check(true,label));stage=40;}
-        if(stage==40&&NativeChatRegression.tick())finish();
+        if(stage==40&&NativeChatRegression.tick()){NativeComposer.openBridge();var attach=NativeComposer.class.getDeclaredMethod("attach",String.class);attach.setAccessible(true);attach.invoke(null,"landscape.png");stage=41;nativeTicks=0;}
+        if(stage==41){var f=NativeComposer.class.getDeclaredField("attachment");f.setAccessible(true);if(f.get(null)==null)return;NativeInteractions.openPicker();stage=42;nativeTicks=0;}
+        if(stage==42){if(++nativeTicks<12)return;capture("Native-Discord-picker-card.png");var close=NativeInteractions.class.getDeclaredMethod("closePicker");close.setAccessible(true);close.invoke(null);var toggle=NativeComposer.class.getDeclaredMethod("toggleSpoiler");toggle.setAccessible(true);toggle.invoke(null);stage=43;nativeTicks=0;}
+        if(stage==43){if(++nativeTicks<6)return;capture("Native-spoiler-preview.png");var input=MC.screen.children().stream().filter(w->w instanceof EditBox).map(w->(EditBox)w).findFirst().orElseThrow();input.setValue("spoiler-native demo");MC.keyboardHandler.keyPress(MC.getWindow().getWindow(),257,0,1,0);MC.keyboardHandler.keyPress(MC.getWindow().getWindow(),257,0,0,0);stage=44;}
+        if(stage==44){if(ClientBridge.snapshot().stream().noneMatch(m->m.author().equals("Alice")&&Content.plain(m.content()).equals("spoiler-native demo")&&!m.attachments().isEmpty()&&m.attachments().get(0).name().startsWith("SPOILER_")))return;check(true,"Native spoiler flag survives authoritative attachment transport");MC.setScreen(new ChatScreen(""));MC.gui.getChat().resetChatScroll();stage=45;nativeTicks=0;}
+        if(stage==45){if(++nativeTicks<12)return;capture("Native-incoming-spoiler-hidden.png");finish();}
     }
     private static int nativeFrame()throws Exception{
         var f=NativeChat.class.getDeclaredField("textures");f.setAccessible(true);var entries=(Map<?,?>)field(f.get(null),"entries");var e=entries.get(ClientBridge.emoji("dance.gif").digest());if(e==null)return -1;var get=e.getClass().getDeclaredMethod("frame");get.setAccessible(true);return (Integer)get.invoke(e);
