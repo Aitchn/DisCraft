@@ -17,6 +17,10 @@ with zipfile.ZipFile(jar) as archive:
         'dev/discraft/forge/server/EmojiThumbnailCache.class',
         'dev/discraft/forge/bridge/GuildEmojiCatalog.class',
         'dev/discraft/forge/ClientGuildEmoji.class',
+        'dev/discraft/forge/UiText.class',
+        'assets/discraft/font/ui.json',
+        'assets/discraft/font/ui.otf',
+        'assets/discraft/font/ofl.txt',
         'dev/discraft/forge/server/DiscordBotAdapter.class',
         'dev/discraft/forge/ClientBridge.class',
         'dev/discraft/forge/ClipboardDesktop.class',
@@ -29,6 +33,7 @@ with zipfile.ZipFile(jar) as archive:
         'fixtures/landscape.png',
         'fixtures/emoji.png',
     }
+    assert archive.getinfo('assets/discraft/font/ui.otf').file_size<10*1024*1024, 'UI font exceeded packaged resource budget'
     assert required <= names, f'Missing mod contents: {required - names}'
     assert not any(name.endswith('discraft-server.properties') or 'ServerConfigTest' in name for name in names), 'Private config/test leaked into mod JAR'
     assert 'assets/discraft/textures/gui/smiley.png' not in names, 'Reference screenshot icon leaked into mod JAR'

@@ -34,7 +34,7 @@ public final class NativeInteractions {
     static void attach(ChatScreen owner,ScreenEvent.Init.Post event,EditBox nativeInput){
         screen=owner;input=nativeInput;input.setWidth(Math.max(40,owner.width-30));
         event.addListener(new Smiley(owner.width-23,owner.height-17));
-        search=new EditBox(MC.font,px()+10,py()+35,pw()-20,18,Component.literal("搜尋表情"));search.setHint(Component.literal("搜尋"));search.setMaxLength(80);search.setValue(query);search.setResponder(s->{query=s;scroll=0;});search.visible=open;search.active=open;event.addListener(search);
+        search=new EditBox(UiText.font(),px()+10,py()+35,pw()-20,20,Component.literal("搜尋表情"));search.setHint(Component.literal("搜尋"));search.setMaxLength(80);search.setValue(query);search.setResponder(s->{query=s;scroll=0;});search.visible=open;search.active=open;event.addListener(search);
     }
     static void reset(){ClientGuildEmoji.visible(List.of());open=false;query="";hits.clear();textures.close();screen=null;search=null;}
     static void closePicker(){ClientGuildEmoji.visible(List.of());open=false;if(search!=null){search.visible=false;search.active=false;}if(screen!=null&&MC.screen==screen&&input!=null){screen.setFocused(input);input.setFocused(true);}}
@@ -95,15 +95,15 @@ public final class NativeInteractions {
         try{
             card(g,event.getMouseX(),event.getMouseY());if(!open){ClientGuildEmoji.visible(List.of());return;}
             int x=px(),y=py(),w=pw(),h=ph();g.fill(x,y,x+w,y+h,0xff2b2d31);g.fill(x,y,x+w,y+30,0xff232428);
-            String[] tabs={"GIF","貼圖","表情符號"};for(int i=0;i<3;i++){if(i==tab)g.fill(x+8+i*64,y+5,x+66+i*64,y+26,0xff404249);g.drawString(MC.font,tabs[i],x+16+i*64,y+11,0xffeeeeee,false);}
+            String[] tabs={"GIF","貼圖","表情符號"};for(int i=0;i<3;i++){if(i==tab)g.fill(x+8+i*64,y+5,x+66+i*64,y+26,0xff404249);UiText.draw(g,tabs[i],x+16+i*64,y+9,0xffeeeeee);}
             search.setX(x+10);search.setY(y+35);search.setWidth(w-20);search.visible=true;search.active=true;search.render(g,event.getMouseX(),event.getMouseY(),event.getPartialTick());
             g.fill(x,y+61,x+32,y+h-27,0xff232428);String[] cats={"☺","♞","♨","♫","❤","D"};for(int i=0;i<6;i++){if(i==category)g.fill(x+3,y+64+i*28,x+29,y+89+i*28,0xff4e5058);g.drawString(MC.font,cats[i],x+11,y+72+i*28,0xffb5bac1,false);}
             g.fill(x,y+h-27,x+w,y+h,0xff1e1f22);hits.clear();var all=filtered();Item hover=null;var visible=new ArrayList<String>();
             boolean guild=tab==2&&category==5;int header=guild?18:0;
-            if(guild){String[] filters={"全部","靜態","動畫"};for(int i=0;i<3;i++){if(guildFilter==i)g.fill(x+38+i*65,y+64,x+99+i*65,y+79,0xff4e5058);g.drawString(MC.font,filters[i],x+43+i*65,y+68,0xffdddddd,false);}
-                if(!ClientGuildEmoji.snapshot().ready())g.drawString(MC.font,"伺服器表情目錄暫不可用",x+42,y+91,0xffb5bac1,false);
+            if(guild){String[] filters={"全部","靜態","動畫"};for(int i=0;i<3;i++){if(guildFilter==i)g.fill(x+38+i*65,y+64,x+99+i*65,y+79,0xff4e5058);UiText.draw(g,filters[i],x+43+i*65,y+65,0xffdddddd);}
+                if(!ClientGuildEmoji.snapshot().ready())UiText.draw(g,"伺服器表情目錄暫不可用",x+42,y+91,0xffb5bac1);
             }
-            if(tab==1){g.drawString(MC.font,"尚未連接貼圖來源",x+48,y+85,0xffb5bac1,false);}else{
+            if(tab==1){UiText.draw(g,"尚未連接貼圖來源",x+48,y+85,0xffb5bac1);}else{
                 int cell=tab==0?80:28,columns=Math.max(1,(w-42)/cell),rows=Math.max(1,(h-96-header)/cell),maxScroll=Math.max(0,(all.size()+columns-1)/columns-rows);scroll=Math.min(scroll,maxScroll);
                 for(int row=0;row<rows;row++)for(int col=0;col<columns;col++){
                     int index=(row+scroll)*columns+col;if(index>=all.size())continue;var item=all.get(index);int ix=x+38+col*cell,iy=y+65+header+row*cell;var hit=new Hit(ix,iy,cell-2,cell-2,item);hits.add(hit);if(!item.id().isEmpty()&&item.enabled())visible.add(item.id());
@@ -112,20 +112,22 @@ public final class NativeInteractions {
                 }
             }
             ClientGuildEmoji.visible(visible);
-            if(hover!=null)g.drawString(MC.font,MC.font.plainSubstrByWidth(hover.name()+" · "+hover.source(),w-16),x+8,y+h-18,0xffdbdee1,false);else g.drawString(MC.font,tab==0?"本機示範 · 無遠端 GIF 搜尋":tab==1?"貼圖來源不可用":(guild?ClientGuildEmoji.snapshot().label()+" · "+all.size()+(ClientGuildEmoji.snapshot().complete()?"":" · 目錄已達上限"):"選擇表情 · Unicode"),x+8,y+h-18,0xffb5bac1,false);
+            if(hover!=null)UiText.draw(g,UiText.fit(hover.name()+" · "+hover.source(),w-16),x+8,y+h-20,0xffdbdee1);else UiText.draw(g,UiText.fit(tab==0?"本機示範 · 無遠端 GIF 搜尋":tab==1?"貼圖來源不可用":(guild?ClientGuildEmoji.snapshot().label()+" · "+all.size()+(ClientGuildEmoji.snapshot().complete()?"":" · 目錄已達上限"):"選擇表情 · Unicode"),w-16),x+8,y+h-20,0xffb5bac1);
         }finally{textures.end();}
     }
     private static void card(GuiGraphics g,int mx,int my){
         var a=NativeComposer.selected();if(a==null&&!NativeComposer.validating())return;int y=screen.height-126;g.fill(4,y,156,y+104,0xff2b2d31);g.fill(8,y+26,152,y+98,0xff1e1f22);
-        if(a==null)g.drawString(MC.font,"正在驗證圖片…",16,y+55,0xffb5bac1,false);
-        else if(NativeComposer.previewVisible())draw(g,a,8,y+26,144,72);else{g.drawCenteredString(MC.font,"暴雷內容",80,y+51,0xffeeeeee);g.drawCenteredString(MC.font,"點擊檢視",80,y+65,0xffb5bac1);}
-        g.drawString(MC.font,a==null?"圖片":MC.font.plainSubstrByWidth(a.name(),96),10,y+10,0xffeeeeee,false);
+        if(a==null)UiText.draw(g,"正在驗證圖片…",16,y+53,0xffb5bac1);
+        else if(NativeComposer.previewVisible())draw(g,a,8,y+26,144,72);else{UiText.centered(g,"暴雷內容",80,y+47,0xffeeeeee);UiText.centered(g,"點擊檢視",80,y+64,0xffb5bac1);}
+        UiText.draw(g,a==null?"圖片":UiText.fit(a.name(),96),10,y+6,0xffeeeeee);
         g.fill(112,y+4,130,y+22,NativeComposer.isSpoiler()?0xff5865f2:0xff404249);g.drawString(MC.font,"◉",117,y+9,0xffeeeeee,false);g.fill(134,y+4,152,y+22,0xff404249);g.drawString(MC.font,"×",140,y+9,0xffff6666,false);
-        if(inside(mx,my,112,y+4,18,18))g.renderTooltip(MC.font,Component.literal("暴雷內容"),mx,my);else if(inside(mx,my,134,y+4,18,18))g.renderTooltip(MC.font,Component.literal("移除待發圖片"),mx,my);
+        // A covered card must not show a tooltip over the active picker.
+        if(open&&inside(mx,my,px(),py(),pw(),ph()))return;
+        if(a!=null&&inside(mx,my,8,y+2,100,22))UiText.tooltip(g,a.name(),mx,my);else if(inside(mx,my,112,y+4,18,18))UiText.tooltip(g,"暴雷內容",mx,my);else if(inside(mx,my,134,y+4,18,18))UiText.tooltip(g,"移除待發圖片",mx,my);
     }
     private static void draw(GuiGraphics g,Attachment a,int x,int y,int w,int h){double scale=Math.min(w/(double)a.media().width(),h/(double)a.media().height());int dw=(int)(a.media().width()*scale),dh=(int)(a.media().height()*scale);var t=textures.frame(a.digest(),a.media(),(System.nanoTime()-started)/1_000_000);g.blit(t,x+(w-dw)/2,y+(h-dh)/2,dw,dh,0,0,a.media().width(),a.media().height(),a.media().width(),a.media().height());}
     private static final class Smiley extends AbstractButton {
-        Smiley(int x,int y){super(x,y,18,16,Component.literal("表情、GIF 與貼圖"));setTooltip(Tooltip.create(getMessage()));}
+        Smiley(int x,int y){super(x,y,18,16,Component.literal("表情、GIF 與貼圖"));}
         protected void updateWidgetNarration(net.minecraft.client.gui.narration.NarrationElementOutput output){output.add(net.minecraft.client.gui.narration.NarratedElementType.TITLE,getMessage());}
         public void onPress(){if(open)closePicker();else openPicker();}
         protected void renderWidget(GuiGraphics g,int mx,int my,float partial){
@@ -134,6 +136,7 @@ public final class NativeInteractions {
             for(int y=-6;y<=6;y++)for(int x=-6;x<=6;x++){int r=x*x+y*y;if(r>=26&&r<=40)g.fill(cx+x,cy+y,cx+x+1,cy+y+1,color);}
             g.fill(cx-3,cy-2,cx-1,cy,color);g.fill(cx+2,cy-2,cx+4,cy,color);
             for(int x=-3;x<=3;x++){int y=Math.abs(x)==3?1:Math.abs(x)==2?2:3;g.fill(cx+x,cy+y,cx+x+1,cy+y+1,color);}
+            if(isHovered())UiText.tooltip(g,getMessage().getString(),mx,my);
         }
     }
 }

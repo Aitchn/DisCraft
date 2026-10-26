@@ -121,11 +121,15 @@ jobs:
           sudo apt-get install -y xvfb xauth libgl1-mesa-dri libglx-mesa0 libopenal1
       - name: Run isolated server and two real clients
         run: timeout --kill-after=45s 1500 xvfb-run -a -s '-screen 0 1280x900x24 -nolisten tcp' python3 scripts/verify-multiplayer.py
+      - name: Run native UI text, glyph metrics and resource reload checks
+        run: timeout --kill-after=45s 600 xvfb-run -a -s '-screen 0 1800x1200x24 -nolisten tcp' python3 scripts/verify-ui-text.py --tag after
       - name: Upload multiplayer evidence
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: multiplayer-evidence-${{ github.sha }}
-          path: build/evidence/multiplayer/
+          path: |
+            build/evidence/multiplayer/
+            build/evidence/ui-text/
           if-no-files-found: warn
           retention-days: 14
