@@ -25,17 +25,19 @@ final class NativeUxAcceptance {
     private static final Path OUT=Path.of("../../build/evidence/multiplayer").toAbsolutePath().normalize();
     private static int phase,ticks;private static Consumer<String> pass;private static Robot robot;
     private static Process owner;private static Path ready,stop,source,saved;private static Set<String> beforeFiles;private static Set<UUID> beforeOwn;
-    private static ActorRef target;private static CompletableFuture<String> request;private static String digest;
-    static void start(Consumer<String> check)throws Exception{pass=check;phase=0;ticks=0;robot=new Robot();robot.setAutoDelay(35);focus();}
+    private static ActorRef target;private static CompletableFuture<String> request;private static String digest,replacedDraft;
+    private static ExecutorService robotWorker;private static Future<?> action;
+    static void start(Consumer<String> check)throws Exception{pass=check;phase=0;ticks=0;robot=new Robot();robot.setAutoDelay(35);robotWorker=Executors.newSingleThreadExecutor(r->{var t=new Thread(r,"Native UX physical input");t.setDaemon(true);return t;});focus();}
     static String state(){return " uxPhase="+phase;}
     private static boolean sending()throws Exception{return get(NativeComposer.class,"sending");}
-    static void cleanup(){try{if(stop!=null)Files.writeString(stop,"stop");if(owner!=null&&owner.isAlive()){owner.destroy();if(!owner.waitFor(2,TimeUnit.SECONDS))owner.destroyForcibly();}}catch(Exception ignored){}}
+    static void cleanup(){if(robotWorker!=null)robotWorker.shutdownNow();cleanupOwner();}
+    private static void cleanupOwner(){try{if(stop!=null)Files.writeString(stop,"stop");if(owner!=null&&owner.isAlive()){owner.destroy();if(!owner.waitFor(2,TimeUnit.SECONDS))owner.destroyForcibly();}}catch(Exception ignored){}}
     private static void check(boolean yes,String label){if(!yes)throw new AssertionError("Native UX "+phase+": "+label);pass.accept(label);}
     private static void next(int p){phase=p;ticks=0;System.out.println("NATIVE_UX phase="+p);}
     private static void focus(){GLFW.glfwFocusWindow(MC.getWindow().getWindow());}
-    private static void key(int key){focus();robot.keyPress(key);robot.keyRelease(key);}
-    private static void chord(int key){focus();robot.keyPress(KeyEvent.VK_CONTROL);robot.keyPress(key);robot.keyRelease(key);robot.keyRelease(KeyEvent.VK_CONTROL);}
-    private static void mouse(double x,double y){focus();int[] wx={0},wy={0};GLFW.glfwGetWindowPos(MC.getWindow().getWindow(),wx,wy);robot.mouseMove(wx[0]+(int)(x*MC.getWindow().getGuiScale()),wy[0]+(int)(y*MC.getWindow().getGuiScale()));robot.mousePress(InputEvent.BUTTON1_DOWN_MASK);robot.mouseRelease(InputEvent.BUTTON1_DOWN_MASK);}
+    private static void key(int key){focus();action=robotWorker.submit(()->{robot.keyPress(key);robot.delay(80);robot.keyRelease(key);});}
+    private static void chord(int key){focus();action=robotWorker.submit(()->{robot.keyPress(KeyEvent.VK_CONTROL);robot.keyPress(key);robot.delay(80);robot.keyRelease(key);robot.keyRelease(KeyEvent.VK_CONTROL);});}
+    private static void mouse(double x,double y){focus();int[] wx={0},wy={0};GLFW.glfwGetWindowPos(MC.getWindow().getWindow(),wx,wy);int px=wx[0]+(int)(x*MC.getWindow().getGuiScale()),py=wy[0]+(int)(y*MC.getWindow().getGuiScale());action=robotWorker.submit(()->{robot.mouseMove(px,py);robot.mousePress(InputEvent.BUTTON1_DOWN_MASK);robot.delay(80);robot.mouseRelease(InputEvent.BUTTON1_DOWN_MASK);});}
     private static EditBox input(){return MC.screen.children().stream().filter(w->w instanceof EditBox).map(w->(EditBox)w).findFirst().orElseThrow();}
     private static Attachment selected()throws Exception{return get(NativeComposer.class,"attachment");}
     private static boolean loading()throws Exception{return get(NativeComposer.class,"loading");}
@@ -45,6 +47,7 @@ final class NativeUxAcceptance {
     private static void capture(String name)throws Exception{try(var image=Screenshot.takeScreenshot(MC.getMainRenderTarget())){image.writeToFile(OUT.resolve(name));}}
     @SuppressWarnings("unchecked") private static List<RelayRecord> records()throws Exception{return new ArrayList<>((Collection<RelayRecord>)get(ClientBridge.class,"history"));}
     static boolean tick()throws Exception{
+        if(action!=null){if(!action.isDone())return false;action.get();action=null;}
         switch(phase){
         case 0 -> {
             if(!(MC.screen instanceof ChatScreen))MC.setScreen(new ChatScreen(""));input().setValue("");textClipboard("clipboard vanilla 世界");beforeFiles=screenshots();
@@ -58,7 +61,7 @@ final class NativeUxAcceptance {
         }
         case 3 -> {if(!Files.exists(ready)){if(!owner.isAlive())throw new AssertionError("External clipboard owner exited before ready");return false;}chord(KeyEvent.VK_V);next(4);}
         case 4 -> {if(loading()||selected()==null)return false;check(selected().name().equals("clipboard.png")&&selected().media().width()==192&&noAutoSend(),"Actual external-process X11 image Ctrl+V stages bounded pixels without auto-send");mouse(143,MC.screen.height-113);next(5);}
-        case 5 -> {if(selected()!=null)return false;check(Files.exists(source)&&noAutoSend(),"Real remove-card click removes only staged data, preserving original disk file");cleanup();beforeFiles=screenshots();key(KeyEvent.VK_ESCAPE);key(KeyEvent.VK_F2);next(6);}
+        case 5 -> {if(selected()!=null)return false;check(Files.exists(source)&&noAutoSend(),"Real remove-card click removes only staged data, preserving original disk file");cleanupOwner();beforeFiles=screenshots();key(KeyEvent.VK_ESCAPE);key(KeyEvent.VK_F2);next(6);}
         case 6 -> {
             var changed=new HashSet<>(screenshots());changed.removeAll(beforeFiles);if(changed.isEmpty())return false;
             saved=MC.gameDirectory.toPath().resolve("screenshots").resolve(changed.iterator().next());java.awt.image.BufferedImage disk;try{disk=ImageIO.read(saved.toFile());}catch(Exception incomplete){return false;}if(disk==null)return false;
@@ -82,21 +85,22 @@ final class NativeUxAcceptance {
         case 16 -> {
             if(!input().getValue().startsWith(target.label()))return false;
             List<Mention> mentions=mentionSnapshot(input().getValue());check(mentions.size()==1&&mentions.get(0).target().id().equals(target.id()),"Real Discord author-name click inserts D@display bound to stable server identity");
-            textClipboard(input().getValue());chord(KeyEvent.VK_A);chord(KeyEvent.VK_V);next(17);
+            replacedDraft=input().getValue();textClipboard(replacedDraft);chord(KeyEvent.VK_A);next(27);
         }
-        case 17 -> {if(++ticks<3)return false;check(mentionSnapshot(input().getValue()).isEmpty(),"Pasting identical display text over a selection cannot inherit a real mention token");input().setValue("");scrollActor(ActorRef.Kind.DISCORD);next(18);}
+        case 27 -> {chord(KeyEvent.VK_V);next(17);}
+        case 17 -> {if(++ticks<3)return false;check(input().getValue().equals(replacedDraft),"Actual physical Ctrl+A/Ctrl+V completes identical-text replacement");check(mentionSnapshot(input().getValue()).isEmpty(),"Pasting identical display text over a selection cannot inherit a real mention token");input().setValue("");scrollActor(ActorRef.Kind.DISCORD);next(18);}
         case 18 -> {if(++ticks<3)return false;clickActor(ActorRef.Kind.DISCORD);next(19);}
-        case 19 -> {if(!input().getValue().startsWith(target.label()))return false;input().insertText("hello-stable");key(KeyEvent.VK_ENTER);next(20);}
+        case 19 -> {if(!input().getValue().startsWith(target.label()))return false;beforeEdit();input().insertText("hello-stable");key(KeyEvent.VK_ENTER);next(20);}
         case 20 -> {
             var found=records().stream().filter(r->r.author().equals("Alice")&&r.text().contains("hello-stable")).toList();if(found.isEmpty()||sending()||records().stream().noneMatch(r->r.author().equals("TEST peer (not Discord)")&&r.text().contains("hello-stable")))return false;
             check(found.size()==1&&found.get(0).mentions().size()==1&&found.get(0).mentions().get(0).target().id().equals(target.id()),"Selected Discord mention survives native edit/send and server validation");MC.setScreen(new ChatScreen(""));scrollActor(ActorRef.Kind.MINECRAFT);next(21);
         }
         case 21 -> {if(++ticks<3)return false;clickActor(ActorRef.Kind.MINECRAFT);next(22);}
-        case 22 -> {if(!input().getValue().startsWith(target.label()))return false;check(target.id().equals(MC.player.getUUID().toString())&&mentionSnapshot(input().getValue()).get(0).target().kind()==ActorRef.Kind.MINECRAFT,"Minecraft author click inserts M@playerId bound to server profile UUID");input().insertText("hello-minecraft");key(KeyEvent.VK_ENTER);next(23);}
+        case 22 -> {if(!input().getValue().startsWith(target.label()))return false;check(target.id().equals(MC.player.getUUID().toString())&&mentionSnapshot(input().getValue()).get(0).target().kind()==ActorRef.Kind.MINECRAFT,"Minecraft author click inserts M@playerId bound to server profile UUID");beforeEdit();input().insertText("hello-minecraft");key(KeyEvent.VK_ENTER);next(23);}
         case 23 -> {if(sending()||records().stream().noneMatch(r->r.text().contains("hello-minecraft")&&!r.mentions().isEmpty()))return false;var bad=new ActorRef(ActorRef.Kind.DISCORD,"9999999999999999","測試成員");request=MultiplayerAcceptance.raw(new RelayRecord(UUID.randomUUID(),"draft",bad.label(),List.of(),Map.of(),Map.of(),null,List.of(new Mention(0,bad.label().length(),bad))));next(24);}
         case 24 -> {if(!request.isDone())return false;check(request.isCompletedExceptionally(),"Actual server rejects an untrusted Discord target despite matching visible display");var bad=new ActorRef(ActorRef.Kind.MINECRAFT,UUID.randomUUID().toString(),"Alice");request=MultiplayerAcceptance.raw(new RelayRecord(UUID.randomUUID(),"draft",bad.label(),List.of(),Map.of(),Map.of(),null,List.of(new Mention(0,bad.label().length(),bad))));next(25);}
         case 25 -> {if(!request.isDone())return false;check(request.isCompletedExceptionally(),"Actual server rejects a spoofed Minecraft mention UUID");request=MultiplayerAcceptance.raw(new RelayRecord(UUID.randomUUID(),"draft","forged-actor",List.of(),Map.of(),Map.of(),new ActorRef(ActorRef.Kind.MINECRAFT,MC.player.getUUID().toString(),"Alice"),List.of()));next(26);}
-        case 26 -> {if(!request.isDone())return false;check(request.isCompletedExceptionally(),"Actual server rejects client-supplied sender actor metadata");var service=Class.forName("dev.discraft.forge.DesktopClipboardService");Process helper=get(service,"process");if(helper!=null)Files.writeString(OUT.resolve("clipboard-helper-pid.txt"),Long.toString(helper.pid()));cleanup();return true;}
+        case 26 -> {if(!request.isDone())return false;check(request.isCompletedExceptionally(),"Actual server rejects client-supplied sender actor metadata");var service=Class.forName("dev.discraft.forge.DesktopClipboardService");Process helper=get(service,"process");if(helper!=null)Files.writeString(OUT.resolve("clipboard-helper-pid.txt"),Long.toString(helper.pid()));selectionRegression();cleanup();return true;}
         default -> throw new AssertionError("Unknown OS UX phase");
         }return false;
     }
@@ -107,6 +111,11 @@ final class NativeUxAcceptance {
     }
     private static void scrollActor(ActorRef.Kind kind)throws Exception{var p=namePoint(kind);int scroll=ObfuscationReflectionHelper.findField(ChatComponent.class,"f_93763_").getInt(MC.gui.getChat());MC.gui.getChat().scrollChat(p.line()-2-scroll);}
     private static void clickActor(ActorRef.Kind kind)throws Exception{var p=namePoint(kind);target=p.actor();var chat=MC.gui.getChat();int scroll=ObfuscationReflectionHelper.findField(ChatComponent.class,"f_93763_").getInt(chat);double scale=chat.getScale();int band=(int)(9*(MC.options.chatLineSpacing().get()+1)),offset=(int)Math.round(-8*(MC.options.chatLineSpacing().get()+1)+4*MC.options.chatLineSpacing().get());int bottom=(int)Math.floor((MC.getWindow().getGuiScaledHeight()-40)/scale);int cx=get(NativeChat.class,"chatX"),cy=get(NativeChat.class,"chatY");double x=cx+scale*(4+p.x()+3),y=(cy-MC.getWindow().getGuiScaledHeight()+40)/scale+scale*(bottom-(p.line()-scroll)*band+offset+4);var hit=NativeChat.class.getDeclaredMethod("actorAt",double.class,double.class);hit.setAccessible(true);Object actual=hit.invoke(null,x,y);if(!target.equals(actual))throw new AssertionError("Native author coordinate mismatch: expected="+kind+" hit="+actual+" line="+p.line()+" scroll="+scroll+" x="+x+" y="+y);System.out.println("NATIVE_UX click="+kind+" line="+p.line()+" scroll="+scroll+" x="+x+" y="+y);mouse(x,y);}
+    private static void selectionRegression()throws Exception{
+        var box=input();var first=new ActorRef(ActorRef.Kind.DISCORD,"2234567890123456","Same");var second=new ActorRef(ActorRef.Kind.DISCORD,"3234567890123456","Same");var adapter=Class.forName("dev.discraft.forge.DraftMentions");var insert=adapter.getDeclaredMethod("insert",EditBox.class,ActorRef.class);insert.setAccessible(true);box.setValue("");insert.invoke(null,box,first);box.setCursorPosition(0);box.setHighlightPos(0);insert.invoke(null,box,second);var tokens=mentionSnapshot(box.getValue());check(tokens.size()==2&&tokens.get(0).target().equals(second)&&tokens.get(1).target().equals(first),"Actual native EditBox same-display prepend preserves both selected Discord IDs");
+        box.setCursorPosition(0);box.setHighlightPos(0);beforeEdit();box.insertText(first.label()+" ");tokens=mentionSnapshot(box.getValue());check(tokens.size()==2&&tokens.get(0).start()==first.label().length()+1&&tokens.get(0).target().equals(second)&&tokens.get(1).target().equals(first),"Actual native EditBox identical pasted prefix cannot acquire an existing mention binding");box.setValue("");
+    }
+    private static void beforeEdit()throws Exception{var c=Class.forName("dev.discraft.forge.DraftMentions");var m=c.getDeclaredMethod("beforeEdit",EditBox.class);m.setAccessible(true);m.invoke(null,input());}
     @SuppressWarnings("unchecked") private static List<Mention> mentionSnapshot(String text)throws Exception{var c=Class.forName("dev.discraft.forge.DraftMentions");var m=c.getDeclaredMethod("snapshot",String.class);m.setAccessible(true);return (List<Mention>)m.invoke(null,text);}
     @SuppressWarnings("unchecked") private static <T>T get(Class<?> c,String n)throws Exception{var f=c.getDeclaredField(n);f.setAccessible(true);return (T)f.get(null);}
     private static Object invoke(Class<?> c,String n)throws Exception{var m=c.getDeclaredMethod(n);m.setAccessible(true);return m.invoke(null);}

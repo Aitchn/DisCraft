@@ -4,32 +4,29 @@ import dev.discraft.forge.bridge.*;
 import net.minecraft.client.gui.components.EditBox;
 import java.util.*;
 
-/** Explicit selections survive edits outside their span; typed lookalike text never becomes a mention. */
+/** Native editing adapters provide actual ranges; unknown changes invalidate selections. */
 final class DraftMentions {
-    private static String previous="";
-    private static final List<Mention> tokens=new ArrayList<>();
+    private static final MentionDraft draft=new MentionDraft();
+    private record Edit(int start,int end) {}
+    private static Edit pending;
     @SuppressWarnings("unchecked") static void install(EditBox input){
-        try{var field=net.minecraftforge.fml.util.ObfuscationReflectionHelper.findField(EditBox.class,"f_94089_");var previousResponder=(java.util.function.Consumer<String>)field.get(input);input.setResponder(text->{sync(text);if(previousResponder!=null)previousResponder.accept(text);});sync(input.getValue());}
+        pending=null;
+        try{var field=net.minecraftforge.fml.util.ObfuscationReflectionHelper.findField(EditBox.class,"f_94089_");var previousResponder=(java.util.function.Consumer<String>)field.get(input);input.setResponder(text->{Edit edit=pending;pending=null;if(edit==null)draft.synchronize(text);else draft.edit(text,edit.start(),edit.end());if(previousResponder!=null)previousResponder.accept(text);});draft.synchronize(input.getValue());}
         catch(IllegalAccessException unavailable){throw new IllegalStateException("Native input responder unavailable",unavailable);}
     }
-    static void beforeEdit(EditBox input){
-        try{int cursor=input.getCursorPosition(),highlight=net.minecraftforge.fml.util.ObfuscationReflectionHelper.findField(EditBox.class,"f_94102_").getInt(input);int a=Math.min(cursor,highlight),b=Math.max(cursor,highlight);tokens.removeIf(t->a<b?t.start()<b&&t.end()>a:a>t.start()&&a<t.end());}
-        catch(IllegalAccessException unavailable){throw new IllegalStateException("Native input selection unavailable",unavailable);}
+    static void endEdit(){pending=null;}
+    static void beforeEdit(EditBox input){beforeEdit(input,0,false);}
+    static void beforeEdit(EditBox input,int direction,boolean word){
+        endEdit();draft.synchronize(input.getValue());
+        try{int cursor=input.getCursorPosition(),highlight=net.minecraftforge.fml.util.ObfuscationReflectionHelper.findField(EditBox.class,"f_94102_").getInt(input);int a=Math.min(cursor,highlight),b=Math.max(cursor,highlight);
+            if(a==b&&direction!=0){int other=word?input.getWordPosition(direction):input.getValue().offsetByCodePoints(cursor,direction<0&&cursor>0?-1:direction>0&&cursor<input.getValue().length()?1:0);a=Math.min(cursor,other);b=Math.max(cursor,other);}
+            draft.invalidate(a,b);pending=new Edit(a,b);
+        }catch(IllegalAccessException unavailable){throw new IllegalStateException("Native input selection unavailable",unavailable);}
     }
-    static void clear(){previous="";tokens.clear();}
-    static void sync(String text){
-        if(text.equals(previous))return;int left=0;while(left<text.length()&&left<previous.length()&&text.charAt(left)==previous.charAt(left))left++;
-        int right=0;while(right<text.length()-left&&right<previous.length()-left&&text.charAt(text.length()-1-right)==previous.charAt(previous.length()-1-right))right++;
-        int oldEnd=previous.length()-right,delta=text.length()-previous.length();var updated=new ArrayList<Mention>();
-        for(var t:tokens){if(oldEnd<=t.start())updated.add(new Mention(t.start()+delta,t.end()+delta,t.target()));else if(left>=t.end())updated.add(t);}
-        tokens.clear();tokens.addAll(updated);previous=text;
-    }
+    static void clear(){pending=null;draft.clear();}
     static void insert(EditBox input,ActorRef actor){
-        sync(input.getValue());String label=actor.label();input.insertText(label+" ");sync(input.getValue());
-        int start=input.getCursorPosition()-label.length()-1,end=start+label.length();
-        if(tokens.size()<8&&start>=0&&end<=previous.length()&&previous.substring(start,end).equals(label)){
-            tokens.removeIf(t->t.start()<end&&t.end()>start);tokens.add(new Mention(start,end,actor));tokens.sort(Comparator.comparingInt(Mention::start));
-        }
+        beforeEdit(input);int start=pending.start();String label=actor.label();
+        try{input.insertText(label+" ");draft.select(start,actor);}finally{endEdit();}
     }
-    static List<Mention> snapshot(String text){sync(text);return List.copyOf(tokens);}
+    static List<Mention> snapshot(String text){return draft.snapshot(text);}
 }

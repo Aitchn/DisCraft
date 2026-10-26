@@ -15,7 +15,23 @@ public final class BridgeProtocolTest {
     private static void check(boolean value,String label){if(!value)throw new AssertionError(label);checks++;System.out.println("PASS "+label);}
     private static void rejected(Throwing work,String label)throws Exception{try{work.run();throw new AssertionError(label);}catch(AssertionError failed){throw failed;}catch(Exception expected){check(true,label);}}
     interface Throwing{void run()throws Exception;}
+    private static void mentionEdits(){
+        var first=new ActorRef(ActorRef.Kind.DISCORD,"2234567890123456","Same");var second=new ActorRef(ActorRef.Kind.DISCORD,"3234567890123456","Same");String label=first.label(),one=label+" ";var draft=new MentionDraft();draft.synchronize(one);draft.select(0,first);
+        String both=one+one;draft.edit(both,0,0);draft.select(0,second);var tokens=draft.snapshot(both);
+        check(tokens.size()==2&&tokens.get(0).target().equals(second)&&tokens.get(1).target().equals(first)&&tokens.get(1).start()==one.length(),"Same-display author prepended before an existing token retains both exact stable IDs");
+        draft.clear();draft.synchronize(one);draft.select(0,first);draft.edit(both,one.length(),one.length());draft.select(one.length(),second);tokens=draft.snapshot(both);
+        check(tokens.size()==2&&tokens.get(0).target().equals(first)&&tokens.get(1).target().equals(second),"Same-display author appended after a token does not change its recipient");
+        draft.clear();draft.synchronize(one);draft.select(0,first);draft.edit(both,0,0);tokens=draft.snapshot(both);
+        check(tokens.size()==1&&tokens.get(0).start()==one.length()&&tokens.get(0).target().equals(first),"Pasted identical prefix is unbound and shifts the original selected token");
+        draft.edit(one,0,one.length());tokens=draft.snapshot(one);check(tokens.size()==1&&tokens.get(0).start()==0&&tokens.get(0).target().equals(first),"Deleting pasted identical prefix restores the original token with its exact ID");
+        draft.invalidate(0,label.length());draft.edit(one,0,label.length());check(draft.snapshot(one).isEmpty(),"Replacing selected text with identical paste cannot preserve an old recipient");
+        draft.select(0,first);draft.invalidate(0,label.length());draft.edit(one,0,label.length());draft.select(0,second);tokens=draft.snapshot(one);check(tokens.size()==1&&tokens.get(0).target().equals(second),"Explicit same-display replacement binds only the newly selected stable ID");
+        draft.edit("x"+one,0,0);tokens=draft.snapshot("x"+one);check(tokens.size()==1&&tokens.get(0).start()==1&&tokens.get(0).target().equals(second),"Known-range typing outside a token preserves and shifts its selected identity");
+        draft.invalidate(2,3);draft.edit("x"+one.substring(0,1)+one.substring(2),2,3);check(draft.snapshot("x"+one.substring(0,1)+one.substring(2)).isEmpty(),"Deletion inside a mention invalidates that selection");
+        draft.clear();draft.synchronize(one);draft.select(0,first);draft.synchronize(both);check(draft.snapshot(both).isEmpty(),"Unknown ambiguous text changes conservatively discard identities rather than guessing a diff");
+    }
     public static void main(String[] args)throws Exception{
+        mentionEdits();
         var id=UUID.randomUUID();var gif=Attachment.fromResource("dance.gif");
         var original=RelayRecord.draft(id,"Unicode 世界 👋",gif);var decoded=RelayRecord.decode(original.encode());
         check(decoded.id().equals(id)&&decoded.text().equals(original.text())&&decoded.attachments().get(0).media().frames().size()>1,"Wire roundtrip preserves Unicode and real GIF frames");

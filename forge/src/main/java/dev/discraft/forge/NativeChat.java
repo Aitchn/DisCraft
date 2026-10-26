@@ -26,7 +26,7 @@ public final class NativeChat {
     private static final Field LINES=ObfuscationReflectionHelper.findField(ChatComponent.class,"f_93761_");
     private static final Field ALL=ObfuscationReflectionHelper.findField(ChatComponent.class,"f_93760_");
     private static final Field SCROLL=ObfuscationReflectionHelper.findField(ChatComponent.class,"f_93763_");
-    private record Tile(String digest,int width,int height,int x,int y,int cell,int band,UUID owner) {}
+    private record Tile(String digest,int width,int height,int x,int y,int cell,int band,UUID owner,boolean spoiler) {}
     private record SpoilerHit(double x,double y,double w,double h,UUID owner) {}
     private static final List<SpoilerHit> spoilerHits=new ArrayList<>();
     private static final Set<UUID> revealed=new HashSet<>();
@@ -38,7 +38,7 @@ public final class NativeChat {
     private static final Map<UUID,RelayRecord> records=new HashMap<>();
     private static final Map<Integer,Tile> tiles=new HashMap<>();
     private static final Map<UUID,Set<Integer>> markers=new HashMap<>();
-    private static final Map<String,Attachment> assets=new HashMap<>();
+    private static final Map<String,MediaAsset> assets=new HashMap<>();
     private static final TextureCache textures=new TextureCache();
     private static int nextColor=0x100000,chatX,chatY;
     public static int renderedTiles;
@@ -47,7 +47,7 @@ public final class NativeChat {
     public static void reset(){assets.clear();tiles.clear();markers.clear();components.clear();records.clear();layout=null;spoilerHits.clear();revealed.clear();nameEvents.clear();ownedNames.clear();textures.close();NativeComposer.reset();}
     public static void receive(RelayRecord record,Collection<RelayRecord> retained){
         reflow();var ids=new HashSet<UUID>();assets.clear();
-        for(var r:retained){ids.add(r.id());for(var a:r.attachments())assets.put(a.digest(),a);for(var a:r.emoji().values())assets.put(a.digest(),a);}
+        for(var r:retained){ids.add(r.id());for(var a:r.attachments())assets.put(a.digest(),a.media());for(var a:r.emoji().values())assets.put(a.digest(),a.media());}
         markers.entrySet().removeIf(e->{if(ids.contains(e.getKey()))return false;e.getValue().forEach(tiles::remove);return true;});
         revealed.retainAll(ids);ownedNames.entrySet().removeIf(e->{if(ids.contains(e.getKey()))return false;e.getValue().forEach(nameEvents::remove);return true;});components.keySet().retainAll(ids);records.keySet().retainAll(ids);records.put(record.id(),record);
         var component=compose(record);components.put(record.id(),component);MC.gui.getChat().addMessage(component);
@@ -60,20 +60,20 @@ public final class NativeChat {
         else component.append(Component.literal(record.author()+": ").withStyle(ChatFormatting.AQUA));
         for(var part:Content.parse(record.text(),record.catalog())){
             if(part instanceof Content.Text t)component.append(Component.literal(t.value()));
-            else if(part instanceof Content.CustomEmoji e){var a=record.emoji().get(e.mediaKey());if(a!=null)row(component,a,Math.min(8,layout.emojiCell()),8,0,layout.emojiCell(),8,"\u3000",owned,record.id());else component.append(":"+e.name()+":");}
+            else if(part instanceof Content.CustomEmoji e){var a=record.emoji().get(e.mediaKey());if(a!=null)row(component,a,Math.min(8,layout.emojiCell()),8,0,layout.emojiCell(),8,"\u3000",owned,record.id(),false);else component.append(":"+e.name()+":");}
         }
         for(var a:record.attachments()){
             component.append(Component.literal("\n["+a.name()+"]").withStyle(ChatFormatting.GRAY));
             int available=Math.max(layout.cell(),layout.width()/layout.cell()*layout.cell());
             double scale=Math.min(Math.min(96,available)/(double)a.media().width(),54d/a.media().height());
             int width=Math.max(1,(int)Math.round(a.media().width()*scale)),height=Math.max(1,(int)Math.round(a.media().height()*scale));
-            for(int y=0;y<height;y+=layout.band()){component.append("\n");row(component,a,width,height,y,layout.cell(),layout.band(),"\u00a0",owned,record.id());}
+            for(int y=0;y<height;y+=layout.band()){component.append("\n");row(component,a,width,height,y,layout.cell(),layout.band(),"\u00a0",owned,record.id(),a.name().startsWith("SPOILER_"));}
         }
         return component;
     }
-    private static void row(MutableComponent text,Attachment a,int width,int height,int y,int cell,int band,String glyph,Set<Integer> owned,UUID owner){
+    private static void row(MutableComponent text,Attachment a,int width,int height,int y,int cell,int band,String glyph,Set<Integer> owned,UUID owner,boolean spoiler){
         for(int x=0;x<width;x+=cell){
-            int color=nextColor++ & 0xffffff;owned.add(color);tiles.put(color,new Tile(a.digest(),width,height,x,y,cell,band,owner));
+            int color=nextColor++ & 0xffffff;owned.add(color);tiles.put(color,new Tile(a.digest(),width,height,x,y,cell,band,owner,spoiler));
             // NBSP reserves native glyph advance without a visible character or clickable metadata.
             text.append(Component.literal(glyph).withStyle(Style.EMPTY.withColor(color)));
         }
@@ -128,12 +128,12 @@ public final class NativeChat {
                         var color=style.getColor();var tile=(point==160||point==0x3000)&&color!=null?tiles.get(color.getValue()):null;
                         if(tile!=null){var a=assets.get(tile.digest());if(a!=null){
                             int dw=Math.min(tile.cell(),tile.width()-tile.x()),dh=Math.min(tile.band(),tile.height()-tile.y());
-                            int sx=tile.x()*a.media().width()/tile.width(),sy=tile.y()*a.media().height()/tile.height();
-                            int sw=Math.max(1,(tile.x()+dw)*a.media().width()/tile.width()-sx),sh=Math.max(1,(tile.y()+dh)*a.media().height()/tile.height()-sy);
-                            boolean secret=a.name().startsWith("SPOILER_");
+                            int sx=tile.x()*a.width()/tile.width(),sy=tile.y()*a.height()/tile.height();
+                            int sw=Math.max(1,(tile.x()+dw)*a.width()/tile.width()-sx),sh=Math.max(1,(tile.y()+dh)*a.height()/tile.height()-sy);
+                            boolean secret=tile.spoiler();
                             if(secret)spoilerHits.add(new SpoilerHit(chatX+scale*(4+x[0]),(chatY-graphics.guiHeight()+40)/scale+scale*y,dw*scale,dh*scale,tile.owner()));
                             if(secret&&!revealed.contains(tile.owner()))graphics.fill(x[0],y,x[0]+dw,y+dh,0xff3d3e45);
-                            else{var texture=textures.frame(a.digest(),a.media(),elapsed);RenderSystem.enableBlend();RenderSystem.setShaderColor(1,1,1,opacity);graphics.blit(texture,x[0],y,dw,dh,sx,sy,sw,sh,a.media().width(),a.media().height());renderedTiles++;}
+                            else{var texture=textures.frame(tile.digest(),a,elapsed);RenderSystem.enableBlend();RenderSystem.setShaderColor(1,1,1,opacity);graphics.blit(texture,x[0],y,dw,dh,sx,sy,sw,sh,a.width(),a.height());renderedTiles++;}
                         }}
                         x[0]+=MC.font.width(Component.literal(new String(Character.toChars(point))).setStyle(style));return true;
                     });

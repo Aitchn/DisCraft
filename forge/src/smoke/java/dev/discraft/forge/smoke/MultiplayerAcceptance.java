@@ -39,7 +39,7 @@ public final class MultiplayerAcceptance {
         try{
             if(System.nanoTime()-lastDiagnostic>5_000_000_000L){
                 lastDiagnostic=System.nanoTime();
-                System.out.println("MULTIPLAYER "+ROLE+" stage="+stage+" nativePhase="+NativeChatRegression.phase()+NativeUxAcceptance.state()+" screen="+(MC.screen==null?"none":MC.screen.getClass().getSimpleName())+" player="+(MC.player!=null)+" overlay="+(MC.getOverlay()!=null)+" bridge="+ClientBridge.status()+" available="+ClientBridge.available()+" messages="+ClientBridge.snapshot().size());
+                System.out.println("MULTIPLAYER "+ROLE+" stage="+stage+" nativePhase="+NativeChatRegression.phase()+NativeUxAcceptance.state()+SpoilerPrivacyAcceptance.state()+" screen="+(MC.screen==null?"none":MC.screen.getClass().getSimpleName())+" player="+(MC.player!=null)+" overlay="+(MC.getOverlay()!=null)+" bridge="+ClientBridge.status()+" available="+ClientBridge.available()+" messages="+ClientBridge.snapshot().size());
             }
             if(System.nanoTime()>deadline)throw new AssertionError("Timeout "+ROLE+" stage="+stage+" status="+ClientBridge.status());
             if(++ticks%2!=0)return;
@@ -185,7 +185,8 @@ public final class MultiplayerAcceptance {
         if(stage==43){if(++nativeTicks<6)return;capture("Native-spoiler-preview.png");var input=MC.screen.children().stream().filter(w->w instanceof EditBox).map(w->(EditBox)w).findFirst().orElseThrow();input.setValue("spoiler-native demo");MC.keyboardHandler.keyPress(MC.getWindow().getWindow(),257,0,1,0);MC.keyboardHandler.keyPress(MC.getWindow().getWindow(),257,0,0,0);stage=44;}
         if(stage==44){if(ClientBridge.snapshot().stream().noneMatch(m->m.author().equals("Alice")&&Content.plain(m.content()).equals("spoiler-native demo")&&!m.attachments().isEmpty()&&m.attachments().get(0).name().startsWith("SPOILER_")))return;check(true,"Native spoiler flag survives authoritative attachment transport");MC.setScreen(new ChatScreen(""));MC.gui.getChat().resetChatScroll();stage=45;nativeTicks=0;}
         if(stage==45){if(++nativeTicks<12)return;capture("Native-incoming-spoiler-hidden.png");NativeUxAcceptance.start(label->check(true,label));stage=50;}
-        if(stage==50&&NativeUxAcceptance.tick())finish();
+        if(stage==50&&NativeUxAcceptance.tick()){SpoilerPrivacyAcceptance.start(label->check(true,label));stage=60;}
+        if(stage==60&&SpoilerPrivacyAcceptance.tick())finish();
     }
     private static int nativeFrame()throws Exception{
         var f=NativeChat.class.getDeclaredField("textures");f.setAccessible(true);var entries=(Map<?,?>)field(f.get(null),"entries");var e=entries.get(ClientBridge.emoji("dance.gif").digest());if(e==null)return -1;var get=e.getClass().getDeclaredMethod("frame");get.setAccessible(true);return (Integer)get.invoke(e);

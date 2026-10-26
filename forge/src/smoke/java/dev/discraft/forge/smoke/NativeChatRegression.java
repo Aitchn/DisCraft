@@ -102,13 +102,13 @@ final class NativeChatRegression {
         default -> throw new AssertionError("Unknown native phase");
         }return false;
     }
-    private record Region(Attachment asset,int index,int x,int width,int height,int band) {}
+    private record Region(MediaAsset asset,int index,int x,int width,int height,int band) {}
     @SuppressWarnings("unchecked") private static List<GuiMessage.Line> lines()throws Exception{return (List<GuiMessage.Line>)ObfuscationReflectionHelper.findField(ChatComponent.class,"f_93761_").get(MC.gui.getChat());}
     private static Region region(boolean animated)throws Exception {
-        Map<Integer,Object> tiles=get(NativeChat.class,"tiles");Map<String,Attachment> assets=get(NativeChat.class,"assets");var lines=lines();
+        Map<Integer,Object> tiles=get(NativeChat.class,"tiles");Map<String,MediaAsset> assets=get(NativeChat.class,"assets");var lines=lines();
         for(int i=0;i<lines.size();i++){
             final int[] x={0};final Region[] found={null};final int index=i;
-            lines.get(i).content().accept((j,style,point)->{var color=style.getColor();Object tile=color==null?null:tiles.get(color.getValue());if(tile!=null)try{Attachment a=assets.get(call(tile,"digest"));if(a!=null&&a.media().animated()==animated&&(Integer)call(tile,"x")==0&&(Integer)call(tile,"y")==0&&(Integer)call(tile,"height")>8)found[0]=new Region(a,index,x[0],call(tile,"width"),call(tile,"height"),call(tile,"band"));}catch(Exception e){throw new RuntimeException(e);}x[0]+=MC.font.width(net.minecraft.network.chat.Component.literal(new String(Character.toChars(point))).setStyle(style));return found[0]==null;});
+            lines.get(i).content().accept((j,style,point)->{var color=style.getColor();Object tile=color==null?null:tiles.get(color.getValue());if(tile!=null)try{MediaAsset a=assets.get(call(tile,"digest"));if(a!=null&&a.animated()==animated&&(Integer)call(tile,"x")==0&&(Integer)call(tile,"y")==0&&(Integer)call(tile,"height")>8)found[0]=new Region(a,index,x[0],call(tile,"width"),call(tile,"height"),call(tile,"band"));}catch(Exception e){throw new RuntimeException(e);}x[0]+=MC.font.width(net.minecraft.network.chat.Component.literal(new String(Character.toChars(point))).setStyle(style));return found[0]==null;});
             if(found[0]!=null)return found[0];
         }throw new AssertionError("No native media region for animated="+animated);
     }
@@ -118,7 +118,7 @@ final class NativeChatRegression {
         int band=(int)(9*(MC.options.chatLineSpacing().get()+1)),offset=(int)Math.round(-8*(MC.options.chatLineSpacing().get()+1)+4*MC.options.chatLineSpacing().get());
         double scale=chat.getScale(),gui=MC.getWindow().getGuiScale();int bottom=(int)Math.floor((MC.getWindow().getGuiScaledHeight()-40)/scale);
         int x=(int)Math.floor((4+r.x()+r.width()-.5)*scale*gui),y=(int)Math.floor((bottom-line*band+offset)*scale*gui);
-        var palette=new HashSet<Integer>();var source=r.asset().media().frames().get(0).image();for(int sy=0;sy<source.getHeight();sy++)palette.add(source.getRGB(source.getWidth()-1,sy)&0xffffff);
+        var palette=new HashSet<Integer>();var source=r.asset().frames().get(0).image();for(int sy=0;sy<source.getHeight();sy++)palette.add(source.getRGB(source.getWidth()-1,sy)&0xffffff);
         try(var image=Screenshot.takeScreenshot(MC.getMainRenderTarget())){
             image.writeToFile(OUT.resolve(name));int bad=0;for(int row=0;row<r.height();row++){int py=(int)Math.floor(y+(row+.5)*scale*gui);int abgr=image.getPixelRGBA(x,py);int rgb=(abgr&255)<<16|(abgr&0xff00)|(abgr>>>16&255);if(!palette.contains(rgb))bad++;}
             check(bad==0,"Actual "+(animated?"GIF":"PNG")+" framebuffer has continuous media bands: width="+chat.getWidth()+", scale="+scale+", spacing="+MC.options.chatLineSpacing().get()+", gaps="+bad);
