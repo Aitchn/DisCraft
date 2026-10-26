@@ -142,6 +142,8 @@ jobs:
         run: timeout --kill-after=45s 600 xvfb-run -a -s '-screen 0 1280x900x24 -nolisten tcp' python3 scripts/verify-native-hover.py
       - name: Run native Discord member display and author click acceptance
         run: timeout --kill-after=45s 600 xvfb-run -a -s '-screen 0 1280x900x24 -nolisten tcp' python3 scripts/verify-discord-author.py
+      - name: Run real optional-client, absent-server and incompatible-protocol matrix
+        run: timeout --kill-after=45s 900 xvfb-run -a -s '-screen 0 1280x900x24 -nolisten tcp' python3 scripts/verify-optional-client.py
       - name: Upload multiplayer evidence
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -152,5 +154,6 @@ jobs:
             build/evidence/ui-text/
             build/evidence/native-hover/
             build/evidence/discord-author/
+            build/evidence/optional-client/
           if-no-files-found: warn
           retention-days: 14

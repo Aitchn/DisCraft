@@ -69,3 +69,19 @@ CI artifacts. Explicit Forge early-display/main-thread failures and premature ex
 fail immediately instead of waiting at a console dialog until the integration deadline.
 The controller never automatically restarts a failed client. Startup gates have bounded
 process/log IPC regressions and a 120-second readiness deadline per client.
+
+Optional installation is checked by `scripts/verify-optional-client.py` under
+Xvfb at 1280×900. Its standalone instrumentation source set does not depend on
+DisCraft, and its launcher removes both DisCraft/core main outputs from the
+unenhanced process classpaths and MOD_CLASSES. Actual ModList assertions prove
+absence. The matrix covers: enhanced/unenhanced peers together with localhost
+Discord REST and media ingress, regular chat, late cancellation, authoritative
+item PNG/native hover, configured join/quit/death/advancement, respawn and
+reconnect cleanup; a synthetic protocol-3 channel rejected before play; and an
+enhanced client on a Forge server without DisCraft. The mixed-server counter
+asserts zero DisCraft custom play payloads to the absent client. Test drivers
+are excluded from the distributable and checked by `check-mod-jar.py`.
+Evidence is retained in `build/evidence/optional-client/`. These worlds use only
+Forge and the appropriate bridge/instrumentation mod, offline identities and a
+loopback fake credential. They do not exercise arbitrary content-mod requirements,
+a pure vanilla executable, or Mojang online-session signature authentication.

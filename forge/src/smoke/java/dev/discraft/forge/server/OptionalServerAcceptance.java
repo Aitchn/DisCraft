@@ -1,0 +1,83 @@
+package dev.discraft.forge.server;
+
+import com.google.gson.*;
+import com.sun.net.httpserver.HttpServer;
+import dev.discraft.core.Attachment;
+import dev.discraft.forge.DisCraft;
+import dev.discraft.forge.bridge.*;
+import io.netty.channel.*;
+import net.minecraft.advancements.*;
+import net.minecraft.advancements.critereon.ImpossibleTrigger;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.protocol.game.ClientboundCustomPayloadPacket;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.item.*;
+import net.minecraft.world.level.GameType;
+import net.minecraftforge.common.MinecraftForge;
+import net.minecraftforge.event.ServerChatEvent;
+import net.minecraftforge.event.TickEvent;
+import net.minecraftforge.event.entity.player.PlayerEvent;
+import net.minecraftforge.event.server.*;
+import net.minecraftforge.eventbus.api.*;
+import net.minecraftforge.fml.common.Mod;
+import java.net.*;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.*;
+import java.util.*;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.*;
+
+@Mod.EventBusSubscriber(modid=DisCraft.ID)
+public final class OptionalServerAcceptance {
+    private static MinecraftServer server;private static Peer api;private static int stage,ticks,bareJoins;private static boolean cancelled,cleaned;private static String failure;private static final AtomicInteger barePayloads=new AtomicInteger();private static final List<String> checks=new ArrayList<>();
+    private static boolean enabled(){return Boolean.getBoolean("discraft.multiplayerSmoke")&&Boolean.getBoolean("discraft.optionalClientSmoke");}
+    private static Path out(){return Path.of(System.getProperty("discraft.optionalOutput"));}
+    private static void check(boolean value,String text){if(!value)throw new AssertionError(text);checks.add("PASS "+text);System.out.println("OPTIONAL_SERVER PASS "+text);}
+    private static void flag(String name)throws Exception{if(!Files.exists(out().resolve(name)))Files.writeString(out().resolve(name),"ready\n");}
+    private static ServerPlayer player(String name){return server.getPlayerList().getPlayerByName(name);}
+    private static long count(String text){return api.payloads.stream().filter(p->p.get("content").getAsString().contains(text)).count();}
+    @SubscribeEvent(priority=EventPriority.LOWEST) public static void start(ServerStartedEvent event)throws Exception{
+        if(!enabled())return;server=event.getServer();Files.createDirectories(out());api=new Peer();var field=ServerBridge.class.getDeclaredField("adapter");field.setAccessible(true);((DiscordAdapter)field.get(null)).close();field.set(null,api.adapter());
+        MinecraftForge.EVENT_BUS.addListener(EventPriority.LOWEST,true,ServerChatEvent.class,chat->{if(chat.getRawText().equals("bare-cancelled")){chat.setCanceled(true);cancelled=true;}});
+    }
+    @SubscribeEvent(priority=EventPriority.HIGHEST) public static void login(PlayerEvent.PlayerLoggedInEvent event){
+        if(!enabled()||!(event.getEntity() instanceof ServerPlayer p))return;var sword=new ItemStack(Items.DIAMOND_SWORD);sword.setHoverName(Component.literal("Server Sword"));sword.getOrCreateTag().putString("pages","private-book-optional-fixture");sword.getOrCreateTag().putString("BlockEntityTag","private-container-optional-fixture");p.setItemInHand(InteractionHand.MAIN_HAND,sword);
+        if(p.getGameProfile().getName().equals("BareTester")){bareJoins++;p.connection.connection.channel().pipeline().addBefore("packet_handler","optional_payload_counter",new ChannelOutboundHandlerAdapter(){@Override public void write(ChannelHandlerContext context,Object message,ChannelPromise promise)throws Exception{if(message instanceof ClientboundCustomPayloadPacket packet&&packet.getIdentifier().equals(new ResourceLocation("discraft","bridge")))barePayloads.incrementAndGet();context.write(message,promise);}});}
+    }
+    @SuppressWarnings("unchecked") @SubscribeEvent(priority=EventPriority.LOWEST) public static void logout(PlayerEvent.PlayerLoggedOutEvent event)throws Exception{
+        if(!enabled()||!event.getEntity().getName().getString().equals("BareTester")||bareJoins!=1)return;UUID id=event.getEntity().getUUID();for(Class<?> type:List.of(ServerBridge.class,VanillaChatRelay.class)){var field=type.getDeclaredField("peers");field.setAccessible(true);check(!((Map<UUID,?>)field.get(null)).containsKey(id),"Logout clears "+type.getSimpleName()+" no-client peer ownership");}cleaned=true;flag("bare-reconnect-go");
+    }
+    @SubscribeEvent public static void tick(TickEvent.ServerTickEvent event){if(!enabled()||server==null||event.phase!=TickEvent.Phase.START||failure!=null||System.getProperty("discraft.optionalScenario", "mixed").equals("incompatible"))return;try{
+        if(++ticks%100==0)System.out.println("OPTIONAL_SERVER stage="+stage+" posts="+api.payloads.size()+" bareJoins="+bareJoins);
+        if(count("<BareTester> bare-chat-one")==1)flag("bare-chat-ok");if(count("<BareTester> bare-item")==1)flag("bare-item-ok");if(count("<EnhancedTester> enhanced-custom")==1)flag("enhanced-custom-ok");if(count("<BareTester> bare-after-respawn")==1)flag("bare-respawn-ok");
+        var bare=player("BareTester");var enhanced=player("EnhancedTester");
+        switch(stage){
+            case 0->{if(bare==null||enhanced==null)return;check(!BridgeNetwork.present(bare)&&BridgeNetwork.present(enhanced),"Actual mixed peers negotiate absent versus protocol-4 channels independently");api.visible.set(true);stage=1;}
+            case 1->{if(!Files.exists(out().resolve("bare-sent"))||!cancelled||count("bare-item")!=1)return;check(count("bare-cancelled")==0,"Late LOWEST Forge cancellation produces no Discord send");var advancement=Advancement.Builder.advancement().display(Items.DIAMOND,Component.literal("Optional advancement"),Component.literal("No DisCraft client needed"),null,FrameType.TASK,false,true,false).addCriterion("one",new ImpossibleTrigger.TriggerInstance()).build(new ResourceLocation("discraft_test","optional"));check(bare.getAdvancements().award(advancement,"one")&&!bare.getAdvancements().award(advancement,"one"),"Actual advancement completes once");stage=2;}
+            case 2->{if(count("Optional advancement")!=1)return;bare.setGameMode(GameType.SURVIVAL);bare.hurt(bare.damageSources().generic(),1000);stage=3;}
+            case 3->{if(count("BareTester died")!=1)return;flag("events-ready");stage=4;}
+            case 4->{if(bareJoins<2||!cleaned||count("bare-chat-reconnected")!=1||count("enhanced-item")!=1||count("enhanced-normal")!=1)return;
+                check(barePayloads.get()==0,"No-client connection receives zero DisCraft custom play payloads");check(count("bare-chat-one")==1&&count("bare-item")==1&&count("bare-after-respawn")==1&&count("bare-chat-reconnected")==1&&count("bare-cancelled")==0,"Vanilla chat/item, respawn and reconnect relay once with no cancelled relay");check(count("EnhancedTester joined") ==1&&count("BareTester joined")==2&&count("BareTester left")==1&&count("BareTester died")==1&&count("Optional advancement")==1,"Join/quit/death/advancement respect configuration without respawn or duplicate-criterion notices");check(api.payloads.stream().allMatch(p->p.getAsJsonObject("allowed_mentions").getAsJsonArray("parse").isEmpty()&&p.getAsJsonObject("allowed_mentions").getAsJsonArray("users").isEmpty()),"Official loopback adapter retains no-ping serialization");check(api.itemPngs.get()==2,"Actual authoritative items from both client modes generate one PNG each");flag("server-complete");stage=5;}
+        }
+    }catch(Throwable rejected){failure=rejected.getClass().getSimpleName()+": "+rejected.getMessage();try{Files.writeString(out().resolve("server-failure.txt"),failure);}catch(Exception ignored){}server.halt(false);}}
+    @SubscribeEvent(priority=EventPriority.LOWEST) public static void stopped(ServerStoppedEvent event)throws Exception{if(!enabled())return;if(api!=null)api.close();checks.add(failure==null&&(stage==5||System.getProperty("discraft.optionalScenario", "mixed").equals("incompatible")&&bareJoins==0&&api.payloads.isEmpty())?"PASS "+checks.size()+" actual mixed optional-client server checks; loopback only":"FAIL stage="+stage+" "+failure);Files.write(out().resolve("server-result.txt"),checks);}
+    private static final class Peer implements AutoCloseable {
+        private static final String CHANNEL="1234567890123456",GUILD="2234567890123456",BOT="3234567890123456",AUTHOR="4234567890123456";
+        final List<JsonObject> payloads=new CopyOnWriteArrayList<>();final AtomicBoolean visible=new AtomicBoolean();final AtomicInteger itemPngs=new AtomicInteger();private final HttpServer http;private final byte[] png;
+        Peer()throws Exception{png=Attachment.fromResource("emoji.png").bytes();http=HttpServer.create(new InetSocketAddress("127.0.0.1",0),0);http.createContext("/",exchange->{try{String path=exchange.getRequestURI().getPath();if(path.contains("/media/")||path.contains("/emoji/")){if(exchange.getRequestHeaders().getFirst("Authorization")!=null)throw new IllegalStateException("Authorization leaked to media");exchange.sendResponseHeaders(200,png.length);exchange.getResponseBody().write(png);return;}if(!"Bot discraft-local-test-token".equals(exchange.getRequestHeaders().getFirst("Authorization")))throw new IllegalStateException("Missing fake REST authorization");String response;
+            if(exchange.getRequestMethod().equals("POST")){byte[] bytes=exchange.getRequestBody().readNBytes(512*1024+1);if(bytes.length>512*1024)throw new IllegalStateException("Body bound");String body=new String(bytes,StandardCharsets.UTF_8);boolean multipart=body.startsWith("--");int begin=multipart?body.indexOf("\r\n\r\n")+4:0,end=multipart?body.indexOf("\r\n--",begin):body.length();var payload=JsonParser.parseString(body.substring(begin,end)).getAsJsonObject();if(body.contains("private-book")||body.contains("private-container"))throw new IllegalStateException("Private item data escaped");if(multipart){int header=body.indexOf("filename=\"item.png\""),binary=body.indexOf("\r\n\r\n",header)+4;byte[] suffix=Arrays.copyOfRange(bytes,body.substring(0,binary).getBytes(StandardCharsets.UTF_8).length,bytes.length);var image=javax.imageio.ImageIO.read(new java.io.ByteArrayInputStream(suffix));if(image==null||image.getWidth()>768||image.getHeight()>1536)throw new IllegalStateException("Invalid item PNG");itemPngs.incrementAndGet();}payloads.add(payload);response="{\"id\":\""+(8234567890123000L+payloads.size())+"\"}";}
+            else if(path.endsWith("users/@me"))response="{\"id\":\""+BOT+"\",\"bot\":true}";
+            else if(path.endsWith("channels/"+CHANNEL))response="{\"id\":\""+CHANNEL+"\",\"type\":0,\"guild_id\":\""+GUILD+"\"}";
+            else if(path.contains("/members/"))response="{\"roles\":[],\"nick\":\"Optional Peer\",\"user\":{\"id\":\""+(path.endsWith(BOT)?BOT:AUTHOR)+"\",\"username\":\"loopback_author\"}}";
+            else if(path.endsWith("/emojis"))response="[{\"id\":\"1111111111111111\",\"name\":\"Fixture\",\"animated\":false,\"available\":true,\"roles\":[]}]";
+            else if(path.endsWith("/messages")){if(exchange.getRequestURI().getQuery().contains("limit=1"))response="[{\"id\":\"5234567890123000\"}]";else if(!visible.get())response="[]";else response="[{\"id\":\"5234567890123001\",\"author\":{\"id\":\""+AUTHOR+"\",\"username\":\"loopback_author\"},\"content\":\"optional inbound <:Fixture:1111111111111111>\",\"attachments\":[{\"filename\":\"optional.png\",\"size\":"+png.length+",\"url\":\""+base().resolve("media/optional.png")+"\"}]}]";}
+            else throw new IllegalStateException("Unexpected local API route");byte[] data=response.getBytes(StandardCharsets.UTF_8);exchange.sendResponseHeaders(200,data.length);exchange.getResponseBody().write(data);
+        }finally{exchange.close();}});http.start();}
+        URI base(){return URI.create("http://127.0.0.1:"+http.getAddress().getPort()+"/api/v10/");}
+        DiscordBotAdapter adapter(){return new DiscordBotAdapter(base(),CHANNEL,"discraft-local-test-token",true);}
+        public void close(){http.stop(0);}
+    }
+}
