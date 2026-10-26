@@ -39,7 +39,7 @@ public final class MultiplayerAcceptance {
         try{
             if(System.nanoTime()-lastDiagnostic>5_000_000_000L){
                 lastDiagnostic=System.nanoTime();
-                System.out.println("MULTIPLAYER "+ROLE+" stage="+stage+" nativePhase="+NativeChatRegression.phase()+" screen="+(MC.screen==null?"none":MC.screen.getClass().getSimpleName())+" player="+(MC.player!=null)+" overlay="+(MC.getOverlay()!=null)+" bridge="+ClientBridge.status()+" available="+ClientBridge.available()+" messages="+ClientBridge.snapshot().size());
+                System.out.println("MULTIPLAYER "+ROLE+" stage="+stage+" nativePhase="+NativeChatRegression.phase()+NativeUxAcceptance.state()+" screen="+(MC.screen==null?"none":MC.screen.getClass().getSimpleName())+" player="+(MC.player!=null)+" overlay="+(MC.getOverlay()!=null)+" bridge="+ClientBridge.status()+" available="+ClientBridge.available()+" messages="+ClientBridge.snapshot().size());
             }
             if(System.nanoTime()>deadline)throw new AssertionError("Timeout "+ROLE+" stage="+stage+" status="+ClientBridge.status());
             if(++ticks%2!=0)return;

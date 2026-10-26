@@ -17,6 +17,7 @@ try:
 except BlockingIOError:
     raise SystemExit('Another multiplayer controller owns this evidence directory; no test was started')
 (OUT/'result.txt').unlink(missing_ok=True)
+(OUT/'clipboard-helper-pid.txt').unlink(missing_ok=True)
 for name in ('Alice','Bob'):
     for suffix in ('-result.txt','-done','-sent'):
         (OUT/(name+suffix)).unlink(missing_ok=True)
@@ -51,6 +52,14 @@ difficulty=peaceful
 gamemode=creative
 motd=DisCraft isolated TEST adapter acceptance
 ''')
+# Use a separate X11 JVM for helper pixel/timeout/lifecycle assertions before game input.
+alice_launch=json.loads((ROOT/'build/mp-launch-Alice.json').read_text())
+alice_command=alice_launch['command'];desktop_cp=alice_command[alice_command.index('-cp')+1]
+with (OUT/'desktop-lifecycle.log').open('w') as output:
+    subprocess.run([alice_command[0],'-Djava.awt.headless=false','-Xmx128m','-XX:ActiveProcessorCount=1','-cp',desktop_cp,'dev.discraft.forge.smoke.DesktopLifecycleAcceptance'],env=environment,stdout=output,stderr=subprocess.STDOUT,check=True,timeout=25)
+assert 'PASS 10 real X11 clipboard/lifecycle checks' in (OUT/'desktop-lifecycle.log').read_text(),'Desktop helper checks did not finish'
+with (OUT/'desktop-headless.log').open('w') as output:
+    subprocess.run([alice_command[0],'-Djava.awt.headless=true','-Xmx128m','-XX:ActiveProcessorCount=1','-cp',desktop_cp,'dev.discraft.forge.smoke.HeadlessClipboardAcceptance'],env=environment,stdout=output,stderr=subprocess.STDOUT,check=True,timeout=15)
 processes=[]; logs=[]
 def launch(role):
     launch=json.loads((ROOT/f'build/mp-launch-{role}.json').read_text())
@@ -103,6 +112,16 @@ try:
     for role,p in (('Alice',alice),('Bob',bob)):
         result=(OUT/(role+'-result.txt')).read_text();print(role,result,flush=True)
         assert p.returncode==0 and result.splitlines()[-1].startswith('PASS '),result
+    helper_pid=int((OUT/'clipboard-helper-pid.txt').read_text())
+    def helper_alive():
+        try:return b'dev.discraft.forge.ClipboardDesktop' in Path(f'/proc/{helper_pid}/cmdline').read_bytes()
+        except FileNotFoundError:return False
+    helper_deadline=time.monotonic()+3
+    while helper_alive() and time.monotonic()<helper_deadline:time.sleep(.05)
+    if helper_alive():
+        os.kill(helper_pid,signal.SIGKILL)
+        raise AssertionError('Game shutdown left its desktop clipboard helper alive; owned process cleaned up')
+    print('PASS game shutdown leaves no owned desktop clipboard helper process',flush=True)
     server.stdin.write(b'stop\n');server.stdin.flush();server.wait(timeout=40)
     assert server.returncode==0,'Dedicated server did not stop cleanly'
     (OUT/'result.txt').write_text('PASS real Forge dedicated server + Alice/Bob game networking; server-owned TEST peer only.\n')

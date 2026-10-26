@@ -1,1 +1,6 @@
-smiley.png is the unmodified generic entry icon explicitly supplied for this UX reference. Library ID libfile_90b63d3a792c8191b9270d6ca798c6b8; SHA256 7b8726950675b083f4a31b0f5eb94b6f01d8c5fe6cba24174786a40bf3b0d490. The picker/card layout was inspected from the other two references; no user guild/server assets from those images were copied.
+NativeInteractions draws the smiley icon from original geometric pixel primitives.
+The reference screenshots were inspected for layout guidance only. No reference
+screenshot, crop, rescale, or user server artwork is packaged as a UI texture.
+The initial screenshot-derived icon was removed following the user's correction.
+Media shown in the picker is either separately labelled bundled test fixture data
+or bounded assets already provided by the server, never UI reference pixels.

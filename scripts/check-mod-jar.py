@@ -20,11 +20,12 @@ with zipfile.ZipFile(jar) as archive:
         'dev/discraft/forge/DesktopClipboardService.class',
         'dev/discraft/forge/bridge/ActorRef.class',
         'dev/discraft/forge/bridge/Mention.class',
-        'assets/discraft/textures/gui/smiley.png',
+        'dev/discraft/forge/NativeInteractions.class',
         'fixtures/dance.gif',
         'fixtures/landscape.png',
         'fixtures/emoji.png',
     }
     assert required <= names, f'Missing mod contents: {required - names}'
+    assert 'assets/discraft/textures/gui/smiley.png' not in names, 'Reference screenshot icon leaked into mod JAR'
     assert not any('/smoke/' in name or 'BridgeProtocolTest' in name for name in names), 'Test driver leaked into mod JAR'
 print(f'PASS packaged mod: {jar.name} SHA256={hashlib.sha256(jar.read_bytes()).hexdigest()}')

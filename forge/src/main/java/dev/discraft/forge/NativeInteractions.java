@@ -6,7 +6,6 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.*;
 import net.minecraft.client.gui.screens.ChatScreen;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.ResourceLocation;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.client.event.*;
 import net.minecraftforge.eventbus.api.*;
@@ -17,7 +16,6 @@ import java.util.*;
 @Mod.EventBusSubscriber(modid=DisCraft.ID,value=Dist.CLIENT)
 public final class NativeInteractions {
     private static final Minecraft MC=Minecraft.getInstance();
-    private static final ResourceLocation SMILEY=new ResourceLocation(DisCraft.ID,"textures/gui/smiley.png");
     private static final TextureCache textures=new TextureCache();
     private static final long started=System.nanoTime();
     private static Attachment demoGif;
@@ -112,6 +110,12 @@ public final class NativeInteractions {
         Smiley(int x,int y){super(x,y,18,16,Component.literal("表情、GIF 與貼圖"));setTooltip(Tooltip.create(getMessage()));}
         protected void updateWidgetNarration(net.minecraft.client.gui.narration.NarrationElementOutput output){output.add(net.minecraft.client.gui.narration.NarratedElementType.TITLE,getMessage());}
         public void onPress(){if(open)closePicker();else openPicker();}
-        protected void renderWidget(GuiGraphics g,int mx,int my,float partial){g.blit(SMILEY,getX(),getY(),18,16,7,7,21,21,35,33);}
+        protected void renderWidget(GuiGraphics g,int mx,int my,float partial){
+            // Original geometric icon: no reference screenshot or external texture pixels.
+            int cx=getX()+8,cy=getY()+7,color=isHoveredOrFocused()?0xffffffff:0xffb5bac1;
+            for(int y=-6;y<=6;y++)for(int x=-6;x<=6;x++){int r=x*x+y*y;if(r>=26&&r<=40)g.fill(cx+x,cy+y,cx+x+1,cy+y+1,color);}
+            g.fill(cx-3,cy-2,cx-1,cy,color);g.fill(cx+2,cy-2,cx+4,cy,color);
+            for(int x=-3;x<=3;x++){int y=Math.abs(x)==3?1:Math.abs(x)==2?2:3;g.fill(cx+x,cy+y,cx+x+1,cy+y+1,color);}
+        }
     }
 }
