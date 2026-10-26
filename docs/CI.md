@@ -91,3 +91,12 @@ packet fixture. Actual native display is checked while redacted/filtered origina
 must never reach the local REST receiver. Commands Only is sent to the real server;
 a second player confirms native receipt while the sender receives no self player
 chat, and the bridge must emit exactly one Discord-side record.
+The mixed optional world uses three real clients for native recipient identity
+regression: a SYSTEM sender, an enhanced recipient and an unenhanced recipient.
+It holds the first message's second recipient packet until a second identical
+message has completed bridge admission but is blocked in a late cancellation
+listener. Only one REST send and one native message per recipient may result.
+This regression fails against the earlier text-matching implementation. The
+fixture also proves a reconnect changes the sender generation despite both old
+and new unsigned native indices being zero, and retains the sender-filter test
+while other recipients receive an unfiltered view.

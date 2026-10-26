@@ -159,7 +159,7 @@ structure (512 components, depth 32, 16 KiB representation) before/after its own
 item replacement. A prior or later textual/decorator rewrite, unknown dynamic
 content, obfuscated presentation or non-passthrough filter suppresses the Discord
 relay. It never falls back to the original signed body after such a change.
-Style-only changes with identical non-obfuscated content remain relayable.
+In-place style-only changes with identical non-obfuscated content remain relayable.
 This intentionally prefers missing a modified chat message over disclosing its
 unmoderated original; native packets and their signatures are not rewritten.
 
@@ -172,3 +172,16 @@ messages. The observation queue remains bounded and deduplicates by consuming a
 pending message once. With no observable recipient, no broadcast is fabricated;
 the conservative confirmation path can therefore suppress a SYSTEM sender's
 message when nobody receives native player chat.
+
+Native broadcast correlation never uses text as message identity. Each admission
+has a fresh per-connection generation/sequence and a unique empty presentation
+wrapper, containing the original visible component without added characters,
+actions or IDs. Pinned 1.20.1 retains this root in unsigned presentation while
+leaving the signed body untouched. Outbound packets bind that exact root to one
+receipt (generation, admission, native index and signature); an atomic first
+receipt claim prevents multiple recipients from queuing/consuming it twice.
+Unsigned native messages may reuse index zero, so index alone is insufficient.
+The identity map shares the existing 128-admission/10-second limits and is cleared
+on consume, expiry, disconnect and shutdown. A replacement root from another
+listener fails closed even if its text is identical; in-place non-obfuscated
+style changes remain supported. No textual fallback correlates a later event.

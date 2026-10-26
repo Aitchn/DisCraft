@@ -25,10 +25,10 @@ def scenario(name):
  processes=[];logs=[]
  with socket.socket() as reservation:reservation.bind(('127.0.0.1',0));port=reservation.getsockname()[1]
  def launch(role):
-  server=role=='server';bare=(name=='missing_server' and server) or (name!='missing_server' and role=='bare')
+  server=role=='server';bare=(name=='missing_server' and server) or (name!='missing_server' and role in ('bare','observer'))
   data=json.loads((ROOT/('build/mp-launch-'+('server' if server else 'Alice')+'.json')).read_text());command=data['command'];child=environment.copy();child.update(data['environment']);directory=ROOT/f'run-mp/optional-{name}-{role}';directory.mkdir(parents=True,exist_ok=True)
   command=[c for c in command if not c.startswith(('-Ddiscraft.bridgeRole=','-Ddiscraft.bridgePort='))]
-  flags=['-Ddiscraft.optionalClientSmoke=true','-Ddiscraft.optionalOutput='+str(output),'-Ddiscraft.optionalScenario='+name,'-Ddiscraft.bridgePort='+str(port)]
+  flags=['-Ddiscraft.optionalClientSmoke=true','-Ddiscraft.optionalOutput='+str(output),'-Ddiscraft.optionalScenario='+name,'-Ddiscraft.optionalRole='+role,'-Ddiscraft.bridgePort='+str(port)]
   if '--gameDir' in command:command[command.index('--gameDir')+1]=str(directory)
   if bare:
    index=command.index('-cp')+1;command[index]=strip_roots(command[index])+os.pathsep+os.pathsep.join(optional)
@@ -39,7 +39,7 @@ def scenario(name):
   if server:
    (directory/'eula.txt').write_text('eula=true\n');(directory/'server.properties').write_text(f'server-ip=127.0.0.1\nserver-port={port}\nonline-mode=false\nenforce-secure-profile=false\nenable-rcon=false\nenable-query=false\nmax-players=4\nview-distance=2\nsimulation-distance=2\nlevel-name=optional-fixture-world\nlevel-type=minecraft:flat\ngenerator-settings={{}}\nspawn-protection=0\nspawn-monsters=false\nspawn-animals=false\nspawn-npcs=false\ndifficulty=normal\ngamemode=creative\n')
   else:
-   command[command.index('--username')+1]='BareTester' if bare else 'EnhancedTester'
+   command[command.index('--username')+1]='ObserverTester' if role=='observer' else 'BareTester' if bare else 'EnhancedTester'
    natives=directory/'native-libraries';natives.mkdir(exist_ok=True);cp=command[command.index('-cp')+1]
    for jar in cp.split(os.pathsep):
     if not jar.endswith('-natives-linux.jar'):continue
@@ -55,7 +55,7 @@ def scenario(name):
   while 'Done (' not in (output/'server.log').read_text(errors='replace'):
    if server.poll() is not None or time.monotonic()>deadline:raise RuntimeError(name+' server startup failed')
    time.sleep(.25)
-  roles=['enhanced'] if name=='missing_server' else ['bare'] if name=='incompatible' else ['bare','enhanced'];clients=[]
+  roles=['enhanced'] if name=='missing_server' else ['bare'] if name=='incompatible' else ['bare','enhanced','observer'];clients=[]
   for role in roles:
    p=launch(role);clients.append(p);wait_for_graphics_ready(p,output/(role+'.log'),role)
   deadline=time.monotonic()+240
@@ -63,11 +63,11 @@ def scenario(name):
    if (output/'server-failure.txt').exists():raise RuntimeError((output/'server-failure.txt').read_text())
    if server.poll() is not None or time.monotonic()>deadline:raise RuntimeError(name+' runtime timeout/server exit')
    for role in roles:
-    result=output/(('bare-'+name if role=='bare' else 'enhanced')+'-result.txt')
+    result=output/((role+'-'+name if role in ('bare','observer') else 'enhanced')+'-result.txt')
     if result.exists() and not result.read_text().splitlines()[-1].startswith('PASS '):raise RuntimeError(result.read_text())
    time.sleep(.25)
   for role,p in zip(roles,clients):
-   result=(output/(('bare-'+name if role=='bare' else 'enhanced')+'-result.txt')).read_text();assert p.returncode==0 and result.splitlines()[-1].startswith('PASS '),result;print(name,role,result.splitlines()[-1],flush=True)
+   result=(output/((role+'-'+name if role in ('bare','observer') else 'enhanced')+'-result.txt')).read_text();assert p.returncode==0 and result.splitlines()[-1].startswith('PASS '),result;print(name,role,result.splitlines()[-1],flush=True)
   server.stdin.write(b'stop\n');server.stdin.flush();server.wait(timeout=40)
   assert server.returncode==0
   if name!='missing_server':assert (output/'server-result.txt').read_text().splitlines()[-1].startswith('PASS ')

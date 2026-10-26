@@ -39,13 +39,13 @@ public final class OptionalPeer {
         private static long count(String text){return messages().stream().filter(m->m.content().getString().contains(text)).count();}
         private static void connect(){String address="127.0.0.1:"+System.getProperty("discraft.bridgePort");ConnectScreen.startConnecting(new TitleScreen(),MC,ServerAddress.parseString(address),new ServerData("optional peer local only",address,false),false);}
         private static void next(int value){stage=value;ticks=0;}
-        private static void finish()throws Exception{checks.add("PASS "+checks.size()+" actual no-DisCraft Forge client checks ("+scenario()+")");Files.write(out().resolve("bare-"+scenario()+"-result.txt"),checks);done=true;MC.stop();}
+        private static void finish()throws Exception{checks.add("PASS "+checks.size()+" actual no-DisCraft Forge client checks ("+scenario()+")");Files.write(out().resolve(System.getProperty("discraft.optionalRole","bare")+"-"+scenario()+"-result.txt"),checks);done=true;MC.stop();}
         @SubscribeEvent public static void tick(TickEvent.ClientTickEvent event){if(!Boolean.getBoolean("discraft.optionalClientSmoke")||done||event.phase!=TickEvent.Phase.END)return;
             try{ticks++;if(ticks%100==0)System.out.println("OPTIONAL_BARE stage="+stage+" screen="+(MC.screen==null?"none":MC.screen.getClass().getSimpleName()));
                 if(MC.screen instanceof DeathScreen){MC.player.respawn();MC.setScreen(null);return;}
                 switch(stage){
                     case 0->{if(MC.screen instanceof AccessibilityOnboardingScreen){MC.screen.children().stream().filter(c->c instanceof Button b&&b.getMessage().getString().equals("Continue")).map(c->(Button)c).findFirst().ifPresent(Button::onPress);return;}if(!(MC.screen instanceof TitleScreen)||MC.getOverlay()!=null)return;Files.createDirectories(out());assertIsolated();check(true,"Forge client has neither DisCraft loaded nor bridge/core classes available");MC.options.guiScale().set(2);MC.options.renderDistance().set(2);MC.options.cloudStatus().set(CloudStatus.OFF);MC.resizeDisplay();connect();next(1);}
-                    case 1->{if(scenario().equals("incompatible")){if(MC.screen instanceof net.minecraftforge.client.gui.ModMismatchDisconnectedScreen){check(MC.player==null&&MC.level==null,"Explicit legacy protocol fixture is rejected before play login");finish();}return;}if(MC.player==null||MC.level==null||MC.screen!=null)return;check(true,"No-DisCraft Forge peer reaches the actual world");next(2);}
+                    case 1->{if(scenario().equals("incompatible")){if(MC.screen instanceof net.minecraftforge.client.gui.ModMismatchDisconnectedScreen){check(MC.player==null&&MC.level==null,"Explicit legacy protocol fixture is rejected before play login");finish();}return;}if(MC.player==null||MC.level==null||MC.screen!=null)return;check(true,"No-DisCraft Forge peer reaches the actual world");next(System.getProperty("discraft.optionalRole","").equals("observer")?100:2);}
                     case 2->{if(count("optional inbound")==0)return;check(messages().stream().anyMatch(m->m.content().getString().startsWith("[D] Optional Peer: optional inbound :Fixture:")&&m.content().getString().contains("media requires DisCraft client")),"Discord loopback ingress becomes native [D] text with safe emoji/media fallback");MC.player.connection.sendChat("bare-chat-one");next(3);}
                     case 3->{if(!has("bare-chat-ok")||ticks<6)return;MC.player.connection.sendChat("bare-item %item");next(4);}
                     case 4->{if(!has("bare-item-ok")||ticks<6)return;MC.player.connection.sendChat("bare-private-original");next(11);}
@@ -58,9 +58,12 @@ public final class OptionalPeer {
                     case 8->{if(MC.player==null||MC.level==null||MC.screen!=null)return;MC.player.connection.sendChat("bare-chat-reconnected");next(9);}
                     case 9->{if(!has("bare-reconnected-ok"))return;MC.options.chatVisibility().set(net.minecraft.world.entity.player.ChatVisiblity.SYSTEM);MC.options.broadcastOptions();next(10);}
                     case 10->{if(ticks<10)return;MC.player.connection.sendChat("bare-system-chat");next(14);}
-                    case 14->{if(!has("server-complete"))return;check(count("bare-system-chat")==0,"Commands-only sender does not receive its own player chat");MC.options.chatVisibility().set(net.minecraft.world.entity.player.ChatVisiblity.FULL);MC.options.broadcastOptions();check(count("bare-chat-reconnected")==1,"No-client peer reconnects and retains ordinary native chat");flag("bare-done");finish();}
+                    case 14->{if(!has("system-native-ready"))return;MC.player.connection.sendChat("bare-repeat-race");next(15);}
+                    case 15->{if(!has("race-first-posted"))return;MC.player.connection.sendChat("bare-repeat-race");next(16);}
+                    case 100->{if(count("bare-repeat-race")==1)flag("observer-race-saw");if(!has("server-complete"))return;check(count("bare-repeat-race")==1,"Second native recipient receives only the first repeated message");flag("observer-done");finish();}
+                    case 16->{if(!has("server-complete"))return;check(count("bare-system-chat")==0,"Commands-only sender does not receive its own player chat");MC.options.chatVisibility().set(net.minecraft.world.entity.player.ChatVisiblity.FULL);MC.options.broadcastOptions();check(count("bare-chat-reconnected")==1,"No-client peer reconnects and retains ordinary native chat");flag("bare-done");finish();}
                 }
-            }catch(Throwable failed){try{checks.add("FAIL stage="+stage+" "+failed.getClass().getSimpleName()+": "+failed.getMessage());Files.write(out().resolve("bare-"+scenario()+"-result.txt"),checks);}catch(Exception ignored){}done=true;MC.stop();}
+            }catch(Throwable failed){try{checks.add("FAIL stage="+stage+" "+failed.getClass().getSimpleName()+": "+failed.getMessage());Files.write(out().resolve(System.getProperty("discraft.optionalRole","bare")+"-"+scenario()+"-result.txt"),checks);}catch(Exception ignored){}done=true;MC.stop();}
         }
     }
 }
