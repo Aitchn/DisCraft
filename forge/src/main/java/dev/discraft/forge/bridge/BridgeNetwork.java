@@ -16,8 +16,8 @@ import java.util.function.Supplier;
 public final class BridgeNetwork {
     public static final int CHUNK=16*1024;
     public static final SimpleChannel CHANNEL=NetworkRegistry.newSimpleChannel(new ResourceLocation(DisCraft.ID,"bridge"),()->"4",
-        v->v.equals("4")||v.equals(NetworkRegistry.ABSENT)||v.equals(NetworkRegistry.ACCEPTVANILLA),
-        v->v.equals("4")||v.equals(NetworkRegistry.ABSENT)||v.equals(NetworkRegistry.ACCEPTVANILLA));
+        NetworkRegistry.acceptMissingOr("4"),
+        NetworkRegistry.acceptMissingOr("4"));
     private static final AtomicInteger QUEUED=new AtomicInteger();
     private static final java.util.concurrent.ConcurrentHashMap<UUID,Ingress> ingress=new java.util.concurrent.ConcurrentHashMap<>();
     private static final class Ingress {
@@ -64,9 +64,12 @@ public final class BridgeNetwork {
         c.enqueueWork(()->{try{ServerBridge.upload(player,p);}finally{QUEUED.decrementAndGet();}});
     }
     private static void client(Supplier<NetworkEvent.Context> supplied,Runnable work){var c=supplied.get();c.setPacketHandled(true);c.enqueueWork(()->DistExecutor.unsafeRunWhenOn(Dist.CLIENT,()->()->work.run()));}
-    public static boolean present(ServerPlayer p){return p.connection!=null&&p.connection.connection.channel()!=null&&CHANNEL.isRemotePresent(p.connection.connection);}
+    /** Require the negotiated Forge protocol, not minecraft:register's mirrored channel names. */
+    public static boolean present(net.minecraft.network.Connection connection){if(connection==null||connection.channel()==null)return false;var data=NetworkHooks.getConnectionData(connection);return data!=null&&"4".equals(data.getChannels().get(new ResourceLocation(DisCraft.ID,"bridge")));}
+    public static boolean present(ServerPlayer p){return p.connection!=null&&present(p.connection.connection);}
     public static void notice(ServerPlayer p,UUID id,boolean accepted,String text){if(present(p))CHANNEL.send(PacketDistributor.PLAYER.with(()->p),new Notice(id,accepted,text));}
     public static void deliver(ServerPlayer p,RelayRecord record)throws java.io.IOException{
+        if(!present(p))return;
         byte[] b=record.encode();for(int at=0;at<b.length;at+=CHUNK)CHANNEL.send(PacketDistributor.PLAYER.with(()->p),new Download(record.id(),b.length,at,Arrays.copyOfRange(b,at,Math.min(b.length,at+CHUNK))));
     }
 }

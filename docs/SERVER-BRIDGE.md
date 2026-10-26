@@ -111,3 +111,45 @@ Minecraft native chat renders incoming Discord messages as `[D] memberDisplay: t
 The server resolves only authors of new messages in the configured channel with the official single-member endpoint; it does not list members or request a new intent. Names are bounded to 64 characters, with at most four lookups and a shared two-second lookup budget per four-message polling page. A 128-entry cache refreshes after 60 seconds, with a 15-second negative cache on lookup failure. Missing, invalid, mismatched or unavailable member metadata falls back to the message's safe user display. Cache state is cleared when the adapter closes. No roles or complete member responses are retained.
 
 `python3 scripts/verify-discord-author.py` under a 1280×900 Xvfb display drives actual Minecraft native chat using production REST conversion and server packets against a loopback peer. It verifies nickname/global/username fallback, special characters, author hover and physical click insertion, and saves original 1100×800 screenshots. This is local integration evidence, not a live human Discord message. No messages are sent by this test.
+
+### Optional client installation
+
+DisCraft's client installation is optional. With DisCraft installed on the server,
+permitted players without the mod retain configured join/quit/death/advancement
+notifications and ordinary Minecraft chat relaying. Discord ingress uses native
+`[D] display: text` components for these players. Custom emoji become `:name:`;
+media receives a generic client-required label, without URLs, filenames or custom
+wire metadata. Safe `%item` names and vanilla item hover remain available when
+`itemDisplay=true`. Clipboard uploads, image rendering, the emoji picker and
+selected stable-ID mentions require the client enhancement.
+
+The pinned Forge 47.4.0 channel uses `NetworkRegistry.acceptMissingOr("4")` on
+both ends: absent endpoints are accepted; installed endpoints offering another
+protocol are rejected. In this version `ABSENT` is ChannelData, so comparing a
+String directly with that object does not accept an absent channel. Every server
+custom-packet send checks the exact negotiated Forge protocol. The generic
+`isRemotePresent` helper also accepts minecraft:register lists, which can mirror
+the server channel even when the client did not negotiate it; those lists alone
+do not enable DisCraft packets. Installing DisCraft on a client also
+allows joining a server without DisCraft, with its enhancements inactive.
+This policy does not waive client requirements of other content mods.
+
+Ordinary native chat stays on Forge's existing chat path. DisCraft neither
+cancels nor manually republishes it. A bounded observation of the native player
+chat packet confirms broadcast after asynchronous Forge listeners have finished,
+so a later cancellation does not leak a Discord relay. Raw signed message bodies
+and original packets are forwarded unchanged; `%item` modifies only the unsigned
+native presentation using a main-thread authoritative snapshot and the existing
+NBT whitelist. Discord receives that snapshot's semantic name/tooltip PNG, never
+the full item tag. This path shares bridge player/rate/queue limits, bounds its
+pending admissions and expires them; disconnect clears peer state. An uncertain
+Discord delivery is not retried. No-client fallback author hover is informational;
+click-to-insert stable-ID mentions remain a client enhancement.
+
+`python3 scripts/verify-optional-client.py` runs actual isolated Forge worlds with
+an independently compiled instrumentation mod that has no DisCraft dependency.
+It asserts DisCraft is absent from ModList, checks mixed enhanced/unenhanced
+peers, serverless enhancement fallback and a synthetic incompatible channel.
+All REST/media requests terminate at its local fake-credential receiver. These
+offline controlled-world checks do not establish production online-session
+cryptographic validation or compatibility with an arbitrary modpack.

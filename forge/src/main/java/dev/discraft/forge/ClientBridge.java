@@ -28,7 +28,7 @@ public final class ClientBridge {
     @SubscribeEvent public static void logout(ClientPlayerNetworkEvent.LoggingOut e){reset("Disconnected");}
     private static void reset(String reason){NativeChat.reset();ClientGuildEmoji.reset();generation++;enabled=false;status=reason;history.clear();seen.clear();transfers.clear();decoder.getQueue().clear();pending.values().forEach(f->f.completeExceptionally(new IOException(reason)));pending.clear();}
     public static String status(){return status;}
-    public static boolean available(){var c=Minecraft.getInstance().getConnection();return enabled&&c!=null&&BridgeNetwork.CHANNEL.isRemotePresent(c.getConnection());}
+    public static boolean available(){var c=Minecraft.getInstance().getConnection();return enabled&&c!=null&&BridgeNetwork.present(c.getConnection());}
     public static List<Message> snapshot(){return history.stream().map(RelayRecord::message).toList();}
     public static Map<String,Content.CustomEmoji> catalog(){var all=new LinkedHashMap<String,Content.CustomEmoji>();for(var r:history)all.putAll(r.catalog());return Map.copyOf(all);}
     public static Attachment emoji(String key){for(var r:history)if(r.emoji().containsKey(key))return r.emoji().get(key);return null;}

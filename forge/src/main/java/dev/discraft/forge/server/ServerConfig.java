@@ -29,6 +29,10 @@ final class ServerConfig {
         if(!Boolean.getBoolean("discraft.multiplayerSmoke")||!Boolean.getBoolean("discraft.nativeHoverSmoke"))throw new IllegalStateException("TEST native hover requires isolated smoke mode");
         return new ServerConfig(false,"","",Set.of("*"),"en_us",List.of(),Set.of("advancement"),true);
     }
+    static ServerConfig testOptional(){
+        if(!Boolean.getBoolean("discraft.multiplayerSmoke")||!Boolean.getBoolean("discraft.optionalClientSmoke"))throw new IllegalStateException("TEST optional client requires isolated smoke mode");
+        return new ServerConfig(false,"","",Set.of("*"),"en_us",List.of(),Set.of("join","quit","death","advancement"),true);
+    }
     static ServerConfig load(Path file)throws IOException{
         try {
             if(!Files.exists(file,LinkOption.NOFOLLOW_LINKS))return disabled();

@@ -64,7 +64,7 @@ public final class ServerBridge {
         running=false;stopping=false;text=new ComponentText(ResourcePackIndex.empty(),"en_us");itemRenderer=null;
         worker=new ThreadPoolExecutor(1,1,0,TimeUnit.SECONDS,new ArrayBlockingQueue<>(16),r->{var t=new Thread(r,"DisCraft server bridge");t.setDaemon(true);return t;});
         try {
-            if(Boolean.getBoolean("discraft.multiplayerSmoke")){mode="test";adapter=new TestDiscordAdapter();if(Boolean.getBoolean("discraft.serverEventsSmoke"))config=ServerConfig.testEvents();if(Boolean.getBoolean("discraft.nativeHoverSmoke")){config=ServerConfig.testNativeHover();itemRenderer=new HeadlessItemRenderer(ResourcePackIndex.empty());}}
+            if(Boolean.getBoolean("discraft.multiplayerSmoke")){mode="test";adapter=new TestDiscordAdapter();if(Boolean.getBoolean("discraft.serverEventsSmoke"))config=ServerConfig.testEvents();if(Boolean.getBoolean("discraft.optionalClientSmoke")){config=ServerConfig.testOptional();itemRenderer=new HeadlessItemRenderer(ResourcePackIndex.empty());}if(Boolean.getBoolean("discraft.nativeHoverSmoke")){config=ServerConfig.testNativeHover();itemRenderer=new HeadlessItemRenderer(ResourcePackIndex.empty());}}
             else if(server.isDedicatedServer()&&server.usesAuthentication()){
                 config=ServerConfig.load(net.minecraftforge.fml.loading.FMLPaths.CONFIGDIR.get().resolve("discraft-server.properties"));
                 if(config.enabled()&&Boolean.getBoolean("discraft.discord.enabled")){
@@ -204,6 +204,14 @@ public final class ServerBridge {
     }
     private static void reject(ServerPlayer p,UUID id,String why){transfers.remove(p.getUUID());BridgeNetwork.notice(p,id,false,why);}
     private static void remember(ActorRef actor){if(actor==null)return;actors.put(actor.key(),actor);while(actors.size()>128)actors.remove(actors.keySet().iterator().next());}
+    static boolean vanillaChatEnabled(ServerPlayer player){return server==player.server&&running&&!stopping&&adapter!=null&&allowed(player)&&(!mode.equals("test")||Boolean.getBoolean("discraft.optionalClientSmoke"));}
+    static boolean admitVanillaChat(ServerPlayer player){var peer=peers.get(player.getUUID());return vanillaChatEnabled(player)&&peer!=null&&peer.alive.get()&&peer.consume();}
+    static ItemSnapshot vanillaItem(ServerPlayer player,String raw){return config.itemDisplay()&&raw.contains("%item")?ItemSnapshot.capture(player,text):null;}
+    static void relayVanilla(ServerPlayer player,String body,ItemSnapshot item){
+        var peer=peers.get(player.getUUID());if(!vanillaChatEnabled(player)||peer==null||!peer.alive.get())return;var active=server;var transport=adapter;var renderer=itemRenderer;String author=player.getGameProfile().getName();var actor=new ActorRef(ActorRef.Kind.MINECRAFT,player.getUUID().toString(),author);
+        try{worker.execute(()->{try{if(!peer.alive.get())return;var prepared=transport.prepare(new RelayRecord(UUID.randomUUID(),author,body,List.of(),Map.of(),Map.of(),actor,List.of()));var discord=ItemExpansion.expand(prepared,item,renderer).discord();discord.encode();transport.send(discord);}
+            catch(Exception rejected){active.execute(()->{if(server==active&&peer.alive.get())player.sendSystemMessage(Component.literal("DisCraft relay rejected or delivery uncertain; no automatic retry"));});}});}catch(RejectedExecutionException full){player.sendSystemMessage(Component.literal("DisCraft relay queue full"));}
+    }
     private static void publish(RelayRecord record){
         remember(record.actor());for(var mention:record.mentions())remember(mention.target());
         if(history.stream().anyMatch(r->r.id().equals(record.id())))return;
@@ -213,6 +221,6 @@ public final class ServerBridge {
     }
     private static void deliver(ServerPlayer p,RelayRecord record){
         if(BridgeNetwork.present(p)){try{BridgeNetwork.deliver(p,record);}catch(Exception rejected){BridgeNetwork.notice(p,record.id(),false,"Message exceeds bridge budget");}}
-        else p.sendSystemMessage(Component.literal("[DisCraft "+mode+"] "+record.author()+": "+record.text()+(record.attachments().isEmpty()?"":" [media requires DisCraft client]")));
+        else p.sendSystemMessage(NativeFallbackChat.compose(record));
     }
 }
