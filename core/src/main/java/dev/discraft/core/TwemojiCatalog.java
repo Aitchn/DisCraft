@@ -13,6 +13,7 @@ public final class TwemojiCatalog {
     public record Part(String text,Entry emoji){}
     private static final class Node{final Map<Integer,Node> children=new HashMap<>();Entry entry;}
     private static final Node ROOT=new Node();
+    private static final int[][] GRAPHEMES=graphemes();
     private static final List<Entry> ENTRIES;
     private static final Map<String,Entry> EXACT=new HashMap<>(),ASSETS=new HashMap<>();
     private static final LinkedHashMap<String,Attachment> CACHE=new LinkedHashMap<>(96,.75f,true);
@@ -32,12 +33,20 @@ public final class TwemojiCatalog {
     public static List<Entry> entries(){return ENTRIES;}
     public static Entry exact(String value){return EXACT.get(value);}
     /** Emoji grapheme boundaries prevent partial images inside unknown ZWJ/modifier/VS clusters. */
+    private static int[][] graphemes(){
+        try(var input=TwemojiCatalog.class.getResourceAsStream("/twemoji/grapheme.tsv")){
+            if(input==null)throw new IOException("Missing grapheme data");byte[] bytes=input.readNBytes(65537);if(bytes.length>65536||!sha(bytes).equals("454299868eb61cdf50ce4258e29211c0042b45469cc332ce323b219ad81e974a"))throw new IOException("Grapheme pin validation failed");
+            var ranges=new ArrayList<int[]>();int previous=-1;for(String line:new String(bytes,StandardCharsets.US_ASCII).split("\n")){String[] fields=line.split("\t");if(fields.length!=3||ranges.size()>=2048)throw new IOException("Grapheme range bounds");int first=Integer.parseInt(fields[0],16),last=Integer.parseInt(fields[1],16),kind=Integer.parseInt(fields[2]);if(first<=previous||last<first||last>0x10ffff||kind<1||kind>3)throw new IOException("Invalid grapheme range");ranges.add(new int[]{first,last,kind});previous=last;}return ranges.toArray(int[][]::new);
+        }catch(Exception invalid){throw new ExceptionInInitializerError(invalid);}
+    }
+    private static int graphemeType(int point){int low=0,high=GRAPHEMES.length-1;while(low<=high){int middle=(low+high)>>>1;int[] range=GRAPHEMES[middle];if(point<range[0])high=middle-1;else if(point>range[1])low=middle+1;else return range[2];}return 0;}
     private static int clusterEnd(String text,int start){
-        int cp=text.codePointAt(start),at=start+Character.charCount(cp);
+        int at=start;while(at<text.length()&&graphemeType(text.codePointAt(at))==3)at+=Character.charCount(text.codePointAt(at));if(at==text.length())return at;
+        int cp=text.codePointAt(at);at+=Character.charCount(cp);
         if(cp>=0x1f1e6&&cp<=0x1f1ff&&at<text.length()){int next=text.codePointAt(at);if(next>=0x1f1e6&&next<=0x1f1ff)at+=Character.charCount(next);}
         while(at<text.length()){
-            int next=text.codePointAt(at);
-            if(next==0xfe0e||next==0xfe0f||next==0x20e3||next>=0x1f3fb&&next<=0x1f3ff||next>=0xe0020&&next<=0xe007f){at+=Character.charCount(next);continue;}
+            int next=text.codePointAt(at),type=graphemeType(next);
+            if(type==1||type==2){at+=Character.charCount(next);continue;}
             if(next==0x200d){at++;if(at<text.length())at+=Character.charCount(text.codePointAt(at));continue;}break;
         }return at;
     }

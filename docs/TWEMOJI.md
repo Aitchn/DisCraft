@@ -60,3 +60,13 @@ uses an isolated actual Forge server/client to check raw wire Unicode, native
 and picker rendering, selection, guild coexistence, unconfigured GIF state,
 GUI scales 2/3, resource reload and disconnect cleanup. Screenshots are original
 1100×800 / 1280×900 framebuffers and explicitly local TEST evidence.
+
+Unknown emoji clusters also consume Unicode 17.0 Grapheme_Cluster_Break Extend,
+SpacingMark and Prepend ranges from the pinned official data (including marks
+newer than Java 17's Unicode tables). Thus an emoji followed by U+0301 remains
+one unknown literal cluster, rather than displaying a partial emoji plus an
+orphan accent. Known ZWJ/skin/flag/keycap forms retain their previous matching.
+The finite range table is checksum-verified; scanning advances monotonically
+within the existing 2,000-code-point input limit and a 32-point trie lookup.
+This is conservative emoji-cluster matching, not a general-purpose text editor's
+implementation of every Unicode grapheme/Indic shaping rule.

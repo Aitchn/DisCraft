@@ -1,9 +1,10 @@
 """Validate the distributable, including accidental test-driver packaging."""
 from pathlib import Path
 import hashlib
+import sys
 import zipfile
 
-jar = Path('forge/build/libs/discraft-forge-1.20.1-0.1.0-dev.jar')
+jar = Path(sys.argv[1]) if len(sys.argv)>1 else Path('forge/build/libs/discraft-forge-1.20.1-0.1.0-dev.jar')
 with zipfile.ZipFile(jar) as archive:
     names = set(archive.namelist())
     required = {
@@ -13,6 +14,7 @@ with zipfile.ZipFile(jar) as archive:
         'dev/discraft/core/TwemojiCatalog.class',
         'dev/discraft/core/ItemMarkers.class',
         'twemoji/index.tsv',
+        'twemoji/grapheme.tsv',
         'twemoji/NOTICE.txt',
         'twemoji/LICENSE-GRAPHICS.txt',
         'twemoji/LICENSE-MIT.txt',
