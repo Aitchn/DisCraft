@@ -47,12 +47,13 @@ public final class DiscordBotAdapter implements DiscordAdapter {
     private long blockedUntil,nextPoll;
     private int failures;
     private static final Pattern EMOJI=Pattern.compile("<(a?):([A-Za-z0-9_]{1,32}):([0-9]{15,22})>");
-    public static DiscordBotAdapter fromEnvironment(){
-        return new DiscordBotAdapter(URI.create("https://discord.com/api/v10/"),System.getenv("DISCRAFT_DISCORD_CHANNEL"),System.getenv("DISCRAFT_DISCORD_BOT_TOKEN"),false);
+    static DiscordBotAdapter fromConfig(ServerConfig config){
+        if(!config.enabled())throw new IllegalArgumentException("Discord configuration disabled");
+        return new DiscordBotAdapter(URI.create("https://discord.com/api/v10/"),config.channel(),config.token(),false);
     }
     // Only package-local tests may substitute an endpoint, and only a non-secret fixed test token is accepted.
     DiscordBotAdapter(URI api,String channel,String token,boolean localTest){
-        if(channel==null||!channel.matches("[0-9]{15,22}")||token==null||token.length()<20||token.length()>200||token.chars().anyMatch(c->Character.isWhitespace(c)||Character.isISOControl(c)))throw new IllegalArgumentException("Invalid server Discord configuration");
+        ServerConfig.validateCredentials(channel,token);
         if(localTest&&(!api.getHost().equals("127.0.0.1")||!token.equals("discraft-local-test-token")))throw new IllegalArgumentException("Invalid test endpoint");
         if(!localTest&&!api.toString().equals("https://discord.com/api/v10/"))throw new IllegalArgumentException("Invalid Discord endpoint");
         this.api=api;this.channel=channel;this.token=token;this.localTest=localTest;

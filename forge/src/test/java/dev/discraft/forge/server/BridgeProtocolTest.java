@@ -39,7 +39,7 @@ public final class BridgeProtocolTest {
         raw="x".repeat(256)+label;mapped=MentionDraft.normalized(raw,List.of(new Mention(256,raw.length(),first)),"x".repeat(256));check(mapped.isEmpty(),"Vanilla truncation withdraws a mention outside the retained text");
     }
     public static void main(String[] args)throws Exception{
-        mentionEdits();normalizedMentions();
+        ServerConfigTest.run();mentionEdits();normalizedMentions();
         var id=UUID.randomUUID();var gif=Attachment.fromResource("dance.gif");
         var original=RelayRecord.draft(id,"Unicode 世界 👋",gif);var decoded=RelayRecord.decode(original.encode());
         check(decoded.id().equals(id)&&decoded.text().equals(original.text())&&decoded.attachments().get(0).media().frames().size()>1,"Wire roundtrip preserves Unicode and real GIF frames");

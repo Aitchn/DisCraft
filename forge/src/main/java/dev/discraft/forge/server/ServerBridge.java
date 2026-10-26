@@ -22,6 +22,7 @@ public final class ServerBridge {
     private static DiscordAdapter adapter;
     private static ThreadPoolExecutor worker;
     private static String mode="disabled";
+    private static ServerConfig config=ServerConfig.disabled();
     private static final Map<UUID,Transfer> transfers=new HashMap<>();
     private static final Map<UUID,Peer> peers=new HashMap<>();
     private static final Deque<RelayRecord> history=new ArrayDeque<>();
@@ -41,25 +42,27 @@ public final class ServerBridge {
     public static String mode(){return mode;}
     private static boolean allowed(ServerPlayer p){
         if(mode.equals("test"))return true;
-        String list=System.getenv().getOrDefault("DISCRAFT_ALLOWED_PLAYERS","");
-        return Arrays.stream(list.split(",")).map(String::trim).anyMatch(s->s.equals(p.getUUID().toString())||s.equals("*"));
+        return config.allows(p.getUUID());
     }
     @SubscribeEvent public static void start(ServerStartedEvent event){
-        server=event.getServer();mode=System.getenv().getOrDefault("DISCRAFT_MODE","disabled");
+        server=event.getServer();mode="disabled";config=ServerConfig.disabled();
         worker=new ThreadPoolExecutor(1,1,0,TimeUnit.SECONDS,new ArrayBlockingQueue<>(16),r->{var t=new Thread(r,"DisCraft server bridge");t.setDaemon(true);return t;});
         try {
-            if(mode.equals("test")&&Boolean.getBoolean("discraft.multiplayerSmoke"))adapter=new TestDiscordAdapter();
-            else if(mode.equals("discord")&&Boolean.getBoolean("discraft.discord.enabled")&&server.isDedicatedServer()&&server.usesAuthentication())adapter=DiscordBotAdapter.fromEnvironment();
-            else {mode="disabled";adapter=null;}
+            if(Boolean.getBoolean("discraft.multiplayerSmoke")){mode="test";adapter=new TestDiscordAdapter();}
+            else if(server.isDedicatedServer()&&server.usesAuthentication()){
+                config=ServerConfig.load(net.minecraftforge.fml.loading.FMLPaths.CONFIGDIR.get().resolve("discraft-server.properties"));
+                if(config.enabled()&&Boolean.getBoolean("discraft.discord.enabled")){adapter=DiscordBotAdapter.fromConfig(config);mode="discord";}
+                else adapter=null;
+            }else adapter=null;
         } catch(Exception failure){
             if(mode.equals("test")&&Boolean.getBoolean("discraft.multiplayerSmoke"))throw new IllegalStateException("DisCraft TEST adapter initialization failed",failure);
-            mode="disabled";adapter=null;
+            mode="disabled";adapter=null;config=ServerConfig.disabled();
         }
         nextPoll=0;polling.set(false);
     }
     @SubscribeEvent public static void stop(ServerStoppingEvent event){
         peers.values().forEach(p->p.alive.set(false));peers.clear();transfers.clear();history.clear();requests.clear();actors.clear();
-        if(adapter!=null)adapter.close();if(worker!=null)worker.shutdownNow();adapter=null;server=null;mode="disabled";
+        if(adapter!=null)adapter.close();if(worker!=null)worker.shutdownNow();adapter=null;server=null;mode="disabled";config=ServerConfig.disabled();
     }
     @SubscribeEvent public static void login(PlayerEvent.PlayerLoggedInEvent event){
         if(!(event.getEntity() instanceof ServerPlayer p))return;

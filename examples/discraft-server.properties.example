@@ -1,0 +1,7 @@
+# Copy to <dedicated-server>/config/discraft-server.properties; keep that file private.
+# UTF-8 Java properties. Restart server after editing. No environment fallback.
+enabled=false
+channel=
+botToken=
+# Comma-separated authenticated player UUIDs. Empty denies all; * permits all.
+allowedPlayers=

@@ -50,6 +50,13 @@ tasks.register('bridgeProtocolTest', JavaExec) {
     dependsOn testClasses
     classpath = sourceSets.test.runtimeClasspath
     mainClass = 'dev.discraft.forge.server.BridgeProtocolTest'
+    // Deliberate fake environment values prove that missing config cannot fall back.
+    environment 'discord_token', 'fake-environment-token-never-live'
+    environment 'discord_channel', '9234567890123456'
+    environment 'DISCRAFT_DISCORD_BOT_TOKEN', 'fake-legacy-token-never-live'
+    environment 'DISCRAFT_DISCORD_CHANNEL', '8234567890123456'
+    environment 'DISCRAFT_MODE', 'discord'
+    environment 'DISCRAFT_ALLOWED_PLAYERS', '*'
     jvmArgs '-ea', '-Djava.awt.headless=true'
 }
 tasks.named('check') { dependsOn bridgeProtocolTest }

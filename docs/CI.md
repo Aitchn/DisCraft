@@ -5,7 +5,7 @@ The workflow uses Ubuntu 24.04, Temurin JDK17, Gradle 8.8 and SHA-pinned Actions
 | Job | Checks | Artifact |
 | --- | --- | --- |
 | Core tests | `:core:build`, including 49 executable behavior assertions | Core output/reports |
-| Forge build/reobfuscation | `:forge:build :forge:reobfJar`, including 61 local REST/wire protocol checks; validate packaged client/server/core/media classes and exclude test drivers | Installable mod JAR |
+| Forge build/reobfuscation | `:forge:build :forge:reobfJar`, including 17 fake server-config/redaction checks and 61 local REST/wire protocol checks; validate packaged client/server/core/media classes and exclude test drivers | Installable mod JAR |
 | Minecraft client acceptance | Real Xvfb/Mesa client, 36 original mock-preview checks including latch-controlled Clear/send-edit races | Native screenshots and result summary |
 | Dedicated server and two clients | Real server and Alice/Bob clients, native input and protocol checks through actual game packets, including native chat media, vanilla Enter, ordinary chat and a real slash command | Server/client logs, screenshots and separate result summaries |
 
@@ -15,7 +15,7 @@ Bounds: 30-minute multiplayer job; 25-minute outer process timeout; 300 seconds 
 
 Fresh-client acceptance waits for vanilla terrain/loading presentation to close before opening DisCraft, including after reconnect. The bridge may already have received packets during `ReceivingLevelScreen`; opening early can let vanilla replace the test screen. Five-second phase/screen/bridge diagnostics and the controller's last-state output make interrupted startup distinguishable from a stalled assertion. The join gate was rechecked with both client directories absent. Launch export explicitly builds `:core:jar` so a clean job has core resources and runtime dependencies; compile-only preparation omits fixture resources and leaves the TEST adapter disabled. Smoke-only adapter initialization errors fail immediately rather than degrading into a client timeout.
 
-The HTTP contract tests never use a real bot token or Discord endpoint. They verify bot-account/permission handling, JSON and multipart sends, received Unicode/emoji/media, cursor/backoff/reconnect/dedup, 429 suppression, bounded bodies, SSRF rejection and no redirects. Forge and the original client job both retain the normal build/protocol checks; no previous gate was removed.
+The server configuration checks use fake legacy/lowercase environment values to verify that missing config stays disabled, validate allowlists and empty placeholders, reject malformed/oversized/symlink config files, and check that diagnostics, object representations and packets omit secret values. The HTTP contract tests never use a real bot token or Discord endpoint. They verify bot-account/permission handling, JSON and multipart sends, received Unicode/emoji/media, cursor/backoff/reconnect/dedup, 429 suppression, bounded bodies, SSRF rejection and no redirects. Forge and the original client job both retain the normal build/protocol checks; no previous gate was removed.
 
 Artifacts expire after 14 days. Only test evidence and the mod JAR are uploaded; generated launch environment/configuration, worlds, caches and credentials are excluded. Historical local checks are useful provenance, not evidence that a newly pushed SHA passed CI. See [server scope and limits](SERVER-BRIDGE.md) and [architecture](ARCHITECTURE.md).
 

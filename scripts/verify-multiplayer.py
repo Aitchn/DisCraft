@@ -24,9 +24,9 @@ for name in ('Alice','Bob'):
 with socket.socket() as reservation:
     reservation.bind(('127.0.0.1',0)); port=reservation.getsockname()[1]
 environment=os.environ.copy()
-for secret in ('DISCRAFT_DISCORD_BOT_TOKEN','DISCRAFT_DISCORD_CHANNEL','DISCRAFT_ALLOWED_PLAYERS'):
+for secret in ('DISCRAFT_DISCORD_BOT_TOKEN','DISCRAFT_DISCORD_CHANNEL','DISCRAFT_ALLOWED_PLAYERS','DISCRAFT_MODE','discord_token','discord_channel'):
     environment.pop(secret,None)
-environment.update(DISCRAFT_MODE='test',LIBGL_ALWAYS_SOFTWARE='true',ALSOFT_DRIVERS='null',LP_NUM_THREADS='2')
+environment.update(LIBGL_ALWAYS_SOFTWARE='true',ALSOFT_DRIVERS='null',LP_NUM_THREADS='2')
 for role in ('server','Alice','Bob'):
     with (OUT/(role+'-prepare.log')).open('w') as output:
         subprocess.run(['./gradlew','-Pforge','-PmultiplayerSmoke','-PbridgeRole='+role,'-PbridgePort='+str(port),':forge:exportBridgeLaunch','--console=plain'],env=environment,stdout=output,stderr=subprocess.STDOUT,check=True,timeout=300)
