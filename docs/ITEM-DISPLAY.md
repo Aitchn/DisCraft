@@ -45,6 +45,15 @@ allow bounded literals, translation keys/arguments/siblings and formatting only;
 selectors, scores, NBT queries, click/insertion and nested hover actions are absent.
 Attribute internal names are replaced by a fixed tooltip label. No book body,
 container inventory, arbitrary mod NBT or server configuration enters the DTO.
+List-valued `AttributeModifiers` presence is preserved even when explicitly empty,
+all entries are filtered or the tooltip exceeds its size budget: downgrading clears
+the list instead of removing the key. This preserves the pinned 1.20.1 override
+semantics and cannot restore fabricated default weapon damage/speed. A non-list
+source field follows native absent-key behavior; malformed list elements become a
+canonical empty override without carrying their original contents. Wire validation
+still requires canonical types. Headless regressions compare original/reconstructed
+stacks using actual pinned `getAttributeModifiers` and `getTooltipLines`, including
+the size-budget path, alongside the official [Forge 1.20.1 ItemStack patch](https://raw.githubusercontent.com/MinecraftForge/MinecraftForge/1.20.1/patches/minecraft/net/minecraft/world/item/ItemStack.java.patch).
 The Discord record carries neither this DTO nor Minecraft-only hover semantics;
 Discord still receives its rendered item PNG and safe text. This does not claim
 Discord supports arbitrary custom text hover.

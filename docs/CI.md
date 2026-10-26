@@ -5,7 +5,7 @@ The workflow uses Ubuntu 24.04, Temurin JDK17, Gradle 8.8 and SHA-pinned Actions
 | Job | Checks | Artifact |
 | --- | --- | --- |
 | Core tests | `:core:build`, including 49 executable behavior assertions | Core output/reports |
-| Forge build/reobfuscation | `:forge:build :forge:reobfJar`, including 30 fake server-config/redaction checks, 33 headless resource/localization checks, 32 headless item/model/font checks, 16 native item wire/safety checks, nine bounded notice-delivery checks, 32 synthetic guild catalog/thumbnail checks and 65 local REST/wire protocol checks; validate packaged client/server/core/media classes and exclude test drivers | Installable mod JAR |
+| Forge build/reobfuscation | `:forge:build :forge:reobfJar`, including 30 fake server-config/redaction checks, 33 headless resource/localization checks, 32 headless item/model/font checks, 17 native item wire/safety checks, nine bounded notice-delivery checks, 32 synthetic guild catalog/thumbnail checks and 65 local REST/wire protocol checks; validate packaged client/server/core/media classes and exclude test drivers | Installable mod JAR |
 | Minecraft client acceptance | Real Xvfb/Mesa client, 36 original mock-preview checks including latch-controlled Clear/send-edit races | Native screenshots and result summary |
 | Dedicated server and two clients | Real server and Alice/Bob clients, native input and protocol checks through actual game packets, including native chat media, vanilla Enter, ordinary chat, a real slash command, independent fixture catalog/thumbnail synchronization, picker selection and rename/delete/permission/reset invalidation | Server/client logs, screenshots and separate result summaries |
 
@@ -39,11 +39,16 @@ Native UI text acceptance additionally runs `scripts/verify-ui-text.py --tag aft
 
 The Forge job also boots an isolated dedicated server without DISPLAY for `scripts/verify-server-events.py`: actual starting/ready/normal-stop hooks plus synthetic login/logout callbacks, death/advancement events, cancellation/rescue, duplicate suppression and announcement rules. Its recording TEST adapter has no credentials or HTTP transport; the test driver is excluded from the mod JAR. Normal configurations keep automatic notifications disabled until explicit config opt-in.
 
-The `--items` variant adds six real-ItemStack checks to those twelve event checks:
+The `--items` variant adds six real-ItemStack checks plus eighteen attribute-override
+semantics/tooltip regressions to those twelve event checks (36 total):
 game-thread main-hand capture, mutation/offhand isolation, appearance whitelist,
 imported Traditional Chinese/custom bitmap glyphs/CMD model PNG, actual official
 adapter multipart to a loopback-only mock, and empty hand. The item HTTP mock uses
 the existing fixed fake test token; no host credential or Discord endpoint is used.
+The attribute cases use actual pinned 1.20.1 methods on original and reconstructed
+stacks: explicit empty, filtered empty, absent key, wrong field/element types and
+over-budget fallback. Empty overrides stay empty and absent keys keep defaults;
+no book/container data or arbitrary NBT/actions are permitted.
 
 An optional local-only original-resource comparison uses already-cached Minecraft
 1.20.1 diamond sword/stone assets and native `zh_tw` labels; see

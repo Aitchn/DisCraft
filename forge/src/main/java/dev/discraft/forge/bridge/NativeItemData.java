@@ -34,11 +34,14 @@ public record NativeItemData(String itemId,int count,String tag) {
             var attributes=source.getList("AttributeModifiers",Tag.TAG_COMPOUND);var safeAttributes=new ListTag();for(int i=0;i<Math.min(8,attributes.size());i++)try{
                 var entry=attributes.getCompound(i);id(entry.getString("AttributeName"));double amount=entry.getDouble("Amount");int operation=entry.getInt("Operation");if(!Double.isFinite(amount)||Math.abs(amount)>1000000||operation<0||operation>2)continue;
                 var copy=new CompoundTag();copy.putString("AttributeName",entry.getString("AttributeName"));copy.putString("Name","DisCraft tooltip");copy.putDouble("Amount",amount);copy.putInt("Operation",operation);copy.putUUID("UUID",entry.hasUUID("UUID")?entry.getUUID("UUID"):new UUID(0,i+1));String slot=entry.getString("Slot");if(!slot.isEmpty()){if(!Set.of("mainhand","offhand","head","chest","legs","feet").contains(slot))continue;copy.putString("Slot",slot);}safeAttributes.add(copy);
-            }catch(Exception ignored){}if(!safeAttributes.isEmpty())out.put("AttributeModifiers",safeAttributes);
+            }catch(Exception ignored){}
+            // List presence selects vanilla's override branch, even when filtering leaves it empty.
+            if(source.contains("AttributeModifiers",Tag.TAG_LIST))out.put("AttributeModifiers",safeAttributes);
         }
         out.put("display",display);
         // Truncate optional detail before publishing the immutable snapshot, never the original stack.
-        if(out.toString().length()>MAX_TAG)display.remove("Lore");if(out.toString().length()>MAX_TAG)out.remove("AttributeModifiers");
+        if(out.toString().length()>MAX_TAG)display.remove("Lore");
+        if(out.toString().length()>MAX_TAG&&out.contains("AttributeModifiers",Tag.TAG_LIST))out.put("AttributeModifiers",new ListTag());
         return new NativeItemData(BuiltInRegistries.ITEM.getKey(stack.getItem()).toString(),Math.min(9999,stack.getCount()),out.toString());
     }
     public CompoundTag safeTag(){try{return parse(tag);}catch(Exception impossible){throw new IllegalStateException("Validated item tag unreadable");}}

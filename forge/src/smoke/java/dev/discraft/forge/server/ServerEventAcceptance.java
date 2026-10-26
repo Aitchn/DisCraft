@@ -51,6 +51,7 @@ public final class ServerEventAcceptance {
         if(Boolean.getBoolean("discraft.serverItemsSmoke"))try{items();}catch(Throwable rejected){failure="Item pipeline: "+rejected.getClass().getSimpleName()+": "+rejected.getMessage();server.halt(false);}
     }
     private static void items()throws Exception{
+        attributeOverrides();
         Path output=Path.of(System.getProperty("discraft.serverEventsOutput"));Path packs=output.resolve("item-fixture-packs");ItemFixtures.create(packs);
         var resources=ResourcePackIndex.load(packs,List.of("fixture.zip"));var text=new ComponentText(resources,"zh_tw");var renderer=new HeadlessItemRenderer(resources);
         var stack=new ItemStack(Items.DIAMOND_SWORD,3);stack.setHoverName(Component.literal("星光劍 · TEST").withStyle(Style.EMPTY.withFont(new ResourceLocation("test","custom"))));stack.getOrCreateTag().putInt("CustomModelData",1);
@@ -79,6 +80,36 @@ public final class ServerEventAcceptance {
             }
             player.setItemInHand(InteractionHand.MAIN_HAND,ItemStack.EMPTY);
         }
+    }
+    private static void attributeOverrides(){
+        // Pinned 1.20.1 ItemStack.getAttributeModifiers branches on LIST presence,
+        // not whether any entries survived. Use the actual native API as oracle.
+        String damage=net.minecraft.network.chat.Component.translatable(net.minecraft.world.entity.ai.attributes.Attributes.ATTACK_DAMAGE.getDescriptionId()).getString();
+        String speed=net.minecraft.network.chat.Component.translatable(net.minecraft.world.entity.ai.attributes.Attributes.ATTACK_SPEED.getDescriptionId()).getString();
+        for(String kind:List.of("explicit-empty","filtered-empty","missing-key","wrong-field-type","wrong-element-type")){
+            var original=new ItemStack(Items.DIAMOND_SWORD);boolean empty=kind.equals("explicit-empty")||kind.equals("filtered-empty")||kind.equals("wrong-element-type");
+            if(kind.equals("explicit-empty"))original.getOrCreateTag().put("AttributeModifiers",new net.minecraft.nbt.ListTag());
+            if(kind.equals("filtered-empty")){var entries=new net.minecraft.nbt.ListTag();var entry=new net.minecraft.nbt.CompoundTag();entry.putString("AttributeName","minecraft:generic.attack_damage");entry.putString("Name","fixture invalid slot");entry.putDouble("Amount",2);entry.putInt("Operation",0);entry.putUUID("UUID",new UUID(123,456));entry.putString("Slot","not-an-equipment-slot");entries.add(entry);original.getOrCreateTag().put("AttributeModifiers",entries);}
+            if(kind.equals("wrong-field-type"))original.getOrCreateTag().putString("AttributeModifiers","fixture-private-wrong-type");
+            if(kind.equals("wrong-element-type")){var entries=new net.minecraft.nbt.ListTag();entries.add(net.minecraft.nbt.StringTag.valueOf("fixture-private-wrong-element"));original.getOrCreateTag().put("AttributeModifiers",entries);}
+            var captured=dev.discraft.forge.bridge.NativeItemData.capture(original,"Diamond Sword");var safe=new ItemStack(Items.DIAMOND_SWORD);safe.setTag(captured.safeTag());
+            boolean originalEmpty=original.getAttributeModifiers(net.minecraft.world.entity.EquipmentSlot.MAINHAND).isEmpty(),safeEmpty=safe.getAttributeModifiers(net.minecraft.world.entity.EquipmentSlot.MAINHAND).isEmpty();
+            check(originalEmpty==empty&&safeEmpty==originalEmpty,"Pinned native attribute override semantics retained: "+kind);
+            check(captured.safeTag().contains("AttributeModifiers",net.minecraft.nbt.Tag.TAG_LIST)==empty&&!captured.tag().contains("fixture-private"),"Canonical override presence and wrong-type data safety: "+kind);
+            var before=original.getTooltipLines(player,net.minecraft.world.item.TooltipFlag.Default.NORMAL).stream().map(Component::getString).filter(s->s.contains(damage)||s.contains(speed)).toList();
+            var after=safe.getTooltipLines(player,net.minecraft.world.item.TooltipFlag.Default.NORMAL).stream().map(Component::getString).filter(s->s.contains(damage)||s.contains(speed)).toList();
+            check(before.equals(after)&&after.isEmpty()==empty,"Pinned native tooltip attack damage/speed match original: "+kind);
+        }
+        var pressure=new ItemStack(Items.DIAMOND_SWORD);pressure.setHoverName(Component.literal("N".repeat(512)).withStyle(Style.EMPTY.withFont(new ResourceLocation("minecraft","f".repeat(246)))));
+        var source=pressure.getOrCreateTag();var attributes=new net.minecraft.nbt.ListTag();
+        for(int i=0;i<8;i++){var entry=new net.minecraft.nbt.CompoundTag();entry.putString("AttributeName","minecraft:"+"a".repeat(244)+"_"+i);entry.putString("Name","original-private-modifier-name");entry.putDouble("Amount",123456.12345678);entry.putInt("Operation",0);entry.putUUID("UUID",new UUID(0x7fffffff7fffffffL-i,0x7fffffff7fffffffL-i));entry.putString("Slot","mainhand");attributes.add(entry);}source.put("AttributeModifiers",attributes);
+        for(String key:List.of("Enchantments","StoredEnchantments")){var entries=new net.minecraft.nbt.ListTag();for(int i=0;i<8;i++){var entry=new net.minecraft.nbt.CompoundTag();entry.putString("id","minecraft:"+"e".repeat(244)+i);entry.putShort("lvl",(short)255);entries.add(entry);}source.put(key,entries);}
+        var lore=new net.minecraft.nbt.ListTag();for(int i=0;i<8;i++)lore.add(net.minecraft.nbt.StringTag.valueOf(Component.Serializer.toJson(Component.literal("L".repeat(400)))));pressure.getOrCreateTagElement("display").put("Lore",lore);
+        var bounded=dev.discraft.forge.bridge.NativeItemData.capture(pressure,"Bounded tooltip");var boundedTag=bounded.safeTag();
+        check(boundedTag.contains("AttributeModifiers",net.minecraft.nbt.Tag.TAG_LIST)&&boundedTag.getList("AttributeModifiers",net.minecraft.nbt.Tag.TAG_COMPOUND).isEmpty()&&!boundedTag.getCompound("display").contains("Lore")&&bounded.tag().length()<=dev.discraft.forge.bridge.NativeItemData.MAX_TAG,"Oversize downgrade removes optional detail but retains an explicit empty attribute override");
+        var reconstructed=new ItemStack(Items.DIAMOND_SWORD);reconstructed.setTag(boundedTag);
+        check(pressure.getAttributeModifiers(net.minecraft.world.entity.EquipmentSlot.MAINHAND).isEmpty()&&reconstructed.getAttributeModifiers(net.minecraft.world.entity.EquipmentSlot.MAINHAND).isEmpty(),"Oversize native reconstruction never restores default weapon modifiers");
+        check(reconstructed.getTooltipLines(player,net.minecraft.world.item.TooltipFlag.Default.NORMAL).stream().map(Component::getString).noneMatch(s->s.contains(damage)||s.contains(speed)),"Oversize native tooltip has no fabricated attack damage or attack speed lines");
     }
     @SubscribeEvent(priority=EventPriority.LOWEST) public static void tick(TickEvent.ServerTickEvent event){
         if(!enabled()||server==null||event.phase!=TickEvent.Phase.END||failure!=null||++ticks%10!=0)return;
