@@ -28,11 +28,12 @@ public final class ServerBridge {
     private static final Deque<RelayRecord> history=new ArrayDeque<>();
     private static final Map<String,ActorRef> actors=new LinkedHashMap<>();
     private static final Set<String> requests=new LinkedHashSet<>();
-    private static final AtomicBoolean polling=new AtomicBoolean();
-    private static long nextPoll;
+    private static final AtomicBoolean polling=new AtomicBoolean(),thumbnailBusy=new AtomicBoolean();
+    private static long nextPoll,nextCatalogBroadcast,nextThumbnail;
+    private static GuildEmojiCatalog guildCatalog=GuildEmojiCatalog.empty(0);
     private static final class Peer {
         final AtomicBoolean alive=new AtomicBoolean(true); final Set<UUID> seen=new LinkedHashSet<>();
-        double tokens=5; long updated=System.nanoTime();
+        double tokens=5; long updated=System.nanoTime(),nextThumbnail;
         boolean consume(){long now=System.nanoTime();tokens=Math.min(5,tokens+(now-updated)/1e9);updated=now;if(tokens<1)return false;tokens--;return true;}
     }
     private static final class Transfer {
@@ -58,17 +59,17 @@ public final class ServerBridge {
             if(mode.equals("test")&&Boolean.getBoolean("discraft.multiplayerSmoke"))throw new IllegalStateException("DisCraft TEST adapter initialization failed",failure);
             mode="disabled";adapter=null;config=ServerConfig.disabled();
         }
-        nextPoll=0;polling.set(false);
+        nextPoll=0;nextCatalogBroadcast=0;nextThumbnail=0;guildCatalog=GuildEmojiCatalog.empty(0);polling.set(false);thumbnailBusy.set(false);
     }
     @SubscribeEvent public static void stop(ServerStoppingEvent event){
         peers.values().forEach(p->p.alive.set(false));peers.clear();transfers.clear();history.clear();requests.clear();actors.clear();
-        if(adapter!=null)adapter.close();if(worker!=null)worker.shutdownNow();adapter=null;server=null;mode="disabled";config=ServerConfig.disabled();
+        if(adapter!=null)adapter.close();if(worker!=null)worker.shutdownNow();adapter=null;server=null;mode="disabled";config=ServerConfig.disabled();guildCatalog=GuildEmojiCatalog.empty(0);
     }
     @SubscribeEvent public static void login(PlayerEvent.PlayerLoggedInEvent event){
         if(!(event.getEntity() instanceof ServerPlayer p))return;
         peers.put(p.getUUID(),new Peer());var actor=new ActorRef(ActorRef.Kind.MINECRAFT,p.getUUID().toString(),p.getGameProfile().getName());remember(actor);
         BridgeNetwork.notice(p,STATUS,adapter!=null&&allowed(p),"SERVER "+mode.toUpperCase(Locale.ROOT)+(allowed(p)?"":" (not authorized)"));
-        if(allowed(p))for(var record:history)deliver(p,record);
+        if(allowed(p)){BridgeNetwork.catalog(p,guildCatalog);for(var record:history)deliver(p,record);}
     }
     @SubscribeEvent public static void logout(PlayerEvent.PlayerLoggedOutEvent event){
         var peer=peers.remove(event.getEntity().getUUID());if(peer!=null)peer.alive.set(false);transfers.remove(event.getEntity().getUUID());BridgeNetwork.forget(event.getEntity().getUUID());
@@ -79,9 +80,25 @@ public final class ServerBridge {
         if(adapter==null||System.nanoTime()<nextPoll||!polling.compareAndSet(false,true))return;
         nextPoll=System.nanoTime()+2_000_000_000L;
         var active=server;var transport=adapter;
-        try {worker.execute(()->{try{for(var record:transport.poll())active.execute(()->{if(server==active)publish(record);});}
+        try {worker.execute(()->{try{var snapshot=transport.catalog();active.execute(()->{if(server==active)applyCatalog(snapshot);});for(var record:transport.poll())active.execute(()->{if(server==active)publish(record);});}
             catch(Exception unavailable){/* No token, response body, URL, or user content is logged. */}
             finally{polling.set(false);}});}catch(RejectedExecutionException full){polling.set(false);}
+    }
+    private static void applyCatalog(GuildEmojiCatalog snapshot){
+        if(snapshot.equals(guildCatalog)&&System.nanoTime()<nextCatalogBroadcast)return;
+        guildCatalog=snapshot;nextCatalogBroadcast=System.nanoTime()+60_000_000_000L;
+        for(var player:server.getPlayerList().getPlayers())if(allowed(player))BridgeNetwork.catalog(player,snapshot);
+    }
+    public static void thumbnails(ServerPlayer player,BridgeNetwork.ThumbRequest request){
+        var peer=peers.get(player.getUUID());long now=System.nanoTime();
+        if(server==null||adapter==null||peer==null||!allowed(player)||!BridgeNetwork.present(player)||request.version()!=guildCatalog.version()||request.ids().size()<1||request.ids().size()>GuildEmojiCatalog.THUMB_BATCH||now<peer.nextThumbnail||now<nextThumbnail)return;
+        var ids=request.ids().stream().distinct().filter(id->{var e=guildCatalog.find(id);return e!=null&&e.usable();}).toList();if(ids.isEmpty())return;
+        if(!thumbnailBusy.compareAndSet(false,true))return;
+        peer.nextThumbnail=now+1_000_000_000L;nextThumbnail=now+500_000_000L;var active=server;var transport=adapter;
+        try{worker.execute(()->{try{var images=transport.thumbnails(ids);var current=transport.catalog();active.execute(()->{
+            if(server!=active||!peer.alive.get())return;applyCatalog(current);if(current.version()!=request.version())return;
+            for(String id:ids)BridgeNetwork.thumbnail(player,current.version(),id,images.get(id));
+        });}finally{thumbnailBusy.set(false);}});}catch(RejectedExecutionException ignored){thumbnailBusy.set(false);}
     }
     public static void upload(ServerPlayer p,BridgeNetwork.Upload packet){
         if(server==null||server.getPlayerList().getPlayer(p.getUUID())!=p)return;

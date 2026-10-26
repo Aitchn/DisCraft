@@ -41,6 +41,53 @@ public final class DiscordBotAdapter implements DiscordAdapter {
             }finally{if(!pending.isDone())pending.cancel(true);mediaWorker.purge();}
         }
     }
+    private String guild="",botId="";
+    private GuildEmojiCatalog guildCatalog=GuildEmojiCatalog.empty(0);
+    private long nextCatalog;
+    private final EmojiThumbnailCache thumbnails=new EmojiThumbnailCache();
+    private static String thumbnailKey(GuildEmojiCatalog.Entry e){return e.id()+(e.animated()?".gif":".png");}
+    private GuildEmojiCatalog unavailableCatalog(){
+        if(guildCatalog.ready())guildCatalog=GuildEmojiCatalog.empty(guildCatalog.version()+1);
+        thumbnails.clear();return guildCatalog;
+    }
+    @Override public GuildEmojiCatalog catalog(){
+        if(closed||terminal)return unavailableCatalog();
+        if(System.nanoTime()<nextCatalog)return guildCatalog;
+        nextCatalog=System.nanoTime()+60_000_000_000L;
+        try{
+            ready();
+            var member=json(request("GET","guilds/"+guild+"/members/"+botId,null,null));var roles=new HashSet<String>();
+            if(!member.has("roles")||member.getAsJsonArray("roles").size()>256)throw new IOException("Invalid bot roles");
+            member.getAsJsonArray("roles").forEach(r->roles.add(r.getAsString()));
+            var response=JsonParser.parseString(new String(request("GET","guilds/"+guild+"/emojis",null,null),StandardCharsets.UTF_8)).getAsJsonArray();
+            if(response.size()>2000)throw new IOException("Guild catalog response budget");
+            var entries=new ArrayList<GuildEmojiCatalog.Entry>();var ids=new HashSet<String>();
+            for(var value:response){
+                var e=value.getAsJsonObject();String id=e.get("id").getAsString(),name=e.get("name").getAsString();if(!ids.add(id))throw new IOException("Duplicate guild emoji identity");
+                if(!e.has("roles")||e.getAsJsonArray("roles").size()>256)throw new IOException("Invalid emoji roles");
+                boolean restricted=!e.getAsJsonArray("roles").isEmpty(),permitted=!restricted;
+                for(var role:e.getAsJsonArray("roles"))if(roles.contains(role.getAsString()))permitted=true;
+                entries.add(new GuildEmojiCatalog.Entry(id,name,e.has("animated")&&e.get("animated").getAsBoolean(),e.has("available")&&e.get("available").getAsBoolean(),permitted,restricted));
+            }
+            entries.sort(Comparator.comparing(GuildEmojiCatalog.Entry::name,String.CASE_INSENSITIVE_ORDER).thenComparing(GuildEmojiCatalog.Entry::id));
+            boolean complete=entries.size()<=GuildEmojiCatalog.MAX_ENTRIES;
+            if(!complete)entries=new ArrayList<>(entries.subList(0,GuildEmojiCatalog.MAX_ENTRIES));
+            if(!guildCatalog.ready()||!guildCatalog.entries().equals(entries)||guildCatalog.complete()!=complete)
+                guildCatalog=new GuildEmojiCatalog(guildCatalog.version()+1,"Discord guild emoji",false,true,complete,entries);
+            var retained=new HashSet<String>();for(var e:entries)if(e.usable())retained.add(thumbnailKey(e));thumbnails.retain(retained);
+            return guildCatalog;
+        }catch(Exception unavailable){return unavailableCatalog();}
+    }
+    @Override public Map<String,Attachment> thumbnails(List<String> ids){
+        if(ids.size()>GuildEmojiCatalog.THUMB_BATCH)return Map.of();var snapshot=catalog();if(!snapshot.ready())return Map.of();
+        var result=new LinkedHashMap<String,Attachment>();var budget=new ConversionBudget();
+        for(String id:new LinkedHashSet<>(ids)){
+            var entry=snapshot.find(id);if(entry==null||!entry.usable())continue;
+            var image=thumbnails.get(thumbnailKey(entry),()->budget.resolve(thumbnailKey(entry),URI.create(localTest?api.resolve("emoji/"+id).toString():"https://cdn.discordapp.com/emojis/"+id+(entry.animated()?".gif":".png")+"?size=32&quality=lossless")));
+            image.ifPresent(a->result.put(id,a));
+        }
+        return Map.copyOf(result);
+    }
     private String cursor;
     private boolean initialized,terminal;
     private volatile boolean closed;
@@ -67,12 +114,16 @@ public final class DiscordBotAdapter implements DiscordAdapter {
         if(!me.has("bot")||!me.get("bot").getAsBoolean()){terminal=true;throw new IOException("Bot account required");}
         var room=json(request("GET","channels/"+channel,null,null));
         if(!room.get("id").getAsString().equals(channel)||room.get("type").getAsInt()!=0){terminal=true;throw new IOException("Only designated guild text channels are supported");}
+        guild=room.has("guild_id")?room.get("guild_id").getAsString():"";botId=me.get("id").getAsString();
+        if(!guild.matches("[0-9]{15,22}")||!botId.matches("[0-9]{15,22}")){terminal=true;throw new IOException("Invalid guild bot identity");}
         initialized=true;
     }
     @Override public RelayRecord prepare(RelayRecord record)throws Exception{
-        ready();var message=new JsonObject();message.addProperty("id",record.id().toString());message.addProperty("content",record.text());
+        ready();var current=catalog();
+        if(EMOJI.matcher(record.text()).find()&&!current.ready())throw new IOException("Guild emoji catalog unavailable");
+        var message=new JsonObject();message.addProperty("id",record.id().toString());message.addProperty("content",record.text());
         var author=new JsonObject();author.addProperty("username","Minecraft");message.add("author",author);
-        var parsed=convert(message,record.mentions());
+        var parsed=convert(message,record.mentions(),true);
         var prepared=new RelayRecord(record.id(),record.author(),record.text().isBlank()&&!record.attachments().isEmpty()?"":parsed.text(),record.attachments(),parsed.catalog(),parsed.emoji(),record.actor(),parsed.mentions());prepared.encode();return prepared;
     }
     @Override public void send(RelayRecord message)throws Exception{sendWithReceipt(message);}
@@ -125,7 +176,8 @@ public final class DiscordBotAdapter implements DiscordAdapter {
     }
     private RelayRecord convert(JsonObject m)throws Exception{return convert(m,List.of());}
     private record Edit(int end,int delta) {}
-    private RelayRecord convert(JsonObject m,List<Mention> inputMentions)throws Exception{
+    private RelayRecord convert(JsonObject m,List<Mention> inputMentions)throws Exception{return convert(m,inputMentions,false);}
+    private RelayRecord convert(JsonObject m,List<Mention> inputMentions,boolean outbound)throws Exception{
         String text=m.has("content")?m.get("content").getAsString():"";Limits.text(text,2000,"Discord content");
         var edits=new ArrayList<Edit>();
         var budget=new ConversionBudget();var resolved=new HashMap<EmojiKey,Optional<Attachment>>();
@@ -133,7 +185,8 @@ public final class DiscordBotAdapter implements DiscordAdapter {
         while(matcher.find()){
             boolean inside=false;for(var mention:inputMentions)if(matcher.start()<mention.end()&&matcher.end()>mention.start()){inside=true;break;}
             if(inside){matcher.appendReplacement(converted,java.util.regex.Matcher.quoteReplacement(matcher.group()));continue;}
-            String id=matcher.group(3);boolean animated=!matcher.group(1).isEmpty();
+            String id=matcher.group(3);boolean animated=!matcher.group(1).isEmpty();String emojiName=matcher.group(2);
+            if(outbound){var definition=guildCatalog.find(id);if(definition==null||!definition.usable())throw new IOException("Guild emoji unavailable or not permitted");animated=definition.animated();emojiName=definition.name();}
             var identity=new EmojiKey(id,animated);String alias=(animated?"a":"e")+id,key="emoji-"+id+(animated?".gif":".png");
             var image=resolved.get(identity);
             if(image==null){
@@ -143,7 +196,7 @@ public final class DiscordBotAdapter implements DiscordAdapter {
             }
             String replacement;
             if(image.isPresent()){
-                catalog.putIfAbsent(alias,new Content.CustomEmoji(id,matcher.group(2),animated,key));emoji.putIfAbsent(key,image.get());
+                catalog.putIfAbsent(alias,new Content.CustomEmoji(id,emojiName,animated,key));emoji.putIfAbsent(key,image.get());
                 replacement=":"+alias+":";
             }else replacement=":"+matcher.group(2)+":";
             matcher.appendReplacement(converted,java.util.regex.Matcher.quoteReplacement(replacement));edits.add(new Edit(matcher.end(),replacement.length()-(matcher.end()-matcher.start())));
@@ -183,7 +236,7 @@ public final class DiscordBotAdapter implements DiscordAdapter {
             if(!Double.isFinite(seconds)||seconds<0||seconds>3600)seconds=3600;
             blockedUntil=System.nanoTime()+(long)Math.ceil(Math.max(1,seconds)*1e9);throw new IOException("Discord rate limited");
         }
-        if(r.statusCode()==401||r.statusCode()==403){terminal=true;throw new IOException("Discord credentials/permissions rejected; restart after operator correction");}
+        if(r.statusCode()==401||r.statusCode()==403){terminal=true;unavailableCatalog();throw new IOException("Discord credentials/permissions rejected; restart after operator correction");}
         if(r.statusCode()<200||r.statusCode()>=300)throw new IOException("Discord request failed or uncertain; not automatically retried");
         return r.body();
     }
@@ -192,7 +245,7 @@ public final class DiscordBotAdapter implements DiscordAdapter {
         try{return future.get(12,TimeUnit.SECONDS);}catch(Exception failure){future.cancel(true);throw new IOException("Bounded HTTP request failed");}
     }
     private static JsonObject json(byte[] b){return JsonParser.parseString(new String(b,StandardCharsets.UTF_8)).getAsJsonObject();}
-    @Override public void close(){closed=true;mediaWorker.shutdownNow();io.shutdownNow();}
+    @Override public void close(){closed=true;unavailableCatalog();mediaWorker.shutdownNow();io.shutdownNow();}
     private static final class LimitedBody implements HttpResponse.BodySubscriber<byte[]> {
         private final int max;private final ByteArrayOutputStream out=new ByteArrayOutputStream();private final CompletableFuture<byte[]> result=new CompletableFuture<>();private Flow.Subscription subscription;
         LimitedBody(int max){this.max=max;}

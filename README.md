@@ -33,7 +33,7 @@ The installable preview is `forge/build/libs/discraft-forge-1.20.1-0.1.0-dev.jar
 
 ## Use
 
-Install the same mod JAR on a Forge dedicated server and modded clients. The server bridge defaults to **disabled**. See [server configuration and limits](docs/SERVER-BRIDGE.md) before enabling Discord; never put a bot token in client config, command-line arguments, source, logs or chat.
+Install the same mod JAR on a Forge dedicated server and modded clients. The server bridge defaults to **disabled**. Native chat reads a bounded server-owned guild emoji catalog with searchable static/animated previews and disabled unavailable entries; selecting an entry stages markup without sending. See [server configuration and limits](docs/SERVER-BRIDGE.md) before enabling Discord; never put a bot token in client config, command-line arguments, source, logs or chat.
 
 The current native-chat interaction prototype uses Minecraft's original **T / ChatScreen** and native message history. A compact smiley opens an anchored **GIF / 貼圖 / 表情符號** picker with search, categories, a grid and item source information. Unicode and already available server emoji are local options; GIF currently contains a labelled bundled demonstration, and remote GIF/sticker search is unavailable. No external provider is contacted. The smiley is drawn from original geometric pixel primitives; reference screenshots inform layout only and are not embedded as UI textures.
 

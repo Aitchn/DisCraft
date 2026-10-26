@@ -185,7 +185,8 @@ public final class MultiplayerAcceptance {
         if(stage==43){if(++nativeTicks<6)return;capture("Native-spoiler-preview.png");var input=MC.screen.children().stream().filter(w->w instanceof EditBox).map(w->(EditBox)w).findFirst().orElseThrow();input.setValue("spoiler-native demo");MC.keyboardHandler.keyPress(MC.getWindow().getWindow(),257,0,1,0);MC.keyboardHandler.keyPress(MC.getWindow().getWindow(),257,0,0,0);stage=44;}
         if(stage==44){if(ClientBridge.snapshot().stream().noneMatch(m->m.author().equals("Alice")&&Content.plain(m.content()).equals("spoiler-native demo")&&!m.attachments().isEmpty()&&m.attachments().get(0).name().startsWith("SPOILER_")))return;check(true,"Native spoiler flag survives authoritative attachment transport");MC.setScreen(new ChatScreen(""));MC.gui.getChat().resetChatScroll();stage=45;nativeTicks=0;}
         if(stage==45){if(++nativeTicks<12)return;capture("Native-incoming-spoiler-hidden.png");NativeUxAcceptance.start(label->check(true,label));stage=50;}
-        if(stage==50&&NativeUxAcceptance.tick()){SpoilerPrivacyAcceptance.start(label->check(true,label));stage=60;}
+        if(stage==50&&NativeUxAcceptance.tick()){GuildPickerAcceptance.start(label->check(true,label));stage=55;}
+        if(stage==55&&GuildPickerAcceptance.tick()){SpoilerPrivacyAcceptance.start(label->check(true,label));stage=60;}
         if(stage==60&&SpoilerPrivacyAcceptance.tick())finish();
     }
     private static int nativeFrame()throws Exception{

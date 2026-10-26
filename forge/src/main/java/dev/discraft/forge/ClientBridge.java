@@ -26,15 +26,15 @@ public final class ClientBridge {
     private static final class Assembly {final int total;final byte[] bytes;final long started=System.nanoTime();int at;Assembly(int total){this.total=total;bytes=new byte[total];}}
     @SubscribeEvent public static void login(ClientPlayerNetworkEvent.LoggingIn e){reset("Awaiting server bridge");}
     @SubscribeEvent public static void logout(ClientPlayerNetworkEvent.LoggingOut e){reset("Disconnected");}
-    private static void reset(String reason){NativeChat.reset();generation++;enabled=false;status=reason;history.clear();seen.clear();transfers.clear();decoder.getQueue().clear();pending.values().forEach(f->f.completeExceptionally(new IOException(reason)));pending.clear();}
+    private static void reset(String reason){NativeChat.reset();ClientGuildEmoji.reset();generation++;enabled=false;status=reason;history.clear();seen.clear();transfers.clear();decoder.getQueue().clear();pending.values().forEach(f->f.completeExceptionally(new IOException(reason)));pending.clear();}
     public static String status(){return status;}
     public static boolean available(){var c=Minecraft.getInstance().getConnection();return enabled&&c!=null&&BridgeNetwork.CHANNEL.isRemotePresent(c.getConnection());}
     public static List<Message> snapshot(){return history.stream().map(RelayRecord::message).toList();}
     public static Map<String,Content.CustomEmoji> catalog(){var all=new LinkedHashMap<String,Content.CustomEmoji>();for(var r:history)all.putAll(r.catalog());return Map.copyOf(all);}
     public static Attachment emoji(String key){for(var r:history)if(r.emoji().containsKey(key))return r.emoji().get(key);return null;}
     public static String emojiShortcut(int index){
-        var all=new LinkedHashMap<String,Content.CustomEmoji>();for(var r:history)for(var e:r.catalog().values())if(e.id().matches("[0-9]{15,22}"))all.put(e.id(),e);
-        var list=new ArrayList<>(all.values());if(index>=list.size())return "";var e=list.get(index);return "<"+(e.animated()?"a":"")+":"+e.name()+":"+e.id()+">";
+        var snapshot=ClientGuildEmoji.snapshot();var entries=snapshot.entries().stream().filter(GuildEmojiCatalog.Entry::usable).toList();
+        if(index<0||index>=entries.size())return "";var entry=entries.get(index);return snapshot.fixture()?":"+entry.name()+":":entry.markup();
     }
     public static String send(String text,Attachment attachment)throws Exception{return send(text,attachment,List.of());}
     public static String send(String text,Attachment attachment,List<Mention> mentions)throws Exception{

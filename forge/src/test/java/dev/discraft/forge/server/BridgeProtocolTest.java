@@ -38,8 +38,12 @@ public final class BridgeProtocolTest {
         check(MentionDraft.normalized(label+" ",List.of(),label).isEmpty(),"Normalized typed lookalike text never gains a mention binding");check(MentionDraft.normalized(label+" ",List.of(new Mention(0,label.length(),first)),"changed "+label).isEmpty(),"Unknown message transforms withdraw mention bindings");
         raw="x".repeat(256)+label;mapped=MentionDraft.normalized(raw,List.of(new Mention(256,raw.length(),first)),"x".repeat(256));check(mapped.isEmpty(),"Vanilla truncation withdraws a mention outside the retained text");
     }
+    private static RelayRecord inbound(DiscordBotAdapter adapter,String text)throws Exception{
+        var message=new JsonObject();message.addProperty("id","8234567890123456");message.addProperty("content",text);var author=new JsonObject();author.addProperty("username","Human");message.add("author",author);
+        var convert=DiscordBotAdapter.class.getDeclaredMethod("convert",JsonObject.class);convert.setAccessible(true);return (RelayRecord)convert.invoke(adapter,message);
+    }
     public static void main(String[] args)throws Exception{
-        ServerConfigTest.run();mentionEdits();normalizedMentions();
+        ServerConfigTest.run();GuildEmojiTest.run();mentionEdits();normalizedMentions();
         var id=UUID.randomUUID();var gif=Attachment.fromResource("dance.gif");
         var original=RelayRecord.draft(id,"Unicode 世界 👋",gif);var decoded=RelayRecord.decode(original.encode());
         check(decoded.id().equals(id)&&decoded.text().equals(original.text())&&decoded.attachments().get(0).media().frames().size()>1,"Wire roundtrip preserves Unicode and real GIF frames");
@@ -62,6 +66,10 @@ public final class BridgeProtocolTest {
                     auth.compareAndSet(true,("Bot discraft-local-test-token").equals(exchange.getRequestHeaders().getFirst("Authorization")));
                     if(exchange.getRequestMethod().equals("POST")){posts.add(exchange.getRequestBody().readAllBytes());response=("{\"id\":\""+(receiptValid.get()?last:"invalid")+"\"}").getBytes(StandardCharsets.UTF_8);}
                     else if(path.endsWith("/users/@me")){response=("{\"id\":\"9999999999999999\",\"bot\":"+bot.get()+"}").getBytes(StandardCharsets.UTF_8);}
+                    else if(path.contains("/members/")){response="{\"roles\":[]}".getBytes(StandardCharsets.UTF_8);}
+                    else if(path.endsWith("/emojis")){
+                        var list=new JsonArray();for(int i=0;i<40;i++){var e=new JsonObject();e.addProperty("id",String.valueOf(1111111111111111L+i));e.addProperty("name",i==0?"smile":"item"+i);e.addProperty("animated",false);e.addProperty("available",true);e.add("roles",new JsonArray());list.add(e);}var animated=new JsonObject();animated.addProperty("id","2222222222222222");animated.addProperty("name","dance");animated.addProperty("animated",true);animated.addProperty("available",true);animated.add("roles",new JsonArray());list.add(animated);response=list.toString().getBytes(StandardCharsets.UTF_8);
+                    }
                     else if(path.endsWith("/messages")){
                         if(exchange.getRequestURI().getQuery().contains("limit=1"))response=("[{\"id\":\""+first+"\"}]").getBytes(StandardCharsets.UTF_8);
                         else {
@@ -72,7 +80,7 @@ public final class BridgeProtocolTest {
                             var webhook=message.deepCopy();webhook.addProperty("id","3234567890123458");webhook.addProperty("webhook_id","9");
                             var all=new JsonArray();all.add(webhook);all.add(own);all.add(message);response=all.toString().getBytes(StandardCharsets.UTF_8);
                         }
-                    } else response=("{\"id\":\""+channel+"\",\"type\":0}").getBytes(StandardCharsets.UTF_8);
+                    } else response=("{\"id\":\""+channel+"\",\"type\":0,\"guild_id\":\"8888888888888888\"}").getBytes(StandardCharsets.UTF_8);
                 }
                 if(status==429)response="{\"retry_after\":2,\"global\":true}".getBytes(StandardCharsets.UTF_8);
                 exchange.sendResponseHeaders(status,response.length);exchange.getResponseBody().write(response);
@@ -124,21 +132,21 @@ public final class BridgeProtocolTest {
             }
             for(String mode:List.of("ok","fail","invalid")){
                 mediaMode.set(mode);int prior=mediaRequests.get();
-                var repeated=adapter.prepare(RelayRecord.draft(UUID.randomUUID(),"<:x:1111111111111111>".repeat(80),null));
+                var repeated=inbound(adapter,"<:x:1111111111111111>".repeat(80));
                 check(mediaRequests.get()==prior+1,"Repeated "+mode+" emoji resolves once per conversion");
                 check(repeated.catalog().size()==(mode.equals("ok")?1:0),"Positive and negative "+mode+" emoji cache preserves result");
             }
             mediaMode.set("ok");int mixedBefore=mediaRequests.get();
-            var mixed=adapter.prepare(RelayRecord.draft(UUID.randomUUID(),"<:x:1111111111111111> <a:x:1111111111111111>",null));
+            var mixed=inbound(adapter,"<:x:1111111111111111> <a:x:1111111111111111>");
             check(mediaRequests.get()==mixedBefore+2&&mixed.catalog().size()==2,"Static and animated IDs have separate cache identities");
             mediaMode.set("fail");var distinct=new StringBuilder();for(int i=0;i<40;i++)distinct.append("<:x:").append(1111111111111111L+i).append("> ");
-            int failedBefore=mediaRequests.get();adapter.prepare(RelayRecord.draft(UUID.randomUUID(),distinct.toString(),null));
+            int failedBefore=mediaRequests.get();inbound(adapter,distinct.toString());
             check(mediaRequests.get()==failedBefore+8,"Distinct failed emoji bounded to eight total attempts");
             mediaMode.set("ok");int validBefore=mediaRequests.get();
-            var validDistinct=adapter.prepare(RelayRecord.draft(UUID.randomUUID(),distinct.toString(),null));
+            var validDistinct=inbound(adapter,distinct.toString());
             check(mediaRequests.get()==validBefore+8&&validDistinct.catalog().size()==8,"Distinct successful emoji share eight-attempt work budget");
             mediaMode.set("slow");long started=System.nanoTime();int slowBefore=mediaRequests.get();
-            var slow=adapter.prepare(RelayRecord.draft(UUID.randomUUID(),"<:x:1111111111111111>".repeat(80)+"<:y:2222222222222222>",null));
+            var slow=inbound(adapter,"<:x:1111111111111111>".repeat(80)+"<:y:2222222222222222>");
             check(System.nanoTime()-started<java.util.concurrent.TimeUnit.SECONDS.toNanos(7)&&mediaRequests.get()==slowBefore+1&&slow.catalog().isEmpty(),"Slow repeated and unique emoji share six-second total deadline");
             Thread.sleep(2200);mediaMode.set("ok");
             check(auth.get(),"Bot authorization is confined to REST and omitted on media requests");
