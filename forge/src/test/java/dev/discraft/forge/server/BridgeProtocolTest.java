@@ -42,7 +42,7 @@ public final class BridgeProtocolTest {
                         if(exchange.getRequestURI().getQuery().contains("limit=1"))response=("[{\"id\":\""+first+"\"}]").getBytes(StandardCharsets.UTF_8);
                         else {
                             var message=new JsonObject();message.addProperty("id",last);message.addProperty("content","Discord 世界 <:smile:1111111111111111> <a:dance:2222222222222222>");
-                            var author=new JsonObject();author.addProperty("username","Human");author.addProperty("bot",false);message.add("author",author);
+                            var author=new JsonObject();author.addProperty("id","4234567890123456");author.addProperty("username","Human");author.addProperty("bot",false);message.add("author",author);
                             var files=new JsonArray();var file=new JsonObject();file.addProperty("size",1024);file.addProperty("filename","image.png");file.addProperty("url","http://127.0.0.1:"+server.getAddress().getPort()+"/file.png");files.add(file);message.add("attachments",files);
                             var own=message.deepCopy();own.addProperty("id","3234567890123457");own.getAsJsonObject("author").addProperty("bot",true);
                             var webhook=message.deepCopy();webhook.addProperty("id","3234567890123458");webhook.addProperty("webhook_id","9");
@@ -71,6 +71,23 @@ public final class BridgeProtocolTest {
             check(captionless.text().isEmpty()&&captionless.attachments().size()==1,"REST preparation preserves captionless attachments");
             adapter.send(captionless);String imageOnly=new String(posts.get(posts.size()-1),StandardCharsets.ISO_8859_1);
             check(imageOnly.contains("files[0]")&&!imageOnly.contains("content/media unavailable"),"Captionless multipart send does not invent an unavailable-content caption");
+            var target=new ActorRef(ActorRef.Kind.DISCORD,"4234567890123456","同名成員");var other=new ActorRef(ActorRef.Kind.DISCORD,"5234567890123456","同名成員");
+            var sender=new ActorRef(ActorRef.Kind.MINECRAFT,UUID.randomUUID().toString(),"Alice");String prefix="<:smile:1111111111111111> ",text=prefix+target.label()+" @everyone <@6234567890123456>";
+            var selected=new RelayRecord(UUID.randomUUID(),"Alice",text,List.of(),Map.of(),Map.of(),sender,List.of(new Mention(prefix.length(),prefix.length()+target.label().length(),target)));
+            var selectedWire=RelayRecord.decode(selected.encode());check(selectedWire.actor().equals(sender)&&selectedWire.mentions().get(0).target().id().equals(target.id())&&!target.equals(other),"Wire actor/mention identity is stable despite duplicate display names");
+            var resolved=adapter.prepare(selected);check(resolved.text().substring(resolved.mentions().get(0).start(),resolved.mentions().get(0).end()).equals(target.label()),"Emoji normalization preserves explicit mention span/identity");adapter.send(resolved);
+            var mentionPayload=JsonParser.parseString(new String(posts.get(posts.size()-1),StandardCharsets.UTF_8)).getAsJsonObject();var allowed=mentionPayload.getAsJsonObject("allowed_mentions");
+            check(allowed.getAsJsonArray("parse").isEmpty()&&allowed.getAsJsonArray("users").size()==1&&allowed.getAsJsonArray("users").get(0).getAsString().equals(target.id())&&!allowed.has("roles"),"Only explicitly selected stable user ID is allowed; everyone/roles/arbitrary IDs remain suppressed");
+            adapter.send(RelayRecord.draft(UUID.randomUUID(),target.label()+" @everyone <@6234567890123456>",null));var plainPayload=JsonParser.parseString(new String(posts.get(posts.size()-1),StandardCharsets.UTF_8)).getAsJsonObject();
+            check(plainPayload.getAsJsonObject("allowed_mentions").getAsJsonArray("users").isEmpty(),"Typed mention-like display text does not create real Discord pings");
+            var spoiler=Attachment.of("SPOILER_image.png",Attachment.fromResource("landscape.png").bytes());adapter.send(RelayRecord.draft(UUID.randomUUID(),"spoiler",spoiler));String spoilerMultipart=new String(posts.get(posts.size()-1),StandardCharsets.ISO_8859_1);
+            check(spoilerMultipart.contains("SPOILER_image.png")&&spoilerMultipart.contains("\"is_spoiler\":true"),"Multipart uses spoiler filename and official is_spoiler attachment metadata");
+            var convert=DiscordBotAdapter.class.getDeclaredMethod("convert",JsonObject.class);convert.setAccessible(true);
+            for(String flag:List.of("is_spoiler","flags")){
+                var message=new JsonObject();message.addProperty("id","8234567890123456");message.addProperty("content","spoiler");var source=new JsonObject();source.addProperty("id",target.id());source.addProperty("username","Human");message.add("author",source);
+                var files=new JsonArray();var file=new JsonObject();file.addProperty("filename","unprefixed.png");file.addProperty("size",1024);file.addProperty("url","http://127.0.0.1:"+server.getAddress().getPort()+"/file.png");if(flag.equals("flags"))file.addProperty(flag,8);else file.addProperty(flag,true);files.add(file);message.add("attachments",files);
+                var hidden=(RelayRecord)convert.invoke(adapter,message);check(hidden.attachments().get(0).name().startsWith("SPOILER_")&&hidden.actor().id().equals(target.id()),"REST "+flag+" normalizes to concealed native media with stable author");
+            }
             var fetch=DiscordBotAdapter.class.getDeclaredMethod("fetchMedia",URI.class);fetch.setAccessible(true);
             int redirectBefore=requests.get();rejected(()->fetch.invoke(adapter,URI.create("http://127.0.0.1:"+server.getAddress().getPort()+"/redirect")),"Media redirect rejected");check(requests.get()==redirectBefore+1,"Media redirect is not followed");
             rejected(()->fetch.invoke(adapter,URI.create("http://127.0.0.1:"+server.getAddress().getPort()+"/huge")),"Oversize HTTP response stream cancelled");

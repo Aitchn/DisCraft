@@ -130,7 +130,7 @@ public final class MultiplayerAcceptance {
                     capture("Alice-reconnected.png");screen.onClose();MC.options.guiScale().set(2);MC.resizeDisplay();NativeComposer.openBridge();MC.gui.getChat().scrollChat(8);stage=20;
                 }
             }
-        }catch(Throwable failure){NativeChatRegression.cleanup();done=true;try{Files.createDirectories(OUT);capture(ROLE+"-failure.png");Files.writeString(OUT.resolve(ROLE+"-result.txt"),String.join("\n",checks)+"\nFAIL stage "+stage+": "+failure+"\n");}catch(Exception ignored){}failure.printStackTrace();MC.stop();}
+        }catch(Throwable failure){NativeChatRegression.cleanup();NativeUxAcceptance.cleanup();done=true;try{Files.createDirectories(OUT);capture(ROLE+"-failure.png");Files.writeString(OUT.resolve(ROLE+"-result.txt"),String.join("\n",checks)+"\nFAIL stage "+stage+": "+failure+"\n");}catch(Exception ignored){}failure.printStackTrace();MC.stop();}
     }
     private static void bob(DisCraftScreen screen,List<Message> messages)throws Exception{
         switch(stage){
@@ -184,7 +184,8 @@ public final class MultiplayerAcceptance {
         if(stage==42){if(++nativeTicks<12)return;capture("Native-Discord-picker-card.png");var close=NativeInteractions.class.getDeclaredMethod("closePicker");close.setAccessible(true);close.invoke(null);var toggle=NativeComposer.class.getDeclaredMethod("toggleSpoiler");toggle.setAccessible(true);toggle.invoke(null);stage=43;nativeTicks=0;}
         if(stage==43){if(++nativeTicks<6)return;capture("Native-spoiler-preview.png");var input=MC.screen.children().stream().filter(w->w instanceof EditBox).map(w->(EditBox)w).findFirst().orElseThrow();input.setValue("spoiler-native demo");MC.keyboardHandler.keyPress(MC.getWindow().getWindow(),257,0,1,0);MC.keyboardHandler.keyPress(MC.getWindow().getWindow(),257,0,0,0);stage=44;}
         if(stage==44){if(ClientBridge.snapshot().stream().noneMatch(m->m.author().equals("Alice")&&Content.plain(m.content()).equals("spoiler-native demo")&&!m.attachments().isEmpty()&&m.attachments().get(0).name().startsWith("SPOILER_")))return;check(true,"Native spoiler flag survives authoritative attachment transport");MC.setScreen(new ChatScreen(""));MC.gui.getChat().resetChatScroll();stage=45;nativeTicks=0;}
-        if(stage==45){if(++nativeTicks<12)return;capture("Native-incoming-spoiler-hidden.png");finish();}
+        if(stage==45){if(++nativeTicks<12)return;capture("Native-incoming-spoiler-hidden.png");NativeUxAcceptance.start(label->check(true,label));stage=50;}
+        if(stage==50&&NativeUxAcceptance.tick())finish();
     }
     private static int nativeFrame()throws Exception{
         var f=NativeChat.class.getDeclaredField("textures");f.setAccessible(true);var entries=(Map<?,?>)field(f.get(null),"entries");var e=entries.get(ClientBridge.emoji("dance.gif").digest());if(e==null)return -1;var get=e.getClass().getDeclaredMethod("frame");get.setAccessible(true);return (Integer)get.invoke(e);
@@ -193,7 +194,7 @@ public final class MultiplayerAcceptance {
         var f=net.minecraftforge.fml.util.ObfuscationReflectionHelper.findField(net.minecraft.client.gui.components.ChatComponent.class,"f_93760_");return ((List<net.minecraft.client.GuiMessage>)f.get(MC.gui.getChat())).stream().anyMatch(m->m.content().getString().contains(value));
     }
     private static int count(List<Message> messages,String start){return (int)messages.stream().filter(m->m.author().equals("Alice")&&Content.plain(m.content()).startsWith(start)).count();}
-    @SuppressWarnings("unchecked") private static CompletableFuture<String> raw(RelayRecord record)throws Exception{
+    @SuppressWarnings("unchecked") static CompletableFuture<String> raw(RelayRecord record)throws Exception{
         byte[] b=record.encode();var future=watch(record.id());
         for(int at=0;at<b.length;at+=BridgeNetwork.CHUNK)BridgeNetwork.CHANNEL.sendToServer(new BridgeNetwork.Upload(record.id(),b.length,at,Arrays.copyOfRange(b,at,Math.min(b.length,at+BridgeNetwork.CHUNK))));return future;
     }

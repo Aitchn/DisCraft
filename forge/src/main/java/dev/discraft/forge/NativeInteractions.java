@@ -39,8 +39,8 @@ public final class NativeInteractions {
         search=new EditBox(MC.font,px()+10,py()+35,pw()-20,18,Component.literal("搜尋表情"));search.setHint(Component.literal("搜尋"));search.setMaxLength(80);search.setValue(query);search.setResponder(s->{query=s;scroll=0;});search.visible=open;search.active=open;event.addListener(search);
     }
     static void reset(){open=false;query="";hits.clear();textures.close();screen=null;search=null;}
-    static void closePicker(){open=false;if(search!=null){search.visible=false;search.active=false;}}
-    public static void openPicker(){if(MC.screen instanceof ChatScreen){open=true;if(search!=null){search.visible=true;search.active=true;}}}
+    static void closePicker(){open=false;if(search!=null){search.visible=false;search.active=false;}if(screen!=null&&MC.screen==screen&&input!=null){screen.setFocused(input);input.setFocused(true);}}
+    public static void openPicker(){if(MC.screen instanceof ChatScreen){open=true;if(search!=null){search.visible=true;search.active=true;screen.setFocused(search);search.setFocused(true);}}}
     private static int px(){return Math.max(4,screen.width-pw()-5);}private static int pw(){return Math.min(350,screen.width-8);}private static int ph(){return Math.min(260,screen.height-28);}private static int py(){return screen.height-22-ph();}
     private static boolean inside(double x,double y,int a,int b,int w,int h){return x>=a&&x<a+w&&y>=b&&y<b+h;}
     private static List<Item> items(){
@@ -49,7 +49,7 @@ public final class NativeInteractions {
         if(tab==0){try{if(demoGif==null)demoGif=Attachment.fromResource("dance.gif");list.add(new Item("","dance.gif","本機示範 GIF（非遠端搜尋）","",demoGif,false,true));}catch(Exception ignored){}return list;}
         if(category==5){
             for(var e:ClientBridge.catalog().entrySet()){var c=e.getValue();var a=ClientBridge.emoji(c.mediaKey());if(a==null)continue;String value=c.id().matches("[0-9]{15,22}")?"<"+(c.animated()?"a":"")+":"+c.name()+":"+c.id()+">":":"+e.getKey()+":";list.add(new Item("",":"+c.name()+":",ClientBridge.status().contains("TEST")?"伺服器示範（非 Discord）":"可用伺服器表情",value,a,true,false));}
-        }else for(String glyph:UNICODE[Math.min(category,UNICODE.length-1)])list.add(new Item(glyph,"表情 "+glyph,"Unicode · 本機",glyph,null,false,false));
+        }else for(String glyph:UNICODE[Math.min(category,UNICODE.length-1)])list.add(new Item(glyph,":"+Character.getName(glyph.codePointAt(0)).toLowerCase(Locale.ROOT).replace(' ','_')+":","Unicode · 本機",glyph,null,false,false));
         return list;
     }
     private static List<Item> filtered(){String q=query.toLowerCase(Locale.ROOT);return items().stream().filter(i->q.isBlank()||(i.name()+i.source()+i.glyph()).toLowerCase(Locale.ROOT).contains(q)).toList();}
@@ -60,7 +60,7 @@ public final class NativeInteractions {
             if(inside(x,y,px(),py(),pw(),ph())){
                 event.setCanceled(true);
                 if(inside(x,y,px()+10,py()+35,pw()-20,20)){search.mouseClicked(x,y,0);screen.setFocused(search);return;}
-                if(y<py()+29){int t=(int)((x-px()-10)/64);if(t>=0&&t<3){tab=t;scroll=0;}return;}
+                if(y<py()+29){int t=(int)((x-px()-10)/64);if(t>=0&&t<3){tab=t;scroll=0;query="";search.setValue("");}return;}
                 if(x<px()+34&&y>=py()+64&&y<py()+ph()-28){category=Math.max(0,Math.min(5,(int)((y-py()-64)/28)));scroll=0;return;}
                 for(var h:hits)if(inside(x,y,h.x(),h.y(),h.w(),h.h())){pick(h.item());return;}return;
             }

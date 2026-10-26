@@ -5,6 +5,7 @@ import dev.discraft.forge.bridge.ActorRef;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.components.*;
 import net.minecraft.client.gui.screens.ChatScreen;
+import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.client.event.*;
@@ -47,7 +48,7 @@ public final class NativeComposer {
     }
     private static void attach(String name){stage(()->decoder.apply(name));}
     static void stage(Callable<Attachment> source){
-        clear();bridge=true;loading=true;long version=revision,connection=epoch;
+        clear();loading=true;long version=revision,connection=epoch;
         try{decoding=worker.submit(()->{
             try{
                 var decoded=source.call();if(decoded.bytes().length>dev.discraft.forge.bridge.RelayRecord.FILE_BYTES)throw new IllegalArgumentException();
@@ -62,10 +63,12 @@ public final class NativeComposer {
     static void toggleSpoiler(){if(attachment!=null){spoiler=!spoiler;previewReveal=false;revision++;}}
     static void togglePreview(){if(spoiler)previewReveal=!previewReveal;}
     static void removeStaged(){clear();}
-    static void insertMention(ActorRef actor){if(MC.screen instanceof ChatScreen screen){DraftMentions.insert(input(screen),actor);bridge=true;}}
+    static void insertMention(ActorRef actor){if(MC.screen instanceof ChatScreen screen){DraftMentions.insert(input(screen),actor);screen.setFocused(input(screen));input(screen).setFocused(true);}}
     static void insertEmoji(String value,boolean custom){if(MC.screen instanceof ChatScreen screen){input(screen).insertText(value);if(custom)bridge=true;}}
     @SubscribeEvent public static void closing(ScreenEvent.Closing event){if(event.getScreen() instanceof ChatScreen){if(loading)clear();bridge=false;DraftMentions.clear();NativeInteractions.closePicker();}}
-    @SubscribeEvent public static void init(ScreenEvent.Init.Post event){if(event.getScreen() instanceof ChatScreen screen)NativeInteractions.attach(screen,event,input(screen));}
+    @SubscribeEvent public static void init(ScreenEvent.Init.Post event){if(event.getScreen() instanceof ChatScreen screen){DraftMentions.install(input(screen));NativeInteractions.attach(screen,event,input(screen));}}
+    @SubscribeEvent(priority=net.minecraftforge.eventbus.api.EventPriority.HIGH) public static void editKeys(ScreenEvent.KeyPressed.Pre event){if(event.getScreen() instanceof ChatScreen screen&&input(screen).isFocused()&&(event.getKeyCode()==GLFW.GLFW_KEY_BACKSPACE||event.getKeyCode()==GLFW.GLFW_KEY_DELETE||Screen.hasControlDown()&&(event.getKeyCode()==GLFW.GLFW_KEY_V||event.getKeyCode()==GLFW.GLFW_KEY_X)))DraftMentions.beforeEdit(input(screen));}
+    @SubscribeEvent(priority=net.minecraftforge.eventbus.api.EventPriority.HIGH) public static void editCharacter(ScreenEvent.CharacterTyped.Pre event){if(event.getScreen() instanceof ChatScreen screen&&input(screen).isFocused())DraftMentions.beforeEdit(input(screen));}
     @SubscribeEvent public static void keys(ScreenEvent.KeyPressed.Pre event){
         if(!(event.getScreen() instanceof ChatScreen screen)||(event.getKeyCode()!=GLFW.GLFW_KEY_ENTER&&event.getKeyCode()!=GLFW.GLFW_KEY_KP_ENTER))return;
         String text=input(screen).getValue();if(text.startsWith("/")||(!bridge&&attachment==null&&!loading&&DraftMentions.snapshot(text).isEmpty()))return;
@@ -76,7 +79,7 @@ public final class NativeComposer {
         }
     }
     @SubscribeEvent public static void chat(ClientChatEvent event){
-        if(event.getMessage().startsWith("/")||(!bridge&&attachment==null&&DraftMentions.snapshot(event.getMessage()).isEmpty()))return;
+        if(event.getMessage().startsWith("/")||(!bridge&&attachment==null&&!loading&&DraftMentions.snapshot(event.getMessage()).isEmpty()))return;
         event.setCanceled(true);send(event.getMessage());
     }
     private static boolean send(String text){

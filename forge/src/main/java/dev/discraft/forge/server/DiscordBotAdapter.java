@@ -88,7 +88,7 @@ public final class DiscordBotAdapter implements DiscordAdapter {
         if(message.attachments().isEmpty()){request("POST","channels/"+channel+"/messages",payload.toString().getBytes(StandardCharsets.UTF_8),"application/json");return;}
         var file=message.attachments().get(0);if(file.bytes().length>RelayRecord.FILE_BYTES)throw new IOException("Bridge file budget exceeded");
         String name=file.name().replaceAll("[^A-Za-z0-9_.-]","_");if(name.length()>80)name=name.substring(0,80);
-        var files=new JsonArray();var description=new JsonObject();description.addProperty("id",0);description.addProperty("filename",name);files.add(description);payload.add("attachments",files);
+        var files=new JsonArray();var description=new JsonObject();description.addProperty("id",0);description.addProperty("filename",name);description.addProperty("is_spoiler",file.name().startsWith("SPOILER_"));files.add(description);payload.add("attachments",files);
         String boundary="DisCraft"+UUID.randomUUID().toString().replace("-","");var bytes=new ByteArrayOutputStream();
         bytes.write(("--"+boundary+"\r\nContent-Disposition: form-data; name=\"payload_json\"\r\nContent-Type: application/json\r\n\r\n"+payload+"\r\n--"+boundary+"\r\nContent-Disposition: form-data; name=\"files[0]\"; filename=\""+name+"\"\r\nContent-Type: application/octet-stream\r\n\r\n").getBytes(StandardCharsets.UTF_8));
         bytes.write(file.bytes());bytes.write(("\r\n--"+boundary+"--\r\n").getBytes(StandardCharsets.UTF_8));
@@ -145,7 +145,7 @@ public final class DiscordBotAdapter implements DiscordAdapter {
         if(m.has("attachments"))for(var f:m.getAsJsonArray("attachments")){
             if(!files.isEmpty()||budget.attempts>=MEDIA_ATTEMPTS||System.nanoTime()>=budget.deadline)break;
             var a=f.getAsJsonObject();
-            try{if(a.get("size").getAsLong()>RelayRecord.FILE_BYTES)continue;files.add(budget.resolve(a.get("filename").getAsString(),URI.create(a.get("url").getAsString())));}
+            try{if(a.get("size").getAsLong()>RelayRecord.FILE_BYTES)continue;String name=a.get("filename").getAsString();boolean hidden=a.has("is_spoiler")&&a.get("is_spoiler").getAsBoolean()||a.has("flags")&&(a.get("flags").getAsInt()&8)!=0;if(hidden&&!name.startsWith("SPOILER_")){if(name.length()>112)name=name.substring(0,112);name="SPOILER_"+name;}files.add(budget.resolve(name,URI.create(a.get("url").getAsString())));}
             catch(Exception unsupported){/* Shared attempt/deadline budget includes unsuccessful attachment downloads. */}
         }
         if(converted.toString().isBlank()&&files.isEmpty())converted.append("[Discord content/media unavailable]");

@@ -79,7 +79,7 @@ public final class NativeChat {
         }
     }
     static ActorRef actorAt(double x,double y){
-        var style=MC.gui.getChat().getClickedComponentStyleAt(x,y);if(style==null)return null;
+        var style=MC.gui.getChat().getClickedComponentStyleAt(x-chatX,y-(chatY-MC.getWindow().getGuiScaledHeight()+40)/MC.gui.getChat().getScale());if(style==null)return null;
         var actor=nameEvents.get(style.getClickEvent());if(actor!=null)return actor;
         var hover=style.getHoverEvent();if(hover==null||MC.getConnection()==null)return null;
         var entity=hover.getValue(HoverEvent.Action.SHOW_ENTITY);if(entity==null||entity.type!=net.minecraft.world.entity.EntityType.PLAYER)return null;

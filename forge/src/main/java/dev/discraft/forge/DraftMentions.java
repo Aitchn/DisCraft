@@ -8,6 +8,14 @@ import java.util.*;
 final class DraftMentions {
     private static String previous="";
     private static final List<Mention> tokens=new ArrayList<>();
+    @SuppressWarnings("unchecked") static void install(EditBox input){
+        try{var field=net.minecraftforge.fml.util.ObfuscationReflectionHelper.findField(EditBox.class,"f_94089_");var previousResponder=(java.util.function.Consumer<String>)field.get(input);input.setResponder(text->{sync(text);if(previousResponder!=null)previousResponder.accept(text);});sync(input.getValue());}
+        catch(IllegalAccessException unavailable){throw new IllegalStateException("Native input responder unavailable",unavailable);}
+    }
+    static void beforeEdit(EditBox input){
+        try{int cursor=input.getCursorPosition(),highlight=net.minecraftforge.fml.util.ObfuscationReflectionHelper.findField(EditBox.class,"f_94102_").getInt(input);int a=Math.min(cursor,highlight),b=Math.max(cursor,highlight);tokens.removeIf(t->a<b?t.start()<b&&t.end()>a:a>t.start()&&a<t.end());}
+        catch(IllegalAccessException unavailable){throw new IllegalStateException("Native input selection unavailable",unavailable);}
+    }
     static void clear(){previous="";tokens.clear();}
     static void sync(String text){
         if(text.equals(previous))return;int left=0;while(left<text.length()&&left<previous.length()&&text.charAt(left)==previous.charAt(left))left++;

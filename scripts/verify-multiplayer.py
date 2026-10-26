@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Isolated loopback/offline acceptance; never configures or contacts a real Discord bot."""
 from pathlib import Path
-import json, os, signal, socket, subprocess, time, zipfile, platform
+import json, os, signal, socket, subprocess, time, zipfile, platform, fcntl
 
 ROOT=Path(__file__).resolve().parents[1]
 os.chdir(ROOT)
@@ -11,6 +11,11 @@ def interrupted(signum, frame):
 signal.signal(signal.SIGTERM, interrupted)
 OUT=ROOT/'build/evidence/multiplayer'
 OUT.mkdir(parents=True,exist_ok=True)
+runner_lock=(OUT/'.runner.lock').open('w')
+try:
+    fcntl.flock(runner_lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+except BlockingIOError:
+    raise SystemExit('Another multiplayer controller owns this evidence directory; no test was started')
 (OUT/'result.txt').unlink(missing_ok=True)
 for name in ('Alice','Bob'):
     for suffix in ('-result.txt','-done','-sent'):
@@ -59,6 +64,8 @@ def launch(role):
         # Resolve the already-downloaded runtime JAR bytes before either client starts;
         # never share a temporary extraction directory between the two JVMs.
         natives=directory/'native-libraries';natives.mkdir(exist_ok=True)
+        main_index=command.index('-cp')+2
+        command=command[:main_index]+['dev.discraft.forge.smoke.DesktopBootstrap']+command[main_index:]
         cp=command[command.index('-cp')+1];copied=set()
         for library in cp.split(os.pathsep):
             if not library.endswith('-natives-linux.jar'):continue
