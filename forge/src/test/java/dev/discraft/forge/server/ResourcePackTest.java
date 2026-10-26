@@ -21,6 +21,7 @@ final class ResourcePackTest {
         try{ResourcePackIndex.load(root,List.of("bad.zip"));throw new AssertionError(label);}catch(IOException expected){check(expected.getCause()==null&&!expected.toString().contains(root.toString()),label+" with sanitized diagnostics");}
     }
     static void run()throws Exception{
+        InstalledLanguageTest.run();
         Path root=Files.createTempDirectory("discraft-resource-test");
         try{
             var low=pack();low.put("assets/test/lang/en_us.json",utf8("{\"test.death\":\"%1$s was slain by %2$s using %3$s\",\"english.only\":\"Fallback\",\"retained\":\"low key\",\"shared\":\"low\"}"));

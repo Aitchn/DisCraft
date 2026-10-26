@@ -68,7 +68,7 @@ public final class ServerBridge {
             else if(server.isDedicatedServer()&&server.usesAuthentication()){
                 config=ServerConfig.load(net.minecraftforge.fml.loading.FMLPaths.CONFIGDIR.get().resolve("discraft-server.properties"));
                 if(config.enabled()&&Boolean.getBoolean("discraft.discord.enabled")){
-                    var resources=ResourcePackIndex.load(net.minecraftforge.fml.loading.FMLPaths.CONFIGDIR.get().resolve("discraft-resourcepacks"),config.resourcePacks());
+                    var resources=ResourcePackIndex.load(net.minecraftforge.fml.loading.FMLPaths.CONFIGDIR.get().resolve("discraft-resourcepacks"),config.resourcePacks()).withBase(InstalledModLanguages.load(config.locale()));
                     text=new ComponentText(resources,config.locale());if(config.itemDisplay())itemRenderer=new HeadlessItemRenderer(resources);adapter=DiscordBotAdapter.fromConfig(config);mode="discord";
                 }
                 else adapter=null;

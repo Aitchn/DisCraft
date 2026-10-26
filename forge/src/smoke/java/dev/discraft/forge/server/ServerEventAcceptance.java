@@ -47,6 +47,7 @@ public final class ServerEventAcceptance {
     }
     @SubscribeEvent(priority=EventPriority.LOWEST) public static void started(ServerStartedEvent event)throws Exception{
         if(!enabled())return;
+        try{InstalledLanguageAcceptance.run(Path.of(System.getProperty("discraft.serverEventsOutput")));}catch(Throwable rejected){failure="Installed language: "+rejected.getClass().getSimpleName()+": "+rejected.getMessage();server.halt(false);return;}
         player=FakePlayerFactory.get(server.overworld(),new GameProfile(UUID.fromString("5b52ba38-7083-4de2-888f-8fe83c0bf240"),"EventTester"));player.setHealth(20);
         if(Boolean.getBoolean("discraft.serverItemsSmoke"))try{items();}catch(Throwable rejected){failure="Item pipeline: "+rejected.getClass().getSimpleName()+": "+rejected.getMessage();server.halt(false);}
     }

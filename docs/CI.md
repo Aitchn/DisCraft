@@ -58,3 +58,5 @@ ZIP or downloads additional game assets. Animation size regressions run in ordin
 CI and compare horizontal/single-axis cases directly with pinned 1.20.1 metadata code.
 
 The headless item acceptance also checks real native tooltip semantics and bounded adaptive Discord PNGs via the production loopback adapter. Tooltip PNGs, semantic-line metadata and their result summary are included in server-events evidence. It never uses live Discord credentials or emits real notifications.
+
+Headless event acceptance also verifies actual installed Forge CN/TW resources, native DisCraft English reuse and partial operator overrides without a client or DISPLAY. The optional --language-pack argument is local-only evidence; user packs remain outside uploaded artifact roots. Synthetic tests cover deterministic source/namespace order and bounded language growth.
