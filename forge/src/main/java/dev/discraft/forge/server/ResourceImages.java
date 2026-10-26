@@ -19,7 +19,12 @@ final class ResourceImages {
         var image=ImageIO.read(new ByteArrayInputStream(bytes));if(image==null)throw new IOException("Invalid texture");
         byte[] metadata=resources.asset(path+".mcmeta");
         if(metadata!=null){var root=ResourcePackIndex.json(metadata);if(root.has("animation")){
-            var animation=root.getAsJsonObject("animation");int w=animation.has("width")?animation.get("width").getAsInt():image.getWidth(),h=animation.has("height")?animation.get("height").getAsInt():w;
+            var animation=root.getAsJsonObject("animation");boolean width=animation.has("width"),height=animation.has("height");
+            // 1.20.1 AnimationMetadataSection.calculateFrameSize: absent both -> min axis;
+            // one explicit axis -> preserve the full image on the other axis.
+            int minimum=Math.min(image.getWidth(),image.getHeight());
+            int w=width?animation.get("width").getAsInt():height?image.getWidth():minimum;
+            int h=height?animation.get("height").getAsInt():width?image.getHeight():minimum;
             if(w<1||h<1||w>image.getWidth()||h>image.getHeight()||image.getWidth()%w!=0||image.getHeight()%h!=0)throw new IOException("Unsupported animation frame bounds");
             int frame=0;if(animation.has("frames")&&!animation.getAsJsonArray("frames").isEmpty()){var first=animation.getAsJsonArray("frames").get(0);frame=first.isJsonObject()?first.getAsJsonObject().get("index").getAsInt():first.getAsInt();}
             int columns=image.getWidth()/w;if(frame<0||frame>=(long)columns*(image.getHeight()/h))throw new IOException("Invalid animation frame");

@@ -40,7 +40,13 @@ The independent CPU renderer supports this bounded standard JSON profile:
   UV sampling, depth and alpha compositing; it does not select an arbitrary first
   texture as a complete model. Lighting/transparency are a software approximation,
   not a pixel-identical Minecraft GPU screenshot.
-- Texture animation displays its first explicitly selected metadata frame. This
+- Texture animation displays its first explicitly selected metadata frame. Frame
+  sizing follows pinned Minecraft 1.20.1 `AnimationMetadataSection.calculateFrameSize`:
+  neither axis specified uses the shorter image axis for square frames; width-only
+  preserves full image height, height-only preserves full image width, and explicit
+  width/height uses both. Horizontal, vertical and rectangular sheets are supported.
+  Tests compare these four size cases directly with the pinned native metadata
+  class and check actual selected-frame colors. This
   stage produces PNG, not animated item cards. Generated item extrusion, X/Y-rotated
   generated layers, enchantment glint and custom render types/loaders/root transforms,
   BEWLR, GeckoLib, OptiFine CIT and arbitrary Forge client properties are unsupported.
