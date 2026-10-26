@@ -3,6 +3,7 @@ package dev.discraft.forge.smoke;
 import dev.discraft.core.*;
 import dev.discraft.forge.*;
 import net.minecraft.client.*;
+import net.minecraft.network.chat.Component;
 import net.minecraft.client.gui.components.*;
 import net.minecraft.client.gui.screens.*;
 import net.minecraft.client.multiplayer.*;
@@ -93,7 +94,7 @@ final class NativeChatRegression {
         case 13 -> {if(!(MC.screen instanceof ChatScreen))return false;check(MC.screen.getClass()==ChatScreen.class&&selected()==null,"Actual T key reopens vanilla chat after reconnect without a stale attachment");key(GLFW.GLFW_KEY_ESCAPE);key(GLFW.GLFW_KEY_F8);next(14);}
         case 14 -> {if(!(MC.screen instanceof ChatScreen))return false;check(MC.screen.getClass()==ChatScreen.class,"Actual in-world F8 key opens guarded native ChatScreen");key(GLFW.GLFW_KEY_ESCAPE);key(GLFW.GLFW_KEY_T);next(15);}
         case 15 -> {if(!(MC.screen instanceof ChatScreen))return false;input().setValue("native-layout-ordinary");enter();next(16);}
-        case 16 -> {if(messages().stream().noneMatch(m->m.content().getString().contains("native-layout-ordinary")))return false;check(!received("native-layout-ordinary"),"Ordinary server chat still routes once after native reconnect");NativeComposer.openBridge();normal=new ArrayList<>(messages().stream().filter(m->!m.content().getString().startsWith("[Bridge]")).toList());profile=0;next(20);}
+        case 16 -> {if(messages().stream().noneMatch(m->m.content().getString().contains("native-layout-ordinary")))return false;check(!received("native-layout-ordinary"),"Ordinary server chat still routes once after native reconnect");NativeComposer.openBridge();var owned=Collections.newSetFromMap(new IdentityHashMap<Component,Boolean>());owned.addAll(((Map<UUID,Component>)get(NativeChat.class,"components")).values());normal=new ArrayList<>(messages().stream().filter(m->!owned.contains(m.content())).toList());profile=0;next(20);}
         case 20 -> {double[] widths={1,0,0};double[] scales={1,1,.5};double[] spaces={1,1,.5};MC.options.chatWidth().set(widths[profile]);MC.options.chatScale().set(scales[profile]);MC.options.chatLineSpacing().set(spaces[profile]);MC.gui.getChat().rescaleChat();next(21);}
         case 21 -> {if(++ticks<5)return false;scrollTo(false);next(22);}
         case 22 -> {if(++ticks<5)return false;pixels(false,"Native-layout-"+profile+"-PNG.png");scrollTo(true);next(23);}

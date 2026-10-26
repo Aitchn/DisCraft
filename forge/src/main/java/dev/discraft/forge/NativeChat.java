@@ -56,9 +56,8 @@ public final class NativeChat {
     private static Component compose(RelayRecord record){
         var owned=new HashSet<Integer>();markers.put(record.id(),owned);
         var oldNames=ownedNames.remove(record.id());if(oldNames!=null)oldNames.forEach(nameEvents::remove);ownedNames.put(record.id(),new ArrayList<>());
-        var component=Component.empty().append(Component.literal("[Bridge] ").withStyle(ChatFormatting.GRAY));
-        if(record.actor()!=null){var actor=record.actor();var click=new ClickEvent(ClickEvent.Action.SUGGEST_COMMAND,actor.label()+" ");nameEvents.put(click,actor);ownedNames.get(record.id()).add(click);component.append(Component.literal(actor.label()+": ").withStyle(Style.EMPTY.withColor(actor.kind()==ActorRef.Kind.DISCORD?0xff8ea1e1:0xff72cf9c).withClickEvent(click).withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT,Component.literal(actor.label()+"\n"+actor.id())))));}
-        else component.append(Component.literal(record.author()+": ").withStyle(ChatFormatting.AQUA));
+        var header=NativeAuthorHeader.create(record.author(),record.actor());var component=Component.empty().append(header.component());
+        if(header.authorClick()!=null){nameEvents.put(header.authorClick(),record.actor());ownedNames.get(record.id()).add(header.authorClick());}
         int at=0;for(var item:record.nativeItems()){
             appendBody(component,record,record.text().substring(at,item.start()),owned);
             if(item.item().count()==0)component.append(Component.literal(record.text().substring(item.start(),item.end())).withStyle(Style.EMPTY.withColor(ChatFormatting.GRAY).withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT,Component.translatableWithFallback("discraft.item.empty","Empty hand")))));

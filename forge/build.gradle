@@ -46,7 +46,9 @@ tasks.named('jar', Jar) {
     exclude 'dev/discraft/forge/smoke/**'
     exclude 'dev/discraft/forge/server/ServerEventAcceptance*'
     exclude 'dev/discraft/forge/server/NativeHoverServerAcceptance*'
+    exclude 'dev/discraft/forge/server/DiscordAuthorServerAcceptance*'
     exclude 'dev/discraft/forge/server/ItemFixtures*'
+    exclude 'dev/discraft/forge/server/DiscordAuthorFixtures*'
     from project(':core').sourceSets.main.output
     finalizedBy 'reobfJar'
 }

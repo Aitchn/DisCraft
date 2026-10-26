@@ -42,6 +42,9 @@ public final class DiscordBotAdapter implements DiscordAdapter {
         }
     }
     private String guild="",botId="";
+    private record MemberName(String nick,String global,String username,long expires){}
+    private final Map<String,MemberName> memberNames=new LinkedHashMap<>(128,.75f,true);
+    private int memberAttempts;private long memberNanosRemaining;
     private GuildEmojiCatalog guildCatalog=GuildEmojiCatalog.empty(0);
     private long nextCatalog;
     private final EmojiThumbnailCache thumbnails=new EmojiThumbnailCache();
@@ -161,12 +164,14 @@ public final class DiscordBotAdapter implements DiscordAdapter {
             var records=new ArrayList<RelayRecord>();
             if(response.size()>4)throw new IOException("Discord page budget exceeded");
             if(cursor==null){cursor=response.isEmpty()?"0":response.get(0).getAsJsonObject().get("id").getAsString();if(!cursor.matches("[0-9]{1,22}"))throw new IOException("Invalid cursor");return records;}
+            memberAttempts=0;memberNanosRemaining=TimeUnit.SECONDS.toNanos(2);
             var sorted=new ArrayList<JsonObject>();response.forEach(e->sorted.add(e.getAsJsonObject()));sorted.sort(Comparator.comparing(o->new java.math.BigInteger(o.get("id").getAsString())));
             for(var m:sorted){
                 String id=m.get("id").getAsString();if(!id.matches("[0-9]{1,22}")||new java.math.BigInteger(id).compareTo(new java.math.BigInteger(cursor))<=0)continue;
                 try{
                     var author=m.getAsJsonObject("author");
                     if(m.has("webhook_id")||author.has("bot")&&author.get("bot").getAsBoolean())continue;
+                    if(!author.has("id")||!author.get("id").getAsString().matches("[0-9]{15,22}"))throw new IOException("Invalid Discord actor identity");
                     records.add(convert(m));
                 }catch(Exception malformed){/* Skip one malformed/unsupported event; never poison the polling cursor. */}
                 finally{cursor=id;}
@@ -178,6 +183,7 @@ public final class DiscordBotAdapter implements DiscordAdapter {
     private record Edit(int end,int delta) {}
     private RelayRecord convert(JsonObject m,List<Mention> inputMentions)throws Exception{return convert(m,inputMentions,false);}
     private RelayRecord convert(JsonObject m,List<Mention> inputMentions,boolean outbound)throws Exception{
+        var authorJson=m.getAsJsonObject("author");String display=outbound?basicName(authorJson):memberDisplay(authorJson);
         String text=m.has("content")?m.get("content").getAsString():"";Limits.text(text,2000,"Discord content");
         var edits=new ArrayList<Edit>();
         var budget=new ConversionBudget();var resolved=new HashMap<EmojiKey,Optional<Attachment>>();
@@ -209,11 +215,33 @@ public final class DiscordBotAdapter implements DiscordAdapter {
             catch(Exception unsupported){/* Shared attempt/deadline budget includes unsuccessful attachment downloads. */}
         }
         if(converted.toString().isBlank()&&files.isEmpty())converted.append("[Discord content/media unavailable]");
-        String author=m.getAsJsonObject("author").get("username").getAsString();
+        String author=display;
         var mentions=new ArrayList<Mention>();for(var mention:inputMentions){int delta=edits.stream().filter(e->e.end()<=mention.start()).mapToInt(Edit::delta).sum();mentions.add(new Mention(mention.start()+delta,mention.end()+delta,mention.target()));}
-        var authorJson=m.getAsJsonObject("author");ActorRef actor=authorJson.has("id")?new ActorRef(ActorRef.Kind.DISCORD,authorJson.get("id").getAsString(),author):null;
+        ActorRef actor=authorJson.has("id")?new ActorRef(ActorRef.Kind.DISCORD,authorJson.get("id").getAsString(),author):null;
         var record=new RelayRecord(UUID.nameUUIDFromBytes(("discord:"+m.get("id").getAsString()).getBytes(StandardCharsets.UTF_8)),"Discord: "+author,converted.toString(),files,catalog,emoji,actor,mentions);
         record.encode();return record;
+    }
+    private static String nameField(JsonObject object,String field){
+        if(object==null||!object.has(field)||!object.get(field).isJsonPrimitive()||!object.getAsJsonPrimitive(field).isString())return null;
+        String name=object.get(field).getAsString();try{Limits.text(name,64,"Discord display");if(name.isBlank()||name.chars().anyMatch(Character::isISOControl))return null;return name;}catch(IllegalArgumentException invalid){return null;}
+    }
+    private static String basicName(JsonObject user){String global=nameField(user,"global_name"),username=nameField(user,"username");return global!=null?global:username!=null?username:"Discord user";}
+    private String memberDisplay(JsonObject author){
+        String id=author.has("id")?author.get("id").getAsString():"";if(guild.isEmpty()||!id.matches("[0-9]{15,22}"))return basicName(author);
+        String key=guild+":"+id;long now=System.nanoTime();MemberName member=memberNames.get(key);
+        if(member!=null&&now>=member.expires()){memberNames.remove(key);member=null;}
+        if(member==null&&memberAttempts<4&&memberNanosRemaining>0){
+            memberAttempts++;long started=System.nanoTime();
+            try{var response=json(request("GET","guilds/"+guild+"/members/"+id,null,null,started+memberNanosRemaining,16*1024));
+                JsonObject user=response.has("user")&&response.get("user").isJsonObject()?response.getAsJsonObject("user"):null;
+                if(user!=null&&(!user.has("id")||!user.get("id").getAsString().equals(id)))throw new IOException("Guild member identity mismatch");
+                member=new MemberName(nameField(response,"nick"),nameField(user,"global_name"),nameField(user,"username"),System.nanoTime()+TimeUnit.SECONDS.toNanos(60));
+            }catch(Exception unavailable){member=new MemberName(null,null,null,System.nanoTime()+TimeUnit.SECONDS.toNanos(15));}
+            finally{memberNanosRemaining=Math.max(0,memberNanosRemaining-(System.nanoTime()-started));}
+            memberNames.put(key,member);while(memberNames.size()>128)memberNames.remove(memberNames.keySet().iterator().next());
+        }
+        if(member!=null){if(member.nick()!=null)return member.nick();if(member.global()!=null)return member.global();if(nameField(author,"global_name")!=null)return nameField(author,"global_name");if(member.username()!=null)return member.username();}
+        return basicName(author);
     }
     private byte[] fetchMedia(URI uri)throws Exception{
         if(localTest){if(!uri.getHost().equals("127.0.0.1")||uri.getPort()!=api.getPort())throw new IOException("Invalid local media URL");}
@@ -226,11 +254,15 @@ public final class DiscordBotAdapter implements DiscordAdapter {
         if(r.statusCode()!=200)throw new IOException("Media fetch rejected");return r.body();
     }
     private byte[] request(String method,String path,byte[] body,String type)throws Exception{
+        return request(method,path,body,type,Long.MAX_VALUE,RelayRecord.MAX_BYTES);
+    }
+    private byte[] request(String method,String path,byte[] body,String type,long deadline,int maxBytes)throws Exception{
         if(closed||terminal||System.nanoTime()<blockedUntil)throw new IOException("Discord adapter unavailable or rate limited");
-        var builder=HttpRequest.newBuilder(api.resolve(path)).timeout(Duration.ofSeconds(10)).header("Authorization","Bot "+token).header("User-Agent","DisCraft/0.2 (server bridge)");
+        long remaining=deadline==Long.MAX_VALUE?TimeUnit.SECONDS.toNanos(10):deadline-System.nanoTime();if(remaining<=0)throw new IOException("Discord metadata deadline exceeded");
+        var builder=HttpRequest.newBuilder(api.resolve(path)).timeout(Duration.ofNanos(Math.min(remaining,TimeUnit.SECONDS.toNanos(10)))).header("Authorization","Bot "+token).header("User-Agent","DisCraft/0.2 (server bridge)");
         if(type!=null)builder.header("Content-Type",type);
         builder.method(method,body==null?HttpRequest.BodyPublishers.noBody():HttpRequest.BodyPublishers.ofByteArray(body));
-        var r=execute(builder.build(),RelayRecord.MAX_BYTES);
+        var r=execute(builder.build(),maxBytes,deadline);
         if(r.statusCode()==429){
             double seconds=60;try{seconds=json(r.body()).get("retry_after").getAsDouble();}catch(Exception ignored){}
             if(!Double.isFinite(seconds)||seconds<0||seconds>3600)seconds=3600;
@@ -241,11 +273,14 @@ public final class DiscordBotAdapter implements DiscordAdapter {
         return r.body();
     }
     private HttpResponse<byte[]> execute(HttpRequest request,int max)throws Exception{
+        return execute(request,max,Long.MAX_VALUE);
+    }
+    private HttpResponse<byte[]> execute(HttpRequest request,int max,long deadline)throws Exception{
         var future=http.sendAsync(request,info->new LimitedBody(max));
-        try{return future.get(12,TimeUnit.SECONDS);}catch(Exception failure){future.cancel(true);throw new IOException("Bounded HTTP request failed");}
+        try{return future.get(deadline==Long.MAX_VALUE?TimeUnit.SECONDS.toNanos(12):Math.max(1,deadline-System.nanoTime()),TimeUnit.NANOSECONDS);}catch(Exception failure){future.cancel(true);throw new IOException("Bounded HTTP request failed");}
     }
     private static JsonObject json(byte[] b){return JsonParser.parseString(new String(b,StandardCharsets.UTF_8)).getAsJsonObject();}
-    @Override public void close(){closed=true;unavailableCatalog();mediaWorker.shutdownNow();io.shutdownNow();}
+    @Override public void close(){closed=true;unavailableCatalog();memberNames.clear();mediaWorker.shutdownNow();io.shutdownNow();}
     private static final class LimitedBody implements HttpResponse.BodySubscriber<byte[]> {
         private final int max;private final ByteArrayOutputStream out=new ByteArrayOutputStream();private final CompletableFuture<byte[]> result=new CompletableFuture<>();private Flow.Subscription subscription;
         LimitedBody(int max){this.max=max;}
