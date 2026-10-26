@@ -62,9 +62,9 @@ public final class ServerEventAcceptance {
         var expanded=ItemExpansion.expand(new dev.discraft.forge.bridge.RelayRecord(UUID.randomUUID(),player.getGameProfile().getName(),"展示 %item",List.of(),Map.of(),Map.of()),captured,renderer);
         var payload=ItemFixtures.sendToLocalDiscord(expanded.discord());
         check(payload.get("content").getAsString().contains("星光劍 · TEST")&&payload.getAsJsonObject("allowed_mentions").getAsJsonArray("users").isEmpty()&&!payload.toString().contains(privateFixture),"Actual ItemStack to localized text and PNG reaches only loopback official-adapter mock with no pings or private NBT");
-        var image=javax.imageio.ImageIO.read(new java.io.ByteArrayInputStream(expanded.game().attachments().get(0).bytes()));
+        var image=javax.imageio.ImageIO.read(new java.io.ByteArrayInputStream(expanded.discord().attachments().get(0).bytes()));
         check(image.getRGB(144,92)==0xff20ff20&&image.getWidth()==288&&image.getHeight()==256,"Actual captured CMD selects correct fixture model in decoded multipart PNG");
-        Files.write(output.resolve("authoritative-main-hand.png"),expanded.game().attachments().get(0).bytes());
+        Files.write(output.resolve("authoritative-main-hand.png"),expanded.discord().attachments().get(0).bytes());
         player.setItemInHand(InteractionHand.MAIN_HAND,new ItemStack(Items.DIAMOND_SWORD));
         check(ItemSnapshot.capture(player,text).name().equals("測試鑽石劍"),"Unrenamed real ItemStack resolves its description component through imported Traditional Chinese language key");
         player.setItemInHand(InteractionHand.MAIN_HAND,ItemStack.EMPTY);

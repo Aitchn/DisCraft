@@ -17,9 +17,11 @@ final class ItemExpansion {
     static Result expand(RelayRecord record,ItemSnapshot item,HeadlessItemRenderer renderer)throws Exception{
         if(item==null||positions(record).isEmpty())return new Result(record,record);
         if(!record.attachments().isEmpty())throw new IllegalArgumentException("Item display cannot be combined with an uploaded attachment");
+        if(!record.nativeItems().isEmpty())throw new IllegalArgumentException("Item display already expanded");
         List<Attachment> attachments=item.empty()?List.of():List.of(renderer.render(item).attachment());
         record=avoidCatalogCollision(record,item.label());
-        return new Result(replace(record,item.label(),attachments),replace(record,literal(item.label()),attachments));
+        var nativeItem=item.nativeItem()!=null?item.nativeItem():new NativeItemData(item.id(),item.count(),"{}");
+        return new Result(replace(record,item.label(),List.of(),nativeItem),replace(record,literal(item.label()),attachments,null));
     }
     /** Keep native generated names literal without adding visible escapes or changing the wire format. */
     private static RelayRecord avoidCatalogCollision(RelayRecord record,String label){
@@ -41,11 +43,11 @@ final class ItemExpansion {
             if(positions.size()>8)throw new IllegalArgumentException("Too many item markers");
         }return positions;
     }
-    private static RelayRecord replace(RelayRecord record,String label,List<Attachment> attachments){
-        var positions=positions(record);var text=new StringBuilder();int at=0;for(int position:positions){text.append(record.text(),at,position).append(label);at=position+5;}text.append(record.text(),at,record.text().length());
+    private static RelayRecord replace(RelayRecord record,String label,List<Attachment> attachments,NativeItemData nativeItem){
+        var items=new ArrayList<ItemInline>();var positions=positions(record);var text=new StringBuilder();int at=0;for(int position:positions){text.append(record.text(),at,position);int start=text.length();text.append(label);if(nativeItem!=null)items.add(new ItemInline(start,text.length(),nativeItem));at=position+5;}text.append(record.text(),at,record.text().length());
         Limits.text(text.toString(),1800,"expanded item text");var mentions=new ArrayList<Mention>();
         for(var mention:record.mentions()){int shift=0;for(int position:positions)if(position<mention.start())shift+=label.length()-5;mentions.add(new Mention(mention.start()+shift,mention.end()+shift,mention.target()));}
-        return new RelayRecord(record.id(),record.author(),text.toString(),attachments,record.catalog(),record.emoji(),record.actor(),mentions);
+        return new RelayRecord(record.id(),record.author(),text.toString(),attachments,record.catalog(),record.emoji(),record.actor(),mentions,items);
     }
     static String literal(String text){
         var out=new StringBuilder();for(int c:text.codePoints().toArray()){

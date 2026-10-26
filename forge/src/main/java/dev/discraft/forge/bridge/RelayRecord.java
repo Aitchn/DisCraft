@@ -6,12 +6,14 @@ import java.util.*;
 
 /** Binary protocol: no token, URLs, client-supplied player identity, or Java serialization. */
 public record RelayRecord(UUID id, String author, String text, List<Attachment> attachments,
-                          Map<String, Content.CustomEmoji> catalog, Map<String, Attachment> emoji, ActorRef actor,List<Mention> mentions) {
-    public RelayRecord(UUID id,String author,String text,List<Attachment> attachments,Map<String,Content.CustomEmoji> catalog,Map<String,Attachment> emoji){this(id,author,text,attachments,catalog,emoji,null,List.of());}
+                          Map<String, Content.CustomEmoji> catalog, Map<String, Attachment> emoji, ActorRef actor,List<Mention> mentions,List<ItemInline> nativeItems) {
+    public RelayRecord(UUID id,String author,String text,List<Attachment> attachments,Map<String,Content.CustomEmoji> catalog,Map<String,Attachment> emoji){this(id,author,text,attachments,catalog,emoji,null,List.of(),List.of());}
+    public RelayRecord(UUID id,String author,String text,List<Attachment> attachments,Map<String,Content.CustomEmoji> catalog,Map<String,Attachment> emoji,ActorRef actor,List<Mention> mentions){this(id,author,text,attachments,catalog,emoji,actor,mentions,List.of());}
     public static final int MAX_BYTES = 512 * 1024, FILE_BYTES = 256 * 1024;
     public RelayRecord {
         Limits.text(author,80,"author"); Limits.text(text,Limits.TEXT_CODEPOINTS,"text");
         mentions=List.copyOf(mentions);if(mentions.size()>8)throw new IllegalArgumentException("Mention count exceeded");int end=0;for(var mention:mentions){if(mention.start()<end||mention.end()>text.length()||!text.substring(mention.start(),mention.end()).equals(mention.target().label()))throw new IllegalArgumentException("Mention/text mismatch");end=mention.end();}
+        nativeItems=List.copyOf(nativeItems);if(nativeItems.size()>8)throw new IllegalArgumentException("Inline item count exceeded");end=0;for(var item:nativeItems){if(item.start()<end||item.end()>text.length()||item.start()<text.length()&&Character.isLowSurrogate(text.charAt(item.start()))||item.end()<text.length()&&Character.isLowSurrogate(text.charAt(item.end()))||mentions.stream().anyMatch(m->m.start()<item.end()&&m.end()>item.start()))throw new IllegalArgumentException("Inline item/text mismatch");end=item.end();}
         attachments=List.copyOf(attachments); catalog=Map.copyOf(catalog); emoji=Map.copyOf(emoji);
         if(attachments.size()>1 || catalog.size()>8 || emoji.size()>8) throw new IllegalArgumentException("Bridge media count exceeded");
         new Message(id,id,Message.Origin.RELAY,author,Content.parse(text,catalog),attachments);
@@ -29,6 +31,7 @@ public record RelayRecord(UUID id, String author, String text, List<Attachment> 
             writeMedia(out,Objects.requireNonNull(emoji.get(c.mediaKey())));
         }
         out.writeBoolean(actor!=null);if(actor!=null)writeActor(out,actor);out.writeInt(mentions.size());for(var mention:mentions){out.writeInt(mention.start());out.writeInt(mention.end());writeActor(out,mention.target());}
+        out.writeInt(nativeItems.size());for(var item:nativeItems){out.writeInt(item.start());out.writeInt(item.end());out.writeUTF(item.item().itemId());out.writeInt(item.item().count());out.writeUTF(item.item().tag());}
         out.flush();if(bytes.size()>MAX_BYTES)throw new IOException("Bridge encoded budget exceeded");return bytes.toByteArray();
     }
     public static RelayRecord decode(byte[] bytes) throws IOException {
@@ -40,8 +43,9 @@ public record RelayRecord(UUID id, String author, String text, List<Attachment> 
             int e=count(in,8);var catalog=new HashMap<String,Content.CustomEmoji>();var emoji=new HashMap<String,Attachment>();
             for(int i=0;i<e;i++){String alias=in.readUTF();var c=new Content.CustomEmoji(in.readUTF(),in.readUTF(),in.readBoolean(),in.readUTF());var a=readMedia(in);pixels+=pixels(a);if(pixels>Limits.MEDIA_TOTAL_PIXELS)throw new IOException("Message pixel budget exceeded");catalog.put(alias,c);emoji.put(c.mediaKey(),a);}
             ActorRef actor=in.readBoolean()?readActor(in):null;var mentions=new ArrayList<Mention>();int mn=count(in,8);for(int i=0;i<mn;i++)mentions.add(new Mention(in.readInt(),in.readInt(),readActor(in)));
+            var nativeItems=new ArrayList<ItemInline>();int items=count(in,8);for(int i=0;i<items;i++)nativeItems.add(new ItemInline(in.readInt(),in.readInt(),new NativeItemData(in.readUTF(),in.readInt(),in.readUTF())));
             if(in.available()!=0)throw new IOException("Trailing bridge bytes");
-            return new RelayRecord(id,author,text,files,catalog,emoji,actor,mentions);
+            return new RelayRecord(id,author,text,files,catalog,emoji,actor,mentions,nativeItems);
         }catch(RuntimeException failure){throw new IOException("Invalid bridge message",failure);}
     }
     private static void writeActor(DataOutputStream out,ActorRef actor)throws IOException{out.writeByte(actor.kind().ordinal());out.writeUTF(actor.id());out.writeUTF(actor.display());}

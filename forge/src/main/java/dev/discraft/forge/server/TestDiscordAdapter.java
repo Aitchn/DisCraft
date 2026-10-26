@@ -10,6 +10,7 @@ final class TestDiscordAdapter implements DiscordAdapter {
     final List<RelayRecord> eventReceipts=new java.util.concurrent.CopyOnWriteArrayList<>();
     private Attachment oversizedPreview;
     public TestDiscordAdapter()throws Exception{
+        if(Boolean.getBoolean("discraft.nativeHoverSmoke"))return;
         var emoji=new HashMap<String,Attachment>();for(var c:MockTransport.EMOJI.values())emoji.put(c.mediaKey(),Attachment.fromResource(c.mediaKey()));
         incoming.add(new RelayRecord(UUID.randomUUID(),"TEST peer (not Discord)","Server peer 世界 👋 :discraft: :dance:",List.of(Attachment.fromResource("dance.gif")),MockTransport.EMOJI,emoji,new ActorRef(ActorRef.Kind.DISCORD,"7777777777777777","測試成員"),List.of()));
     }
@@ -29,6 +30,7 @@ final class TestDiscordAdapter implements DiscordAdapter {
     }
     // Explicit upstream-error fixture, reachable only through the smoke-gated TEST mode.
     public void send(RelayRecord m){if(m.text().equals("fixture:reject-send"))throw new IllegalStateException("TEST adapter rejection fixture");
+        if(Boolean.getBoolean("discraft.nativeHoverSmoke")){if(eventReceipts.size()<128)eventReceipts.add(m);return;}
         if(Boolean.getBoolean("discraft.serverEventsSmoke")&&m.author().equals("Server")){if(eventReceipts.size()<128)eventReceipts.add(m);return;}
         incoming.add(new RelayRecord(UUID.randomUUID(),"TEST peer (not Discord)","Peer received: "+m.text(),m.attachments(),m.catalog(),m.emoji(),new ActorRef(ActorRef.Kind.DISCORD,"7777777777777777","測試成員"),m.mentions().stream().map(x->new Mention(x.start()+15,x.end()+15,x.target())).toList()));}
     public List<RelayRecord> poll(){var result=List.copyOf(incoming);incoming.clear();return result;}

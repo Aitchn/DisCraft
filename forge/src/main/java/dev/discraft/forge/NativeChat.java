@@ -9,6 +9,7 @@ import net.minecraft.client.GuiMessage;
 import net.minecraft.client.gui.components.ChatComponent;
 import net.minecraft.client.gui.screens.ChatScreen;
 import net.minecraft.network.chat.*;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.player.ChatVisiblity;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.client.event.*;
@@ -58,10 +59,16 @@ public final class NativeChat {
         var component=Component.empty().append(Component.literal("[Bridge] ").withStyle(ChatFormatting.GRAY));
         if(record.actor()!=null){var actor=record.actor();var click=new ClickEvent(ClickEvent.Action.SUGGEST_COMMAND,actor.label()+" ");nameEvents.put(click,actor);ownedNames.get(record.id()).add(click);component.append(Component.literal(actor.label()+": ").withStyle(Style.EMPTY.withColor(actor.kind()==ActorRef.Kind.DISCORD?0xff8ea1e1:0xff72cf9c).withClickEvent(click).withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT,Component.literal(actor.label()+"\n"+actor.id())))));}
         else component.append(Component.literal(record.author()+": ").withStyle(ChatFormatting.AQUA));
-        for(var part:Content.parse(record.text(),record.catalog())){
-            if(part instanceof Content.Text t)component.append(Component.literal(t.value()));
-            else if(part instanceof Content.CustomEmoji e){var a=record.emoji().get(e.mediaKey());if(a!=null)row(component,a,Math.min(8,layout.emojiCell()),8,0,layout.emojiCell(),8,"\u3000",owned,record.id(),false);else component.append(":"+e.name()+":");}
-        }
+        int at=0;for(var item:record.nativeItems()){
+            appendBody(component,record,record.text().substring(at,item.start()),owned);
+            if(item.item().count()==0)component.append(Component.literal(record.text().substring(item.start(),item.end())).withStyle(Style.EMPTY.withColor(ChatFormatting.GRAY).withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT,Component.translatableWithFallback("discraft.item.empty","Empty hand")))));
+            else{
+                var stack=new net.minecraft.world.item.ItemStack(net.minecraft.core.registries.BuiltInRegistries.ITEM.get(new ResourceLocation(item.item().itemId())),item.item().count());stack.setTag(item.item().safeTag());
+                if(stack.isEmpty())component.append(Component.literal(record.text().substring(item.start(),item.end())).withStyle(ChatFormatting.GRAY));
+                else {var name=stack.getHoverName().copy();if(stack.getCount()>1)name.append(Component.literal(" ×"+stack.getCount()));component.append(ComponentUtils.wrapInSquareBrackets(name).withStyle(Style.EMPTY.withColor(name.getStyle().getColor()!=null?name.getStyle().getColor():TextColor.fromLegacyFormat(stack.getRarity().color)).withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_ITEM,new HoverEvent.ItemStackInfo(stack)))));}
+            }
+            at=item.end();
+        }appendBody(component,record,record.text().substring(at),owned);
         for(var a:record.attachments()){
             component.append(Component.literal("\n["+a.name()+"]").withStyle(ChatFormatting.GRAY));
             int available=Math.max(layout.cell(),layout.width()/layout.cell()*layout.cell());
@@ -70,6 +77,12 @@ public final class NativeChat {
             for(int y=0;y<height;y+=layout.band()){component.append("\n");row(component,a,width,height,y,layout.cell(),layout.band(),"\u00a0",owned,record.id(),a.name().startsWith("SPOILER_"));}
         }
         return component;
+    }
+    private static void appendBody(MutableComponent component,RelayRecord record,String text,Set<Integer> owned){
+        for(var part:Content.parse(text,record.catalog())){
+            if(part instanceof Content.Text t)component.append(Component.literal(t.value()));
+            else if(part instanceof Content.CustomEmoji e){var a=record.emoji().get(e.mediaKey());if(a!=null)row(component,a,Math.min(8,layout.emojiCell()),8,0,layout.emojiCell(),8,"\u3000",owned,record.id(),false);else component.append(":"+e.name()+":");}
+        }
     }
     private static void row(MutableComponent text,Attachment a,int width,int height,int y,int cell,int band,String glyph,Set<Integer> owned,UUID owner,boolean spoiler){
         for(int x=0;x<width;x+=cell){

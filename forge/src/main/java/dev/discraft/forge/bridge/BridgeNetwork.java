@@ -15,9 +15,9 @@ import java.util.function.Supplier;
 
 public final class BridgeNetwork {
     public static final int CHUNK=16*1024;
-    public static final SimpleChannel CHANNEL=NetworkRegistry.newSimpleChannel(new ResourceLocation(DisCraft.ID,"bridge"),()->"3",
-        v->v.equals("3")||v.equals(NetworkRegistry.ABSENT)||v.equals(NetworkRegistry.ACCEPTVANILLA),
-        v->v.equals("3")||v.equals(NetworkRegistry.ABSENT)||v.equals(NetworkRegistry.ACCEPTVANILLA));
+    public static final SimpleChannel CHANNEL=NetworkRegistry.newSimpleChannel(new ResourceLocation(DisCraft.ID,"bridge"),()->"4",
+        v->v.equals("4")||v.equals(NetworkRegistry.ABSENT)||v.equals(NetworkRegistry.ACCEPTVANILLA),
+        v->v.equals("4")||v.equals(NetworkRegistry.ABSENT)||v.equals(NetworkRegistry.ACCEPTVANILLA));
     private static final AtomicInteger QUEUED=new AtomicInteger();
     private static final java.util.concurrent.ConcurrentHashMap<UUID,Ingress> ingress=new java.util.concurrent.ConcurrentHashMap<>();
     private static final class Ingress {

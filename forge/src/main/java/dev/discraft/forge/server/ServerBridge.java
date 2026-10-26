@@ -64,7 +64,7 @@ public final class ServerBridge {
         running=false;stopping=false;text=new ComponentText(ResourcePackIndex.empty(),"en_us");itemRenderer=null;
         worker=new ThreadPoolExecutor(1,1,0,TimeUnit.SECONDS,new ArrayBlockingQueue<>(16),r->{var t=new Thread(r,"DisCraft server bridge");t.setDaemon(true);return t;});
         try {
-            if(Boolean.getBoolean("discraft.multiplayerSmoke")){mode="test";adapter=new TestDiscordAdapter();if(Boolean.getBoolean("discraft.serverEventsSmoke"))config=ServerConfig.testEvents();}
+            if(Boolean.getBoolean("discraft.multiplayerSmoke")){mode="test";adapter=new TestDiscordAdapter();if(Boolean.getBoolean("discraft.serverEventsSmoke"))config=ServerConfig.testEvents();if(Boolean.getBoolean("discraft.nativeHoverSmoke")){config=ServerConfig.testNativeHover();itemRenderer=new HeadlessItemRenderer(ResourcePackIndex.empty());}}
             else if(server.isDedicatedServer()&&server.usesAuthentication()){
                 config=ServerConfig.load(net.minecraftforge.fml.loading.FMLPaths.CONFIGDIR.get().resolve("discraft-server.properties"));
                 if(config.enabled()&&Boolean.getBoolean("discraft.discord.enabled")){
@@ -178,15 +178,17 @@ public final class ServerBridge {
         if(transfer.used!=transfer.bytes.length)return;
         transfers.remove(uuid);byte[] bytes=transfer.bytes;String author=p.getGameProfile().getName();var active=server;var transport=adapter;var knownActors=Map.copyOf(actors);var sender=new ActorRef(ActorRef.Kind.MINECRAFT,uuid.toString(),author);
         final ItemSnapshot held;final HeadlessItemRenderer renderer=itemRenderer;
-        try{held=config.itemDisplay()&&ItemExpansion.requested(bytes)?ItemSnapshot.capture(p,text):null;}
+        final boolean itemEnabled=config.itemDisplay();
+        try{held=itemEnabled&&ItemExpansion.requested(bytes)?ItemSnapshot.capture(p,text):null;}
         catch(Exception invalid){BridgeNetwork.notice(p,packet.id(),false,"Invalid item display draft");return;}
         try {worker.execute(()->{
             try {
                 if(!peer.alive.get())return;
                 var draft=RelayRecord.decode(bytes);
-                if(!draft.id().equals(packet.id())||!draft.author().equals("draft")||!draft.catalog().isEmpty()||!draft.emoji().isEmpty()||draft.actor()!=null)throw new IllegalArgumentException();
+                if(!draft.id().equals(packet.id())||!draft.author().equals("draft")||!draft.catalog().isEmpty()||!draft.emoji().isEmpty()||draft.actor()!=null||!draft.nativeItems().isEmpty())throw new IllegalArgumentException();
                 Limits.text(draft.text(),1800,"bridge text");
                 for(var mention:draft.mentions())if(!mention.target().equals(knownActors.get(mention.target().key())))throw new IllegalArgumentException("Unknown or spoofed mention identity");
+                if(!itemEnabled&&!ItemExpansion.positions(draft).isEmpty()){active.execute(()->{if(server==active&&peer.alive.get())BridgeNetwork.notice(p,packet.id(),false,"Item display is disabled by server configuration");});return;}
                 if(held!=null&&!ItemExpansion.positions(draft).isEmpty()&&!draft.attachments().isEmpty()){
                     active.execute(()->{if(server==active&&peer.alive.get())BridgeNetwork.notice(p,packet.id(),false,"Item display cannot be combined with an uploaded attachment");});return;
                 }
