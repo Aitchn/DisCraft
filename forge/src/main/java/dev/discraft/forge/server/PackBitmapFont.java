@@ -9,15 +9,18 @@ import java.util.List;
 
 /** Bounded bitmap/space/reference font profile. Unsupported providers use the bundled OFL text font. */
 final class PackBitmapFont {
-    private record Glyph(BufferedImage sheet,int x,int y,int w,int h,int height,int ascent,double advance){}
+    private record Glyph(long identity,BufferedImage sheet,int x,int y,int w,int h,int height,int ascent,double advance){}
     private record Face(Map<Integer,Glyph> glyphs,boolean fallback,long pixels){}
     private final ResourcePackIndex resources;private final ResourceImages images;
     private final Map<String,Face> faces=new LinkedHashMap<>(8,.75f,true);
     private final Font fallback;
-    private record Ink(Glyph glyph,int rgb){}
+    // Primitive identity never retains a Glyph, its source sheet, or a shared raster.
+    private long nextGlyphIdentity;
+    private long glyphIdentity(){if(nextGlyphIdentity==Long.MAX_VALUE)throw new IllegalStateException("Font glyph identity exhausted");return ++nextGlyphIdentity;}
+    private record Ink(long glyphIdentity,int rgb){}
     private final Map<Ink,BufferedImage> inks=new LinkedHashMap<>(128,.75f,true);private long inkPixels;
     private BufferedImage ink(Glyph glyph,int rgb){
-        var key=new Ink(glyph,rgb);var image=inks.get(key);if(image!=null)return image;image=new BufferedImage(glyph.w(),glyph.h(),BufferedImage.TYPE_INT_ARGB);
+        var key=new Ink(glyph.identity(),rgb);var image=inks.get(key);if(image!=null)return image;image=new BufferedImage(glyph.w(),glyph.h(),BufferedImage.TYPE_INT_ARGB);
         for(int y=0;y<glyph.h();y++)for(int x=0;x<glyph.w();x++){int source=glyph.sheet().getRGB(glyph.x()+x,glyph.y()+y);int red=((source>>16)&255)*((rgb>>16)&255)/255,green=((source>>8)&255)*((rgb>>8)&255)/255,blue=(source&255)*(rgb&255)/255;image.setRGB(x,y,(source&0xff000000)|(red<<16)|(green<<8)|blue);}
         inks.put(key,image);inkPixels+=(long)image.getWidth()*image.getHeight();while(inks.size()>128||inkPixels>1024*1024){var first=inks.keySet().iterator().next();var removed=inks.remove(first);inkPixels-=(long)removed.getWidth()*removed.getHeight();}return image;
     }
@@ -40,7 +43,7 @@ final class PackBitmapFont {
             if(type.equals("reference"))unsupported|=providers(provider.get("id").getAsString(),glyphs,path,budget,depth+1);
             else if(type.equals("space")){
                 var advances=provider.getAsJsonObject("advances");if(advances.size()>256)throw new IOException("Font space budget exceeded");
-                for(var entry:advances.entrySet()){double advance=entry.getValue().getAsDouble();if(entry.getKey().codePointCount(0,entry.getKey().length())!=1||!Double.isFinite(advance)||advance<0||advance>32)throw new IOException("Invalid font space");glyphs.putIfAbsent(entry.getKey().codePointAt(0),new Glyph(null,0,0,0,0,8,7,advance));}
+                for(var entry:advances.entrySet()){double advance=entry.getValue().getAsDouble();if(entry.getKey().codePointCount(0,entry.getKey().length())!=1||!Double.isFinite(advance)||advance<0||advance>32)throw new IOException("Invalid font space");glyphs.putIfAbsent(entry.getKey().codePointAt(0),new Glyph(glyphIdentity(),null,0,0,0,0,8,7,advance));}
             }else if(type.equals("bitmap")){
                 BufferedImage image=images.image(provider.get("file").getAsString());var chars=provider.getAsJsonArray("chars");
                 budget[1]+=(long)image.getWidth()*image.getHeight();if(budget[1]>1024*1024)throw new IOException("Font sheet pixel budget exceeded");
@@ -50,7 +53,7 @@ final class PackBitmapFont {
                 int w=image.getWidth()/columns,h=image.getHeight()/chars.size();
                 for(int row=0;row<chars.size();row++){int[] codepoints=chars.get(row).getAsString().codePoints().toArray();if(codepoints.length!=columns)throw new IOException("Inconsistent bitmap font row");
                     for(int col=0;col<columns;col++){if(codepoints[col]==0)continue;int ink=0;for(int x=0;x<w;x++)for(int y=0;y<h;y++)if((image.getRGB(col*w+x,row*h+y)>>>24)!=0)ink=Math.max(ink,x+1);
-                        glyphs.putIfAbsent(codepoints[col],new Glyph(image,col*w,row*h,w,h,height,ascent,(double)ink*height/h+1));
+                        glyphs.putIfAbsent(codepoints[col],new Glyph(glyphIdentity(),image,col*w,row*h,w,h,height,ascent,(double)ink*height/h+1));
                     }
                 }
             }else unsupported=true;
