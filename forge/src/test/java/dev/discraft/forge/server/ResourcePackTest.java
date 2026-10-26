@@ -51,8 +51,11 @@ final class ResourcePackTest {
             bad=pack();bad.put("assets/test/lang/en_us.json",utf8("{\"x\":5}"));reject(root,bad,"Non-string language entry rejected");
             bad=pack();bad.put("assets/test/models/item/deep.json",utf8("{\"x\":".repeat(33)+"{}"+"}".repeat(33)));reject(root,bad,"Nested resource JSON bounded before parsing");
             bad=pack();bad.put("ignored.bin",new byte[ResourcePackIndex.MAX_ENTRY+1]);reject(root,bad,"Ignored ZIP entry still consumes decompression bounds");
+            bad=pack();bad.put("payload-directory/",new byte[ResourcePackIndex.MAX_ENTRY+1]);reject(root,bad,"Directory ZIP payload cannot bypass per-entry expanded-byte limit");
+            check(Files.size(root.resolve("bad.zip"))<64*1024,"Over-limit directory payload fixture has a small compressed representation");
             bad=pack();for(int i=0;i<ResourcePackIndex.MAX_FILES;i++)bad.put("ignored/"+i,new byte[0]);reject(root,bad,"ZIP entry count is bounded even for empty ignored files");
             bad=pack();byte[] chunk=new byte[ResourcePackIndex.MAX_ENTRY];for(int i=0;i<33;i++)bad.put("ignored/"+i,chunk);reject(root,bad,"Expanded-byte budget applies across all ignored entries");
+            bad=pack();for(int i=0;i<33;i++)bad.put("payload-directory-"+i+"/",chunk);reject(root,bad,"Directory payloads share the complete import expanded-byte limit");
             bad=pack();bad.put("assets/test/textures/item/bad.png",new byte[]{1,2,3});reject(root,bad,"Malformed PNG rejected during import");
             bad=pack();var image=new java.awt.image.BufferedImage(4097,1,java.awt.image.BufferedImage.TYPE_INT_ARGB);var encoded=new ByteArrayOutputStream();javax.imageio.ImageIO.write(image,"png",encoded);bad.put("assets/test/textures/item/wide.png",encoded.toByteArray());reject(root,bad,"Oversized texture rejected from metadata before pixel allocation");
             Files.createSymbolicLink(root.resolve("linked.zip"),root.resolve("low.zip"));

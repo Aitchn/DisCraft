@@ -39,7 +39,7 @@ final class ResourcePackIndex {
                     for(ZipEntry entry;(entry=zip.getNextEntry())!=null;){
                         if(++files>MAX_FILES)throw new IOException();String path=entry.getName();
                         if(!safePath(path)||!seen.add(path))throw new IOException();
-                        if(entry.isDirectory()){zip.closeEntry();continue;}
+                        // Directory entries can carry compressed payload too: account for every byte.
                         boolean keep=path.equals("pack.mcmeta")||path.matches("assets/[a-z0-9_.-]+/(lang/[a-z0-9_]+\\.json|models/[a-z0-9_./-]+\\.json|textures/[a-z0-9_./-]+\\.png|font/[a-z0-9_./-]+\\.json)");
                         var bytes=keep?new ByteArrayOutputStream():null;long size=0;byte[] buffer=new byte[8192];
                         for(int n;(n=zip.read(buffer))!=-1;){size+=n;total+=n;if(size>MAX_ENTRY||total>MAX_EXPANDED)throw new IOException();if(keep)bytes.write(buffer,0,n);}
