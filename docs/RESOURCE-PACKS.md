@@ -31,11 +31,11 @@ An import failure rejects the complete replacement snapshot with generic diagnos
 that omit server paths and parser contents. Published asset bytes are defensive
 copies; the ordered content fingerprint supports cache invalidation.
 
-Models and font metadata are indexed here, **not yet rendered**. Do not infer
-support for custom loaders, client callbacks, OptiFine CIT or all pack fonts from
-successful import. A subsequent independent renderer can consume this bounded
-snapshot. No GPL code/dependency from InteractiveChat or BlockModelRenderer is
-included, and this change does not alter DisCraft's licensing.
+The [first headless item profile](ITEM-DISPLAY.md) consumes model, texture and bitmap
+font metadata from this index. Successful import does not imply support for custom
+loaders, client callbacks, OptiFine CIT or all pack fonts. No GPL code/dependency
+from InteractiveChat or BlockModelRenderer is included, and this change does not
+alter DisCraft's licensing.
 
 `ResourcePackTest` runs without DISPLAY or a game client using synthetic local
 packs: priority/key merge, locale fallback, nested entity/item/death names, sibling

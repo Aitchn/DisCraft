@@ -13,15 +13,17 @@ final class ServerConfig {
     private final String locale;
     private final List<String> packs;
     private final Set<String> notifications;
-    private ServerConfig(boolean enabled,String channel,String token,Set<String> players,String locale,List<String> packs,Set<String> notifications){
+    private final boolean itemDisplay;
+    private ServerConfig(boolean enabled,String channel,String token,Set<String> players,String locale,List<String> packs,Set<String> notifications,boolean itemDisplay){
         this.enabled=enabled;this.channel=channel;this.token=token;this.players=Set.copyOf(players);
         this.locale=locale;this.packs=List.copyOf(packs);
         this.notifications=Set.copyOf(notifications);
+        this.itemDisplay=itemDisplay;
     }
-    static ServerConfig disabled(){return new ServerConfig(false,"","",Set.of(),"en_us",List.of(),Set.of());}
+    static ServerConfig disabled(){return new ServerConfig(false,"","",Set.of(),"en_us",List.of(),Set.of(),false);}
     static ServerConfig testEvents(){
         if(!Boolean.getBoolean("discraft.multiplayerSmoke")||!Boolean.getBoolean("discraft.serverEventsSmoke"))throw new IllegalStateException("TEST event configuration requires isolated smoke mode");
-        return new ServerConfig(false,"","",Set.of("*"),"en_us",List.of(),Set.of("join","quit","death","advancement","lifecycle"));
+        return new ServerConfig(false,"","",Set.of("*"),"en_us",List.of(),Set.of("join","quit","death","advancement","lifecycle"),false);
     }
     static ServerConfig load(Path file)throws IOException{
         try {
@@ -32,7 +34,7 @@ final class ServerConfig {
             if(bytes.length>MAX_BYTES)throw new IOException();
             var properties=new Properties();
             properties.load(new StringReader(new String(bytes,java.nio.charset.StandardCharsets.UTF_8)));
-            if(!Set.of("enabled","channel","botToken","allowedPlayers","locale","resourcePacks","notifications").containsAll(properties.stringPropertyNames()))throw new IOException();
+            if(!Set.of("enabled","channel","botToken","allowedPlayers","locale","resourcePacks","notifications","itemDisplay").containsAll(properties.stringPropertyNames()))throw new IOException();
             String flag=properties.getProperty("enabled","false").trim();
             if(!flag.equals("true")&&!flag.equals("false"))throw new IOException();
             boolean enabled=flag.equals("true");
@@ -51,7 +53,8 @@ final class ServerConfig {
             if(packs.size()>ResourcePackIndex.MAX_PACKS)throw new IOException();
             var notifications=new HashSet<String>();String notices=properties.getProperty("notifications","").trim();
             if(!notices.isEmpty())for(String entry:notices.split(",",-1)){String kind=entry.trim();if(!Set.of("join","quit","death","advancement","lifecycle").contains(kind)||!notifications.add(kind))throw new IOException();}
-            return new ServerConfig(enabled,channel,token,players,locale,packs,notifications);
+            String item=properties.getProperty("itemDisplay","false").trim();if(!item.equals("true")&&!item.equals("false"))throw new IOException();
+            return new ServerConfig(enabled,channel,token,players,locale,packs,notifications,item.equals("true"));
         }catch(Exception rejected){
             // Properties/UUID/path exceptions can quote input; never preserve their message or cause.
             throw new IOException("Invalid or unreadable DisCraft server configuration");
@@ -67,5 +70,6 @@ final class ServerConfig {
     String locale(){return locale;}
     List<String> resourcePacks(){return packs;}
     boolean notifies(String kind){return notifications.contains(kind);}
+    boolean itemDisplay(){return itemDisplay;}
     @Override public String toString(){return "ServerConfig[redacted]";}
 }

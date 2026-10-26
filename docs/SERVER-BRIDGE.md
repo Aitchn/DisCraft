@@ -35,6 +35,9 @@ Official references: [message API](https://docs.discord.com/developers/resources
 
 ## Automatic server notifications
 
+Native `%item` expansion is separately opt-in with `itemDisplay=true`: see the
+[authoritative main-hand snapshot and headless model/font support profile](ITEM-DISPLAY.md).
+
 `notifications=join,quit,death,advancement,lifecycle` explicitly enables categories;
 the default is empty, including on existing configurations. Nothing automatically
 posts merely because the mod was upgraded or a test server was started. Player

@@ -41,6 +41,8 @@ final class ServerConfigTest {
             Files.writeString(file,valid+"locale=zh_tw\nresourcePacks=base.zip,custom.zip\n");var localized=ServerConfig.load(file);
             check(localized.locale().equals("zh_tw")&&localized.resourcePacks().equals(List.of("base.zip","custom.zip")),"Resource locale and ordered local pack names come only from server config");
             check(!config.notifies("lifecycle")&&!blank.notifies("join"),"Automatic notifications default off even with a live-enabled configuration");
+            check(!config.itemDisplay(),"Item display defaults off on existing configurations");
+            Files.writeString(file,valid+"itemDisplay=true\n");check(ServerConfig.load(file).itemDisplay(),"Item display requires a server-local config switch");rejects(file,valid+"itemDisplay=maybe\n");
             try{ServerConfig.testEvents();throw new AssertionError("Ungated fixture config accepted");}catch(IllegalStateException expected){check(true,"Event fixture config cannot activate outside isolated multiplayer smoke mode");}
             Files.writeString(file,valid+"notifications=join,quit,death,advancement,lifecycle\n");var notices=ServerConfig.load(file);
             check(notices.notifies("join")&&notices.notifies("quit")&&notices.notifies("death")&&notices.notifies("advancement")&&notices.notifies("lifecycle"),"All event categories require explicit server-config opt-in");

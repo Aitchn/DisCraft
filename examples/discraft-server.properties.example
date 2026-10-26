@@ -13,3 +13,5 @@ resourcePacks=
 # Explicit opt-in only; blank sends no automatic event notifications.
 # Comma-separated: join,quit,death,advancement,lifecycle
 notifications=
+# Expand native chat %item from the authoritative main hand. Local model assets required.
+itemDisplay=false

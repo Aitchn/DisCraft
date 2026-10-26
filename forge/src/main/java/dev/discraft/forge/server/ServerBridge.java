@@ -29,6 +29,7 @@ public final class ServerBridge {
     private static String mode="disabled";
     private static ServerConfig config=ServerConfig.disabled();
     private static ComponentText text=new ComponentText(ResourcePackIndex.empty(),"en_us");
+    private static HeadlessItemRenderer itemRenderer;
     private static boolean running,stopping;
     private record DeathNotice(ServerPlayer player,LivingDeathEvent event,Component message){}
     private record AdvancementNotice(ServerPlayer player,Advancement advancement){}
@@ -60,7 +61,7 @@ public final class ServerBridge {
     }
     @SubscribeEvent public static void starting(ServerAboutToStartEvent event){
         server=event.getServer();mode="disabled";config=ServerConfig.disabled();
-        running=false;stopping=false;text=new ComponentText(ResourcePackIndex.empty(),"en_us");
+        running=false;stopping=false;text=new ComponentText(ResourcePackIndex.empty(),"en_us");itemRenderer=null;
         worker=new ThreadPoolExecutor(1,1,0,TimeUnit.SECONDS,new ArrayBlockingQueue<>(16),r->{var t=new Thread(r,"DisCraft server bridge");t.setDaemon(true);return t;});
         try {
             if(Boolean.getBoolean("discraft.multiplayerSmoke")){mode="test";adapter=new TestDiscordAdapter();if(Boolean.getBoolean("discraft.serverEventsSmoke"))config=ServerConfig.testEvents();}
@@ -68,7 +69,7 @@ public final class ServerBridge {
                 config=ServerConfig.load(net.minecraftforge.fml.loading.FMLPaths.CONFIGDIR.get().resolve("discraft-server.properties"));
                 if(config.enabled()&&Boolean.getBoolean("discraft.discord.enabled")){
                     var resources=ResourcePackIndex.load(net.minecraftforge.fml.loading.FMLPaths.CONFIGDIR.get().resolve("discraft-resourcepacks"),config.resourcePacks());
-                    text=new ComponentText(resources,config.locale());adapter=DiscordBotAdapter.fromConfig(config);mode="discord";
+                    text=new ComponentText(resources,config.locale());if(config.itemDisplay())itemRenderer=new HeadlessItemRenderer(resources);adapter=DiscordBotAdapter.fromConfig(config);mode="discord";
                 }
                 else adapter=null;
             }else adapter=null;
@@ -88,13 +89,13 @@ public final class ServerBridge {
         peers.values().forEach(p->p.alive.set(false));peers.clear();transfers.clear();history.clear();requests.clear();actors.clear();
         Runnable finalNotice=running?noticeTask("lifecycle",Component.translatableWithFallback("discraft.notice.stopping","Server is shutting down normally")):null;
         NoticeDelivery.drain(worker,finalNotice,TimeUnit.SECONDS.toNanos(8));
-        if(adapter!=null)adapter.close();worker=null;adapter=null;server=null;running=false;mode="disabled";config=ServerConfig.disabled();guildCatalog=GuildEmojiCatalog.empty(0);deaths.clear();advancements.clear();announcedAdvancements.clear();announcedDeaths.clear();text=new ComponentText(ResourcePackIndex.empty(),"en_us");
+        if(adapter!=null)adapter.close();worker=null;adapter=null;server=null;running=false;mode="disabled";config=ServerConfig.disabled();guildCatalog=GuildEmojiCatalog.empty(0);deaths.clear();advancements.clear();announcedAdvancements.clear();announcedDeaths.clear();text=new ComponentText(ResourcePackIndex.empty(),"en_us");itemRenderer=null;
     }
     @SubscribeEvent public static void stopped(ServerStoppedEvent event){
         // Startup failure can skip ServerStoppingEvent; release transport without claiming ready/normal shutdown.
         if(server==event.getServer()){
             if(worker!=null)worker.shutdownNow();if(adapter!=null)adapter.close();worker=null;adapter=null;server=null;running=false;mode="disabled";config=ServerConfig.disabled();
-            deaths.clear();advancements.clear();announcedAdvancements.clear();announcedDeaths.clear();text=new ComponentText(ResourcePackIndex.empty(),"en_us");
+            deaths.clear();advancements.clear();announcedAdvancements.clear();announcedDeaths.clear();text=new ComponentText(ResourcePackIndex.empty(),"en_us");itemRenderer=null;
         }
     }
     private static Runnable noticeTask(String kind,Component message){
@@ -176,6 +177,9 @@ public final class ServerBridge {
         System.arraycopy(packet.bytes(),0,transfer.bytes,transfer.used,packet.bytes().length);transfer.used+=packet.bytes().length;
         if(transfer.used!=transfer.bytes.length)return;
         transfers.remove(uuid);byte[] bytes=transfer.bytes;String author=p.getGameProfile().getName();var active=server;var transport=adapter;var knownActors=Map.copyOf(actors);var sender=new ActorRef(ActorRef.Kind.MINECRAFT,uuid.toString(),author);
+        final ItemSnapshot held;final HeadlessItemRenderer renderer=itemRenderer;
+        try{held=config.itemDisplay()&&ItemExpansion.requested(bytes)?ItemSnapshot.capture(p,text):null;}
+        catch(Exception invalid){BridgeNetwork.notice(p,packet.id(),false,"Invalid item display draft");return;}
         try {worker.execute(()->{
             try {
                 if(!peer.alive.get())return;
@@ -183,11 +187,15 @@ public final class ServerBridge {
                 if(!draft.id().equals(packet.id())||!draft.author().equals("draft")||!draft.catalog().isEmpty()||!draft.emoji().isEmpty()||draft.actor()!=null)throw new IllegalArgumentException();
                 Limits.text(draft.text(),1800,"bridge text");
                 for(var mention:draft.mentions())if(!mention.target().equals(knownActors.get(mention.target().key())))throw new IllegalArgumentException("Unknown or spoofed mention identity");
+                if(held!=null&&!ItemExpansion.positions(draft).isEmpty()&&!draft.attachments().isEmpty()){
+                    active.execute(()->{if(server==active&&peer.alive.get())BridgeNetwork.notice(p,packet.id(),false,"Item display cannot be combined with an uploaded attachment");});return;
+                }
                 Map<String,Content.CustomEmoji> catalog=mode.equals("test")?MockTransport.EMOJI:Map.of();var emoji=new HashMap<String,Attachment>();
                 for(var c:catalog.values())emoji.put(c.mediaKey(),Attachment.fromResource(c.mediaKey()));
-                var record=transport.prepare(new RelayRecord(UUID.randomUUID(),author,draft.text(),draft.attachments(),catalog,emoji,sender,draft.mentions()));record.encode();
+                var prepared=transport.prepare(new RelayRecord(UUID.randomUUID(),author,draft.text(),draft.attachments(),catalog,emoji,sender,draft.mentions()));
+                var expanded=ItemExpansion.expand(prepared,held,renderer);var record=expanded.game();record.encode();expanded.discord().encode();
                 if(!peer.alive.get())return;
-                transport.send(record);
+                transport.send(expanded.discord());
                 active.execute(()->{if(server!=active)return;publish(record);if(peer.alive.get())BridgeNetwork.notice(p,packet.id(),true,"Accepted by SERVER "+mode.toUpperCase(Locale.ROOT));});
             }catch(Exception rejected){active.execute(()->{if(server==active&&peer.alive.get())BridgeNetwork.notice(p,packet.id(),false,"Rejected or delivery uncertain; no automatic retry");});}
         });}catch(RejectedExecutionException full){BridgeNetwork.notice(p,packet.id(),false,"Bridge queue full");}

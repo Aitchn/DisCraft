@@ -5,7 +5,7 @@ The workflow uses Ubuntu 24.04, Temurin JDK17, Gradle 8.8 and SHA-pinned Actions
 | Job | Checks | Artifact |
 | --- | --- | --- |
 | Core tests | `:core:build`, including 49 executable behavior assertions | Core output/reports |
-| Forge build/reobfuscation | `:forge:build :forge:reobfJar`, including 27 fake server-config/redaction checks, 33 headless resource/localization checks, nine bounded notice-delivery checks, 32 synthetic guild catalog/thumbnail checks and 65 local REST/wire protocol checks; validate packaged client/server/core/media classes and exclude test drivers | Installable mod JAR |
+| Forge build/reobfuscation | `:forge:build :forge:reobfJar`, including 30 fake server-config/redaction checks, 33 headless resource/localization checks, 28 headless item/model/font checks, nine bounded notice-delivery checks, 32 synthetic guild catalog/thumbnail checks and 65 local REST/wire protocol checks; validate packaged client/server/core/media classes and exclude test drivers | Installable mod JAR |
 | Minecraft client acceptance | Real Xvfb/Mesa client, 36 original mock-preview checks including latch-controlled Clear/send-edit races | Native screenshots and result summary |
 | Dedicated server and two clients | Real server and Alice/Bob clients, native input and protocol checks through actual game packets, including native chat media, vanilla Enter, ordinary chat, a real slash command, independent fixture catalog/thumbnail synchronization, picker selection and rename/delete/permission/reset invalidation | Server/client logs, screenshots and separate result summaries |
 
@@ -38,3 +38,9 @@ The game catalog fixture includes a malformed 481×545 PNG (262,145 pixels: exac
 Native UI text acceptance additionally runs `scripts/verify-ui-text.py --tag after` in the multiplayer job. It captures original-resolution frames at four viewport/GUI-scale combinations and verifies the scoped vector provider, glyph sampling/line bounds, search caret metrics, tab/filter hit areas and resource reload. See [UI text rendering](UI-TEXT.md) for the measured bitmap root cause, font licensing/size tradeoff and before/after comparison conditions. No Discord credentials are used.
 
 The Forge job also boots an isolated dedicated server without DISPLAY for `scripts/verify-server-events.py`: actual starting/ready/normal-stop hooks plus synthetic login/logout callbacks, death/advancement events, cancellation/rescue, duplicate suppression and announcement rules. Its recording TEST adapter has no credentials or HTTP transport; the test driver is excluded from the mod JAR. Normal configurations keep automatic notifications disabled until explicit config opt-in.
+
+The `--items` variant adds six real-ItemStack checks to those twelve event checks:
+game-thread main-hand capture, mutation/offhand isolation, appearance whitelist,
+imported Traditional Chinese/custom bitmap glyphs/CMD model PNG, actual official
+adapter multipart to a loopback-only mock, and empty hand. The item HTTP mock uses
+the existing fixed fake test token; no host credential or Discord endpoint is used.

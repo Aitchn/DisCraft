@@ -63,6 +63,7 @@ jobs:
         run: |
           python3 scripts/verify-server-events.py
           python3 scripts/verify-server-events.py --startup-failure
+          python3 scripts/verify-server-events.py --items
       - name: Upload headless event evidence
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

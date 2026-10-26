@@ -43,7 +43,7 @@ public final class BridgeProtocolTest {
         var convert=DiscordBotAdapter.class.getDeclaredMethod("convert",JsonObject.class);convert.setAccessible(true);return (RelayRecord)convert.invoke(adapter,message);
     }
     public static void main(String[] args)throws Exception{
-        ServerConfigTest.run();ResourcePackTest.run();NoticeDeliveryTest.run();GuildEmojiTest.run();mentionEdits();normalizedMentions();
+        ServerConfigTest.run();ResourcePackTest.run();ItemRenderTest.run();NoticeDeliveryTest.run();GuildEmojiTest.run();mentionEdits();normalizedMentions();
         var id=UUID.randomUUID();var gif=Attachment.fromResource("dance.gif");
         var original=RelayRecord.draft(id,"Unicode 世界 👋",gif);var decoded=RelayRecord.decode(original.encode());
         check(decoded.id().equals(id)&&decoded.text().equals(original.text())&&decoded.attachments().get(0).media().frames().size()>1,"Wire roundtrip preserves Unicode and real GIF frames");

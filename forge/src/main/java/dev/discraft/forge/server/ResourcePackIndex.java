@@ -40,7 +40,7 @@ final class ResourcePackIndex {
                         if(++files>MAX_FILES)throw new IOException();String path=entry.getName();
                         if(!safePath(path)||!seen.add(path))throw new IOException();
                         // Directory entries can carry compressed payload too: account for every byte.
-                        boolean keep=path.equals("pack.mcmeta")||path.matches("assets/[a-z0-9_.-]+/(lang/[a-z0-9_]+\\.json|models/[a-z0-9_./-]+\\.json|textures/[a-z0-9_./-]+\\.png|font/[a-z0-9_./-]+\\.json)");
+                        boolean keep=path.equals("pack.mcmeta")||path.matches("assets/[a-z0-9_.-]+/(lang/[a-z0-9_]+\\.json|models/[a-z0-9_./-]+\\.json|textures/[a-z0-9_./-]+\\.png(?:\\.mcmeta)?|font/[a-z0-9_./-]+\\.json)");
                         var bytes=keep?new ByteArrayOutputStream():null;long size=0;byte[] buffer=new byte[8192];
                         for(int n;(n=zip.read(buffer))!=-1;){size+=n;total+=n;if(size>MAX_ENTRY||total>MAX_EXPANDED)throw new IOException();if(keep)bytes.write(buffer,0,n);}
                         if(!keep)continue;
@@ -49,7 +49,7 @@ final class ResourcePackIndex {
                             var pack=json(value).getAsJsonObject("pack");var format=pack.get("pack_format");
                             if(!format.isJsonPrimitive()||!format.getAsJsonPrimitive().isNumber()||!format.getAsString().equals("15"))throw new IOException();metadata=true;continue;
                         }
-                        if(path.endsWith(".json")){
+                        if(path.endsWith(".json")||path.endsWith(".mcmeta")){
                             var object=json(value);
                             if(path.contains("/lang/")){
                                 String locale=path.substring(path.lastIndexOf('/')+1,path.length()-5);
@@ -92,6 +92,11 @@ final class ResourcePackIndex {
         return languages.getOrDefault(locale,Map.of()).getOrDefault(key,english);
     }
     byte[] asset(String path){byte[] bytes=assets.get(path);return bytes==null?null:bytes.clone();}
+    static String resourcePath(String id,String directory,String suffix)throws IOException{
+        if(id.length()>256)throw new IOException("Invalid resource reference");String[] parts=id.split(":",-1);String namespace=parts.length==1?"minecraft":parts[0],path=parts.length==1?parts[0]:parts.length==2?parts[1]:"";
+        if(!namespace.matches("[a-z0-9_.-]+")||!path.matches("[a-z0-9_./-]+")||path.startsWith("/")||path.contains("//")||!safePath(path))throw new IOException("Invalid resource reference");
+        return "assets/"+namespace+"/"+directory+"/"+path+suffix;
+    }
     String fingerprint(){return fingerprint;}
     int assetCount(){return assets.size();}
     @Override public String toString(){return "ResourcePackIndex["+assets.size()+" assets]";}

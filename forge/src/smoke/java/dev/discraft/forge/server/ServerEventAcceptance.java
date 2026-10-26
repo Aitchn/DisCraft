@@ -7,6 +7,9 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.network.chat.Style;
 import net.minecraft.world.level.*;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.common.util.*;
@@ -45,6 +48,27 @@ public final class ServerEventAcceptance {
     @SubscribeEvent(priority=EventPriority.LOWEST) public static void started(ServerStartedEvent event)throws Exception{
         if(!enabled())return;
         player=FakePlayerFactory.get(server.overworld(),new GameProfile(UUID.fromString("5b52ba38-7083-4de2-888f-8fe83c0bf240"),"EventTester"));player.setHealth(20);
+        if(Boolean.getBoolean("discraft.serverItemsSmoke"))try{items();}catch(Throwable rejected){failure="Item pipeline: "+rejected.getClass().getSimpleName()+": "+rejected.getMessage();server.halt(false);}
+    }
+    private static void items()throws Exception{
+        Path output=Path.of(System.getProperty("discraft.serverEventsOutput"));Path packs=output.resolve("item-fixture-packs");ItemFixtures.create(packs);
+        var resources=ResourcePackIndex.load(packs,List.of("fixture.zip"));var text=new ComponentText(resources,"zh_tw");var renderer=new HeadlessItemRenderer(resources);
+        var stack=new ItemStack(Items.DIAMOND_SWORD,3);stack.setHoverName(Component.literal("星光劍 · TEST").withStyle(Style.EMPTY.withFont(new ResourceLocation("test","custom"))));stack.getOrCreateTag().putInt("CustomModelData",1);
+        String privateFixture="private-book-container-fixture-do-not-export";stack.getOrCreateTag().putString("pages",privateFixture);stack.getOrCreateTag().putString("BlockEntityTag",privateFixture);stack.getOrCreateTag().putString("Lore",privateFixture);
+        player.setItemInHand(InteractionHand.MAIN_HAND,stack);player.setItemInHand(InteractionHand.OFF_HAND,new ItemStack(Items.STONE,7));
+        var captured=ItemSnapshot.capture(player,text);stack.setCount(1);stack.getOrCreateTag().putInt("CustomModelData",2);
+        check(captured.id().equals("minecraft:diamond_sword")&&captured.count()==3&&captured.customModelData()==1&&captured.name().equals("星光劍 · TEST"),"Real authoritative main-hand ItemStack snapshot retains custom name/count/CMD independently of later mutations and offhand");
+        check(!captured.toString().contains(privateFixture),"Appearance whitelist excludes arbitrary lore, book and container fixture data");
+        var expanded=ItemExpansion.expand(new dev.discraft.forge.bridge.RelayRecord(UUID.randomUUID(),player.getGameProfile().getName(),"展示 %item",List.of(),Map.of(),Map.of()),captured,renderer);
+        var payload=ItemFixtures.sendToLocalDiscord(expanded.discord());
+        check(payload.get("content").getAsString().contains("星光劍 · TEST")&&payload.getAsJsonObject("allowed_mentions").getAsJsonArray("users").isEmpty()&&!payload.toString().contains(privateFixture),"Actual ItemStack to localized text and PNG reaches only loopback official-adapter mock with no pings or private NBT");
+        var image=javax.imageio.ImageIO.read(new java.io.ByteArrayInputStream(expanded.game().attachments().get(0).bytes()));
+        check(image.getRGB(144,92)==0xff20ff20&&image.getWidth()==288&&image.getHeight()==256,"Actual captured CMD selects correct fixture model in decoded multipart PNG");
+        Files.write(output.resolve("authoritative-main-hand.png"),expanded.game().attachments().get(0).bytes());
+        player.setItemInHand(InteractionHand.MAIN_HAND,new ItemStack(Items.DIAMOND_SWORD));
+        check(ItemSnapshot.capture(player,text).name().equals("測試鑽石劍"),"Unrenamed real ItemStack resolves its description component through imported Traditional Chinese language key");
+        player.setItemInHand(InteractionHand.MAIN_HAND,ItemStack.EMPTY);
+        check(ItemSnapshot.capture(player,text).empty(),"Actual empty main hand stays empty even while offhand holds an item");
     }
     @SubscribeEvent(priority=EventPriority.LOWEST) public static void tick(TickEvent.ServerTickEvent event){
         if(!enabled()||server==null||event.phase!=TickEvent.Phase.END||failure!=null||++ticks%10!=0)return;
@@ -73,6 +97,6 @@ public final class ServerEventAcceptance {
         if(failure==null)try{check(count()==7&&adapter.eventReceipts.get(6).text().equals("Server is shutting down normally"),"Actual normal stop drains final notice before closing TEST adapter");check(adapter.eventReceipts.stream().allMatch(r->r.mentions().isEmpty()&&r.author().equals("Server")),"All automatic notices retain server identity and empty allowed-mention selections");}catch(Throwable rejected){failure=rejected.getMessage();}
         Path output=Path.of(System.getProperty("discraft.serverEventsOutput"));Files.createDirectories(output);
         results.add(failure==null?"PASS "+checks+" actual headless Forge lifecycle and synthetic event checks; local TEST recipient only":"FAIL "+failure);
-        Files.write(output.resolve("result.txt"),results);System.out.println(results.get(results.size()-1));
+        Files.write(output.resolve(Boolean.getBoolean("discraft.serverItemsSmoke")?"items-result.txt":"result.txt"),results);System.out.println(results.get(results.size()-1));
     }
 }
