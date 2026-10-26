@@ -1,17 +1,17 @@
-# Headless item presentation — first supported profile
+# Server item presentation: Discord tooltips and native hover
 
 Set `itemDisplay=true` in the private server config to expand `%item` in DisCraft
 native chat. It defaults off for existing installations. The server copies the
 authenticated sender's **main hand on the game thread** when upload finishes;
 the offhand and client-supplied text cannot select another stack. Workers receive
-only an immutable appearance whitelist: registry ID, localized/custom name, root
+only an immutable appearance whitelist and localized semantic tooltip lines: registry ID, localized/custom name, root
 font ID, count, CustomModelData, damage fraction/flag, handedness, known leather or
 potion tint and enchanted flag. A separate native-only tooltip DTO contains an
 allowlist of safe item detail. No original stack/NBT, book pages, container contents
 or arbitrary hover/click actions are retained or transmitted.
 
 Up to eight markers outside selected mention labels expand to `[name ×count]` and
-share one 288×256 PNG **on Discord**. Minecraft displays a styled inline name with
+share one content-sized tooltip-style PNG **on Discord**. Minecraft displays a styled inline name with
 the original native item tooltip; it does not automatically expand that PNG or
 open another Screen. A plain native T message containing `%item` explicitly routes
 to the bridge when available; ordinary text remains vanilla chat. A server with
@@ -75,14 +75,58 @@ recipient verifies two advancement notices and two PNG-bearing sends; there is
 no real Discord send. Required client mods/resources still determine native
 mod-specific tooltip behavior; the allowlist is not a complete arbitrary-NBT mirror.
 
-## Resource data and rendering
+## Discord tooltip images
 
-Use the ordered local [resource-pack configuration](RESOURCE-PACKS.md). There is
-**no remote asset download or redistribution of Minecraft assets**. Dedicated
-servers generally lack client models/textures: operators must supply the relevant
-models, textures and parent dependencies in local presentation packs. A pack that
-only changes a texture is not a complete vanilla asset source. Missing assets
-produce a clearly labelled question-mark card while preserving the actual name.
+Discord now receives a separately drawn text tooltip, with a near-black purple background,
+a thin purple gradient border and item-derived text styles. The previous fixed 288×256
+model card is not the default presentation. No screenshot or cropped reference pixels
+are embedded. Native Minecraft inline item rendering and protocol 4 are unchanged.
+
+The explicit profile uses ordinary tooltip visibility for the allowlisted fields:
+rarity/custom/translatable name and styles, enchantment names/levels (including curses
+and enchanted books), sanitized lore, numeric equipment-slot attributes and unbreakable.
+It additionally shows **advanced damaged durability** (`remaining / maximum`) only when
+pinned 1.20.1 `isDamaged()` is true. It omits advanced item IDs and NBT counts. `HideFlags`
+suppresses enchantments (1), modifiers (2), unbreakable (4) and book additional data (32)
+as appropriate. Lore follows vanilla visibility. Unbreakable stacks follow vanilla's
+non-damageable behavior. Base attack totals use the authoritative player's base values
+and allowed enchantments. Explicit or filtered-empty AttributeModifiers still overrides
+default item attributes, including after the existing native DTO budget downgrade.
+
+The server first sanitizes the existing whitelist, then builds immutable localized
+semantic runs on the game thread. The Discord renderer receives these runs rather
+than an original stack or native SNBT DTO. Arbitrary item/mod `appendHoverText`, Forge
+ItemTooltipEvent callbacks, book pages, container contents, block/entity NBT, destroy/place
+lists, potion-effect callbacks and other additional item-specific sections are outside
+this profile. They are not executed to collect extra data. This is an explicitly bounded
+profile, not a claim of all mod tooltip compatibility.
+
+Names, lore, nested translation arguments/siblings and numbered `%1$s` substitutions
+retain color, font, bold/italic, underline and strike styles. Obfuscated glyphs use a
+non-revealing deterministic placeholder. Language selection, per-key merges and fallback
+follow the configured [resource-pack stack](RESOURCE-PACKS.md). Supported bitmap/space/
+reference fonts use their imported glyphs. Otherwise bundled OFL Noto CJK TC is used,
+with a visible font-fallback footer; unsupported glyphs use `?` plus a visible Unicode
+codepoint notice, never an implicit system font. The two current examples use cached
+vanilla en_us/zh_tw text and bundled CJK glyphs, not imported complete vanilla fonts.
+
+Every glyph is measured using the same font/style as drawing. Content wraps without
+ellipsis or dropping digits, at most 768×1536 pixels and 60 content rows, with at most
+64 semantic lines/8192 characters. Excessive content explicitly rejects instead of
+silently clipping important attributes. Encoded PNGs remain capped at 256 KiB. Tooltip
+cache is 32 entries/4 MiB per immutable resource generation. Glyph ink is RGB-modulated
+for actual text style/shadow and cached at 128 entries/one million pixels. Rendering
+checks a two-second work deadline; zero-advance glyphs retain their measured advance. Empty hands create no image.
+No extra remote download, client renderer, network source or production environment
+fallback is introduced.
+
+## Retained model/resource utilities
+
+The local pack index and independently implemented CPU model resolver remain available
+for focused resource verification and future use; `%item` no longer invokes model
+rasterization for Discord. Existing model fixtures and original-asset comparisons stay
+separate from the current tooltip presentation. There is no remote asset download or
+redistribution of game source packs.
 
 The independent CPU renderer supports this bounded standard JSON profile:
 
@@ -140,16 +184,22 @@ multipart delivery to **loopback only**. It checks empty hand/offhand, imported
 Traditional Chinese and absence of private fixture NBT. These are controlled fake
 player events, not a claim of human gameplay or live Discord item delivery.
 
-The original fixture card is `build/evidence/server-events/authoritative-main-hand.png`;
-its intentionally simple green model and orange bitmap glyphs prove pack overrides,
-not vanilla artwork fidelity. Test source/fixtures are excluded from the mod JAR.
+`ItemTooltipAcceptance`, run by `verify-server-events.py --items`, compares the allowed
+semantic lines against pinned native 1.20.1 getTooltipLines on real ItemStacks. It covers
+ordinary swords, enchanted tools, custom names/lore, HideFlags, empty and filtered-empty
+attribute overrides, empty hand, long multilingual wrapping, missing glyphs and exact
+production-adapter multipart text/PNG delivery to loopback. `tooltip-enchanted-tool.png`,
+`tooltip-traditional-chinese.png`, `tooltip-metadata.json` and `tooltip-result.txt` are
+under `build/evidence/server-events/`. Metadata includes dimensions, encoded bytes,
+font source and exact safe semantic lines. The current `authoritative-main-hand.png`
+is also a tooltip; original model-card fixtures remain only renderer tests. Test source/fixtures are excluded from the mod JAR.
 No GPL renderer or addon code/dependency was copied or linked; no project license
 was changed. Architecture was informed by the user-supplied InteractiveChat addon
 research. Standard model concepts follow the official [Forge model documentation](https://docs.minecraftforge.net/en/1.20.1/resources/client/models/).
 
 ### Optional original-asset/native-client comparison
 
-The original green TEST card remains a synthetic fixture. A separate local check
+The retained model-renderer tests use synthetic fixtures. A separate local check
 now uses legally existing Minecraft 1.20.1 cache resources: diamond sword and stone
 with their actual parent-model/texture dependency closure, `en_us` and `zh_tw`.
 `prepare-vanilla-item-evidence.py` selects only 13 files from the cached

@@ -15,12 +15,14 @@ final class HeadlessItemRenderer {
     private record Model(JsonObject data,boolean generated){}
     private record Vec(double x,double y,double z){Vec add(Vec v){return new Vec(x+v.x,y+v.y,z+v.z);}Vec multiply(Vec v){return new Vec(x*v.x,y*v.y,z*v.z);}}
     private record Face(Vec[] vertices,double[] uv,BufferedImage texture,double light,int tint,double depth){}
+    private final ItemTooltipRenderer tooltipRenderer;
+    ItemTooltipRenderer.Result tooltip(ItemSnapshot item)throws Exception{return tooltipRenderer.render(item.tooltip());}
     private final ResourcePackIndex resources;private final ResourceImages images;private final PackBitmapFont font;
     private final Map<String,JsonObject> models=new LinkedHashMap<>(16,.75f,true);
     private final Map<ItemSnapshot,Result> cache=new LinkedHashMap<>(32,.75f,true);
     private long cachedBytes,deadline;private int work;
     private final IdentityHashMap<BufferedImage,Boolean> renderImages=new IdentityHashMap<>();private long renderPixels;
-    HeadlessItemRenderer(ResourcePackIndex resources)throws Exception{this.resources=resources;images=new ResourceImages(resources);font=new PackBitmapFont(resources,images);}
+    HeadlessItemRenderer(ResourcePackIndex resources)throws Exception{this.resources=resources;images=new ResourceImages(resources);font=new PackBitmapFont(resources,images);tooltipRenderer=new ItemTooltipRenderer(font);}
     Result render(ItemSnapshot item)throws Exception{
         if(cache.containsKey(item))return cache.get(item);deadline=System.nanoTime()+2_000_000_000L;work=0;renderImages.clear();renderPixels=0;
         var icon=new BufferedImage(176,176,BufferedImage.TYPE_INT_ARGB);String status="Standard model";

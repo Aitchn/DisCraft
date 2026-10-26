@@ -42,7 +42,7 @@ The Forge job also boots an isolated dedicated server without DISPLAY for `scrip
 The `--items` variant adds six real-ItemStack checks plus eighteen attribute-override
 semantics/tooltip regressions to those twelve event checks (36 total):
 game-thread main-hand capture, mutation/offhand isolation, appearance whitelist,
-imported Traditional Chinese/custom bitmap glyphs/CMD model PNG, actual official
+imported Traditional Chinese/custom bitmap glyphs, retained CMD model utilities and adaptive tooltip PNGs, actual official
 adapter multipart to a loopback-only mock, and empty hand. The item HTTP mock uses
 the existing fixed fake test token; no host credential or Discord endpoint is used.
 The attribute cases use actual pinned 1.20.1 methods on original and reconstructed
@@ -56,3 +56,5 @@ An optional local-only original-resource comparison uses already-cached Minecraf
 It is separate from default synthetic CI and never redistributes its selected source
 ZIP or downloads additional game assets. Animation size regressions run in ordinary
 CI and compare horizontal/single-axis cases directly with pinned 1.20.1 metadata code.
+
+The headless item acceptance also checks real native tooltip semantics and bounded adaptive Discord PNGs via the production loopback adapter. Tooltip PNGs, semantic-line metadata and their result summary are included in server-events evidence. It never uses live Discord credentials or emits real notifications.

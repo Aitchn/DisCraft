@@ -15,7 +15,7 @@ final class ItemRenderTest {
     static void run()throws Exception{
         Path root=Files.createTempDirectory("discraft-item-test");
         try{
-            ItemFixtures.create(root);var index=ResourcePackIndex.load(root,List.of("fixture.zip"));var renderer=new HeadlessItemRenderer(index);
+            ItemFixtures.create(root);var index=ResourcePackIndex.load(root,List.of("fixture.zip"));var renderer=new HeadlessItemRenderer(index);ItemTooltipTest.run(index);
             var base=renderer.render(item("minecraft:diamond_sword",0,"minecraft:default"));
             check(base.status().equals("Standard model")&&pixel(base)==0xffff2020,"Generated item model draws its original fixture texture");
             check(pixel(renderer.render(item("minecraft:diamond_sword",1,"minecraft:default")))==0xff20ff20,"CustomModelData threshold selects first override");

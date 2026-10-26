@@ -17,6 +17,8 @@ with zipfile.ZipFile(jar) as archive:
         'dev/discraft/forge/server/EmojiThumbnailCache.class',
         'dev/discraft/forge/server/ItemSnapshot.class',
         'dev/discraft/forge/server/ItemExpansion.class',
+        'dev/discraft/forge/server/ItemTooltip.class',
+        'dev/discraft/forge/server/ItemTooltipRenderer.class',
         'dev/discraft/forge/server/HeadlessItemRenderer.class',
         'dev/discraft/forge/server/PackBitmapFont.class',
         'dev/discraft/forge/server/ResourcePackIndex.class',
@@ -45,5 +47,5 @@ with zipfile.ZipFile(jar) as archive:
     assert required <= names, f'Missing mod contents: {required - names}'
     assert not any(name.endswith('discraft-server.properties') or 'ServerConfigTest' in name for name in names), 'Private config/test leaked into mod JAR'
     assert 'assets/discraft/textures/gui/smiley.png' not in names, 'Reference screenshot icon leaked into mod JAR'
-    assert not any('/smoke/' in name or 'BridgeProtocolTest' in name or 'GuildEmojiTest' in name or 'LiveCatalog' in name or 'ServerEventAcceptance' in name or 'NativeHoverServerAcceptance' in name or 'DiscordAuthor' in name or 'NativeItemDataTest' in name or 'ItemFixtures' in name or 'ItemRenderTest' in name for name in names), 'Test driver leaked into mod JAR'
+    assert not any('/smoke/' in name or 'BridgeProtocolTest' in name or 'GuildEmojiTest' in name or 'LiveCatalog' in name or 'ServerEventAcceptance' in name or 'NativeHoverServerAcceptance' in name or 'DiscordAuthor' in name or 'NativeItemDataTest' in name or 'ItemFixtures' in name or 'ItemTooltipAcceptance' in name or 'ItemRenderTest' in name for name in names), 'Test driver leaked into mod JAR'
 print(f'PASS packaged mod: {jar.name} SHA256={hashlib.sha256(jar.read_bytes()).hexdigest()}')

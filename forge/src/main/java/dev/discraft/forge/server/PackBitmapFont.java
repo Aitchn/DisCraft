@@ -14,6 +14,13 @@ final class PackBitmapFont {
     private final ResourcePackIndex resources;private final ResourceImages images;
     private final Map<String,Face> faces=new LinkedHashMap<>(8,.75f,true);
     private final Font fallback;
+    private record Ink(Glyph glyph,int rgb){}
+    private final Map<Ink,BufferedImage> inks=new LinkedHashMap<>(128,.75f,true);private long inkPixels;
+    private BufferedImage ink(Glyph glyph,int rgb){
+        var key=new Ink(glyph,rgb);var image=inks.get(key);if(image!=null)return image;image=new BufferedImage(glyph.w(),glyph.h(),BufferedImage.TYPE_INT_ARGB);
+        for(int y=0;y<glyph.h();y++)for(int x=0;x<glyph.w();x++){int source=glyph.sheet().getRGB(glyph.x()+x,glyph.y()+y);int red=((source>>16)&255)*((rgb>>16)&255)/255,green=((source>>8)&255)*((rgb>>8)&255)/255,blue=(source&255)*(rgb&255)/255;image.setRGB(x,y,(source&0xff000000)|(red<<16)|(green<<8)|blue);}
+        inks.put(key,image);inkPixels+=(long)image.getWidth()*image.getHeight();while(inks.size()>128||inkPixels>1024*1024){var first=inks.keySet().iterator().next();var removed=inks.remove(first);inkPixels-=(long)removed.getWidth()*removed.getHeight();}return image;
+    }
     PackBitmapFont(ResourcePackIndex resources,ResourceImages images)throws Exception{
         this.resources=resources;this.images=images;
         try(var in=PackBitmapFont.class.getResourceAsStream("/assets/discraft/font/ui.otf")){fallback=Font.createFont(Font.TRUETYPE_FONT,Objects.requireNonNull(in));}
@@ -50,6 +57,24 @@ final class PackBitmapFont {
             if(glyphs.size()>4096)throw new IOException("Font glyph budget exceeded");
         }
         path.remove(id);return unsupported;
+    }
+    boolean usesFallback(int cp,String id){return !face(id).glyphs().containsKey(cp);}
+    boolean missing(int cp,String id){return usesFallback(cp,id)&&!fallback.canDisplay(cp);}
+    private Font styledFont(ItemTooltip.Run run,int size){return fallback.deriveFont((run.bold()?Font.BOLD:Font.PLAIN)|(run.italic()?Font.ITALIC:Font.PLAIN),(float)size);}
+    int measure(Graphics2D g,int cp,ItemTooltip.Run run,int size){
+        Glyph glyph=face(run.font()).glyphs().get(cp);if(glyph==null){g.setFont(styledFont(run,size));return Math.max(0,g.getFontMetrics().stringWidth(new String(Character.toChars(missing(cp,run.font())?'?':cp))));}
+        return Math.max(0,(int)Math.ceil(glyph.advance()*(double)size/Math.max(9,glyph.height()))+(run.bold()?1:0)+(run.italic()?2:0));
+    }
+    void glyph(Graphics2D g,int cp,ItemTooltip.Run run,int size,int x,int baseline){
+        Glyph glyph=face(run.font()).glyphs().get(cp);int advance=measure(g,cp,run,size);
+        if(glyph==null){g.setFont(styledFont(run,size));g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING,RenderingHints.VALUE_TEXT_ANTIALIAS_ON);g.drawString(new String(Character.toChars(missing(cp,run.font())?'?':cp)),x,baseline);}
+        else if(glyph.sheet()!=null){
+            double scale=(double)size/Math.max(9,glyph.height());int h=(int)Math.round(glyph.height()*scale),w=(int)Math.round((double)glyph.w()*glyph.height()/glyph.h()*scale),top=baseline-(int)Math.round(glyph.ascent()*scale);var transform=g.getTransform();
+            if(run.italic()){g.translate(x,top);g.shear(-.15,0);g.translate(-x,-top);}
+            var ink=ink(glyph,g.getColor().getRGB());g.drawImage(ink,x,top,w,h,null);
+            if(run.bold())g.drawImage(ink,x+1,top,w,h,null);g.setTransform(transform);
+        }
+        if(run.underline())g.fillRect(x,baseline+2,advance,1);if(run.strike())g.fillRect(x,baseline-size/3,advance,1);
     }
     /** Returns whether a provided unsupported font required fallback. Text is clipped with ellipsis by measured width. */
     boolean draw(Graphics2D g,String text,String id,int size,int x,int baseline,int width){

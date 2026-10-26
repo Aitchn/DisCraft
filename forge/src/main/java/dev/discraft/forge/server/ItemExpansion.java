@@ -18,7 +18,7 @@ final class ItemExpansion {
         if(item==null||positions(record).isEmpty())return new Result(record,record);
         if(!record.attachments().isEmpty())throw new IllegalArgumentException("Item display cannot be combined with an uploaded attachment");
         if(!record.nativeItems().isEmpty())throw new IllegalArgumentException("Item display already expanded");
-        List<Attachment> attachments=item.empty()?List.of():List.of(renderer.render(item).attachment());
+        List<Attachment> attachments=item.empty()?List.of():List.of(renderer.tooltip(item).attachment());
         record=avoidCatalogCollision(record,item.label());
         var nativeItem=item.nativeItem()!=null?item.nativeItem():new NativeItemData(item.id(),item.count(),"{}");
         return new Result(replace(record,item.label(),List.of(),nativeItem),replace(record,literal(item.label()),attachments,null));

@@ -64,14 +64,15 @@ public final class ServerEventAcceptance {
         var payload=ItemFixtures.sendToLocalDiscord(expanded.discord());
         check(payload.get("content").getAsString().contains("星光劍 · TEST")&&payload.getAsJsonObject("allowed_mentions").getAsJsonArray("users").isEmpty()&&!payload.toString().contains(privateFixture),"Actual ItemStack to localized text and PNG reaches only loopback official-adapter mock with no pings or private NBT");
         var image=javax.imageio.ImageIO.read(new java.io.ByteArrayInputStream(expanded.discord().attachments().get(0).bytes()));
-        check(image.getRGB(144,92)==0xff20ff20&&image.getWidth()==288&&image.getHeight()==256,"Actual captured CMD selects correct fixture model in decoded multipart PNG");
+        check(image.getWidth()<=ItemTooltipRenderer.MAX_WIDTH&&image.getHeight()<=ItemTooltipRenderer.MAX_HEIGHT&&captured.tooltip().lines().get(0).plain().equals("星光劍 · TEST"),"Actual ItemStack exports a measured tooltip PNG rather than a fixed model card");
         Files.write(output.resolve("authoritative-main-hand.png"),expanded.discord().attachments().get(0).bytes());
         player.setItemInHand(InteractionHand.MAIN_HAND,new ItemStack(Items.DIAMOND_SWORD));
         check(ItemSnapshot.capture(player,text).name().equals("測試鑽石劍"),"Unrenamed real ItemStack resolves its description component through imported Traditional Chinese language key");
         player.setItemInHand(InteractionHand.MAIN_HAND,ItemStack.EMPTY);
         check(ItemSnapshot.capture(player,text).empty(),"Actual empty main hand stays empty even while offhand holds an item");
-        String local=System.getProperty("discraft.vanillaItemPack");if(local!=null){
-            Path pack=Path.of(local);var vanillaResources=ResourcePackIndex.load(pack.getParent(),List.of(pack.getFileName().toString()));var vanillaText=new ComponentText(vanillaResources,"zh_tw");var vanillaRenderer=new HeadlessItemRenderer(vanillaResources);
+        String local=System.getProperty("discraft.vanillaItemPack");
+        var tooltipResources=ResourcePackIndex.empty();if(local!=null){
+            Path pack=Path.of(local);var vanillaResources=ResourcePackIndex.load(pack.getParent(),List.of(pack.getFileName().toString()));tooltipResources=vanillaResources;var vanillaText=new ComponentText(vanillaResources,"zh_tw");var vanillaRenderer=new HeadlessItemRenderer(vanillaResources);
             var vanillaItems=List.of(Items.DIAMOND_SWORD,Items.STONE);var expected=List.of("鑽石劍","石頭");var names=List.of("diamond-sword","stone");
             for(int i=0;i<vanillaItems.size();i++){
                 player.setItemInHand(InteractionHand.MAIN_HAND,new ItemStack(vanillaItems.get(i)));var real=ItemSnapshot.capture(player,vanillaText);var rendered=vanillaRenderer.render(real);
@@ -80,6 +81,7 @@ public final class ServerEventAcceptance {
             }
             player.setItemInHand(InteractionHand.MAIN_HAND,ItemStack.EMPTY);
         }
+        ItemTooltipAcceptance.run(player,output,tooltipResources,local!=null);
     }
     private static void attributeOverrides(){
         // Pinned 1.20.1 ItemStack.getAttributeModifiers branches on LIST presence,
