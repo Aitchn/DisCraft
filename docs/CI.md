@@ -85,3 +85,9 @@ Evidence is retained in `build/evidence/optional-client/`. These worlds use only
 Forge and the appropriate bridge/instrumentation mod, offline identities and a
 loopback fake credential. They do not exercise arbitrary content-mod requirements,
 a pure vanilla executable, or Mojang online-session signature authentication.
+The optional-peer matrix also installs a late Forge listener that redacts text
+without cancelling and changes styling only, plus a controlled partial-filter
+packet fixture. Actual native display is checked while redacted/filtered originals
+must never reach the local REST receiver. Commands Only is sent to the real server;
+a second player confirms native receipt while the sender receives no self player
+chat, and the bridge must emit exactly one Discord-side record.

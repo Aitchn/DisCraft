@@ -204,7 +204,8 @@ public final class ServerBridge {
     }
     private static void reject(ServerPlayer p,UUID id,String why){transfers.remove(p.getUUID());BridgeNetwork.notice(p,id,false,why);}
     private static void remember(ActorRef actor){if(actor==null)return;actors.put(actor.key(),actor);while(actors.size()>128)actors.remove(actors.keySet().iterator().next());}
-    static boolean vanillaChatEnabled(ServerPlayer player){return server==player.server&&running&&!stopping&&adapter!=null&&allowed(player)&&(!mode.equals("test")||Boolean.getBoolean("discraft.optionalClientSmoke"));}
+    static boolean nativeObserverEnabled(ServerPlayer player){return server==player.server&&running&&!stopping&&adapter!=null&&(!mode.equals("test")||Boolean.getBoolean("discraft.optionalClientSmoke"));}
+    static boolean vanillaChatEnabled(ServerPlayer player){return nativeObserverEnabled(player)&&allowed(player);}
     static boolean admitVanillaChat(ServerPlayer player){var peer=peers.get(player.getUUID());return vanillaChatEnabled(player)&&peer!=null&&peer.alive.get()&&peer.consume();}
     static ItemSnapshot vanillaItem(ServerPlayer player,String raw){return config.itemDisplay()&&raw.contains("%item")?ItemSnapshot.capture(player,text):null;}
     static void relayVanilla(ServerPlayer player,String body,ItemSnapshot item){

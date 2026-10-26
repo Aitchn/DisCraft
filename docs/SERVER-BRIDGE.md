@@ -162,3 +162,13 @@ relay. It never falls back to the original signed body after such a change.
 Style-only changes with identical non-obfuscated content remain relayable.
 This intentionally prefers missing a modified chat message over disclosing its
 unmoderated original; native packets and their signatures are not rewritten.
+
+A Commands Only (`SYSTEM`) sender legitimately receives no self player-chat
+packet. For a message admitted with that setting, confirmation may instead use
+an actual recipient's packet while the sender remains in SYSTEM mode. Ordinary
+FULL-chat senders still require their own view, so another recipient's unfiltered
+copy cannot bypass their filter. Other recipients are not queued for FULL-chat
+messages. The observation queue remains bounded and deduplicates by consuming a
+pending message once. With no observable recipient, no broadcast is fabricated;
+the conservative confirmation path can therefore suppress a SYSTEM sender's
+message when nobody receives native player chat.

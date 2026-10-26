@@ -15,7 +15,7 @@ for role in ('server','Alice'):
  if result.returncode:raise SystemExit('Optional launch preparation failed; see local prepare log')
 optional=[str(ROOT/'forge/build/classes/java/optionalClient'),str(ROOT/'forge/build/resources/optionalClient')]
 removed={str(ROOT/f'{project}/build/{suffix}') for project in ('forge','core') for suffix in ('classes/java/main','resources/main')}
-def strip_roots(cp):return os.pathsep.join(p for p in cp.split(os.pathsep) if p not in removed)
+def strip_roots(cp):return os.pathsep.join(p for p in cp.split(os.pathsep) if p not in removed and not any(p.startswith(str(ROOT/project/'build/libs')+os.sep) for project in ('forge','core')))
 def interrupt(signum,frame):raise KeyboardInterrupt('Optional acceptance interrupted')
 signal.signal(signal.SIGTERM,interrupt)
 def scenario(name):
@@ -71,6 +71,7 @@ def scenario(name):
   server.stdin.write(b'stop\n');server.stdin.flush();server.wait(timeout=40)
   assert server.returncode==0
   if name!='missing_server':assert (output/'server-result.txt').read_text().splitlines()[-1].startswith('PASS ')
+  if name=='incompatible':assert 'Channels [discraft:bridge] rejected their client side version number' in (output/'server.log').read_text(errors='replace'),'Legacy fixture did not fail for the expected DisCraft channel'
  finally:
   for p in reversed(processes):
    if p.poll() is None:
