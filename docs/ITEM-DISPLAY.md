@@ -88,7 +88,10 @@ and enchanted books), sanitized lore, numeric equipment-slot attributes and unbr
 It additionally shows **advanced damaged durability** (`remaining / maximum`) only when
 pinned 1.20.1 `isDamaged()` is true. It omits advanced item IDs and NBT counts. `HideFlags`
 suppresses enchantments (1), modifiers (2), unbreakable (4) and book additional data (32)
-as appropriate. Lore follows vanilla visibility. Unbreakable stacks follow vanilla's
+as appropriate. Lore follows vanilla visibility. Pinned 1.20.1 native-oracle checks
+also cover explicit NBT modifiers using the vanilla attack UUID: they retain the
+numeric modifier without default player/enchantment totals, while default item
+modifiers add those totals. No UUID behavior was changed based on recollection. Unbreakable stacks follow vanilla's
 non-damageable behavior. Base attack totals use the authoritative player's base values
 and allowed enchantments. Explicit or filtered-empty AttributeModifiers still overrides
 default item attributes, including after the existing native DTO budget downgrade.
