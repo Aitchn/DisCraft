@@ -64,7 +64,8 @@ public final class ClientGuildEmoji {
         try{decoder.execute(()->{
             Attachment image=null;
             try{var record=RelayRecord.decode(transfer.bytes);if(!record.id().equals(transfer.id)||!record.author().equals("emoji-preview")||!record.text().equals(packet.emoji())||record.attachments().size()!=1||!record.catalog().isEmpty()||!record.emoji().isEmpty()||record.actor()!=null||!record.mentions().isEmpty())throw new IllegalArgumentException();
-                image=record.attachments().get(0);if(pixels(image)>GuildEmojiCatalog.THUMB_SINGLE_PIXELS)throw new IllegalArgumentException();
+                var candidate=record.attachments().get(0);if(pixels(candidate)>GuildEmojiCatalog.THUMB_SINGLE_PIXELS)throw new IllegalArgumentException();
+                image=candidate;
             }catch(Exception ignored){}
             var decoded=image;Minecraft.getInstance().execute(()->{if(epoch!=generation||version!=catalog.version())return;pending.remove(packet.emoji());images.put(packet.emoji(),new Cached(decoded,System.nanoTime()+(decoded==null?30_000_000_000L:600_000_000_000L)));trim();});
         });}catch(RejectedExecutionException ignored){pending.remove(packet.emoji());images.put(packet.emoji(),new Cached(null,System.nanoTime()+30_000_000_000L));trim();}

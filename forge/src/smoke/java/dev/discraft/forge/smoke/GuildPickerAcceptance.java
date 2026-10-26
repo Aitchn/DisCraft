@@ -25,13 +25,21 @@ final class GuildPickerAcceptance {
     static boolean tick()throws Exception{
         if(phase==0){
             original=ClientGuildEmoji.snapshot();if(!original.ready())return false;
-            check(original.fixture()&&original.entries().size()==3,"Dedicated server synchronizes a clearly labelled fixture guild catalog independently of chat history");
+            check(original.fixture()&&original.entries().size()==4,"Dedicated server synchronizes a clearly labelled fixture guild catalog independently of chat history");
             phase=1;return false;
         }
         if(phase==1){
             if(ClientGuildEmoji.preview("1111111111111111")==null||ClientGuildEmoji.preview("2222222222222222")==null)return false;
+            var imageField=ClientGuildEmoji.class.getDeclaredField("images");imageField.setAccessible(true);var cache=(Map<?,?>)imageField.get(null);var rejected=cache.get("4444444444444444");if(rejected==null)return false;
+            if(++ticks<8)return false;
             check(!ClientGuildEmoji.preview("1111111111111111").media().animated()&&ClientGuildEmoji.preview("2222222222222222").media().animated(),"Lazy static and animated thumbnails traverse real server/client packets and decode");
-            if(++ticks<8)return false;try(var image=Screenshot.takeScreenshot(MC.getMainRenderTarget())){image.writeToFile(Path.of("../../build/evidence/multiplayer/Guild-picker-fixture.png"));}
+            var imageAccessor=rejected.getClass().getDeclaredMethod("image");imageAccessor.setAccessible(true);var expiryAccessor=rejected.getClass().getDeclaredMethod("expires");expiryAccessor.setAccessible(true);
+            check(imageAccessor.invoke(rejected)==null&&ClientGuildEmoji.preview("4444444444444444")==null&&(Long)expiryAccessor.invoke(rejected)>System.nanoTime(),"Real oversized server preview becomes a negative cache entry rather than a retained image");
+            var bytes=new java.io.ByteArrayOutputStream();javax.imageio.ImageIO.write(new java.awt.image.BufferedImage(481,545,java.awt.image.BufferedImage.TYPE_INT_RGB),"png",bytes);var malformed=Attachment.of("oversized-preview-fixture.png",bytes.toByteArray());
+            check((long)malformed.media().width()*malformed.media().height()==GuildEmojiCatalog.THUMB_SINGLE_PIXELS+1L&&GuildEmojiCatalog.THUMB_SINGLE_PIXELS+1L<GuildEmojiCatalog.THUMB_PIXELS,"Malformed preview fixture exceeds the per-image limit by exactly one pixel while fitting the total cache budget");
+            var textureCache=get("textures");var entriesField=textureCache.getClass().getDeclaredField("entries");entriesField.setAccessible(true);
+            var pendingField=ClientGuildEmoji.class.getDeclaredField("pending");pendingField.setAccessible(true);var transfersField=ClientGuildEmoji.class.getDeclaredField("transfers");transfersField.setAccessible(true);
+            check(!((Map<?,?>)entriesField.get(textureCache)).containsKey(malformed.digest())&&!((Map<?,?>)pendingField.get(null)).containsKey("4444444444444444")&&!((Map<?,?>)transfersField.get(null)).containsKey("4444444444444444"),"Rejected oversized preview creates no rendered texture and releases its pending request and packet assembly");try(var image=Screenshot.takeScreenshot(MC.getMainRenderTarget())){image.writeToFile(Path.of("../../build/evidence/multiplayer/Guild-picker-fixture.png"));}
             var list=items();staticItem=list.stream().filter(item->{try{return id(item).equals("1111111111111111");}catch(Exception e){return false;}}).findFirst().orElseThrow();
             var disabled=list.stream().filter(item->{try{return id(item).equals("3333333333333333");}catch(Exception e){return false;}}).findFirst().orElseThrow();String draft=input().getValue();pick(disabled);
             check(input().getValue().equals(draft),"Native picker refuses an unavailable fixture emoji without changing the draft");
