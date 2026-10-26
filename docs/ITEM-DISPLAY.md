@@ -112,10 +112,14 @@ vanilla en_us/zh_tw text and bundled CJK glyphs, not imported complete vanilla f
 
 Every glyph is measured using the same font/style as drawing. Content wraps without
 ellipsis or dropping digits, at most 768×1536 pixels and 60 content rows, with at most
-64 semantic lines/8192 characters. Excessive content explicitly rejects instead of
+64 semantic lines/8192 characters. A shared whole-tooltip translation budget reserves
+every output character and generated component before allocation (1024 generated
+nodes, 512 visited input components), including repeated arguments, literals, fallback
+strings and sibling/line traversal. Oversize translation trees stop during expansion. Excessive content explicitly rejects instead of
 silently clipping important attributes. Encoded PNGs remain capped at 256 KiB. Tooltip
 cache is 32 entries/4 MiB per immutable resource generation. Glyph ink is RGB-modulated
-for actual text style/shadow and cached at 128 entries/one million pixels. Rendering
+for actual text style/shadow and cached at 128 entries/one million pixels. Its primitive
+glyph identities never retain original font sheets; cached ink owns independent rasters. Rendering
 checks a two-second work deadline; zero-advance glyphs retain their measured advance. Empty hands create no image.
 No extra remote download, client renderer, network source or production environment
 fallback is introduced.

@@ -15,6 +15,7 @@ import java.text.*;
 
 /** Server-only semantic text. No original stack, arbitrary NBT or native hover DTO reaches the image renderer. */
 record ItemTooltip(List<Line> lines) {
+    private static final net.minecraft.network.chat.ComponentContents EMPTY=Component.empty().getContents();
     record Run(String text,int color,String font,boolean bold,boolean italic,boolean underline,boolean strike,boolean obfuscated){Run{Objects.requireNonNull(text);if(text.length()>8192||font==null||font.length()>256||!font.matches("[a-z0-9_.-]+:[a-z0-9_./-]+")||color<0||color>0xffffff)throw new IllegalArgumentException("Invalid tooltip run");}}
     record Line(List<Run> runs){Line{runs=List.copyOf(runs);if(runs.size()>1024)throw new IllegalArgumentException("Tooltip run budget exceeded");}String plain(){return runs.stream().map(Run::text).reduce("",String::concat);}}
     ItemTooltip{lines=List.copyOf(lines);if(lines.size()>64||lines.stream().mapToInt(l->l.plain().length()).sum()>8192)throw new IllegalArgumentException("Item tooltip text budget exceeded");}
@@ -45,25 +46,34 @@ record ItemTooltip(List<Line> lines) {
         if((hide&4)==0&&tag.getBoolean("Unbreakable"))lines.add(Component.translatable("item.unbreakable").withStyle(ChatFormatting.BLUE));
         // Explicit profile: ordinary safe fields plus only advanced damaged durability, never ID/NBT counts.
         if(safe.isDamaged())lines.add(Component.translatable("item.durability",Math.max(0,safe.getMaxDamage()-safe.getDamageValue()),safe.getMaxDamage()));
-        var output=new ArrayList<Line>();for(var line:lines)output.add(localizer.tooltipLine(line));return new ItemTooltip(output);
+        var output=new ArrayList<Line>();var budget=new ExpansionBudget();for(var line:lines)output.add(localizer.tooltipLine(line,budget));return new ItemTooltip(output);
     }
-    static Line localize(Component input,ResourcePackIndex resources,String locale){
-        var budget=new int[]{512};Component component=localized(input,resources,locale,budget,new IdentityHashMap<>(),0);var runs=new ArrayList<Run>();final int[] length={0};
+    /** One budget covers the entire tooltip, including all nested and repeated translation arguments. */
+    static final class ExpansionBudget {
+        static final int MAX_NODES=1024,MAX_CHARS=8192;
+        int remainingInputs=512,generatedNodes,outputChars;
+        private void node(){if(generatedNodes>=MAX_NODES)throw new IllegalArgumentException("Tooltip generated node budget exceeded");generatedNodes++;}
+        private MutableComponent empty(){node();return Component.empty();}
+        private Component literal(String text){if(text.length()>MAX_CHARS-outputChars)throw new IllegalArgumentException("Tooltip expanded text budget exceeded");node();outputChars+=text.length();return Component.literal(text);}
+    }
+    static Line localize(Component input,ResourcePackIndex resources,String locale){return localize(input,resources,locale,new ExpansionBudget());}
+    static Line localize(Component input,ResourcePackIndex resources,String locale,ExpansionBudget budget){
+        Component component=localized(input,resources,locale,budget,new IdentityHashMap<>(),0);var runs=new ArrayList<Run>();final int[] length={0};
         component.visit((style,text)->{length[0]+=text.length();if(length[0]>8192||runs.size()>1024)throw new IllegalArgumentException("Tooltip text budget exceeded");if(!text.isEmpty())runs.add(new Run(text,style.getColor()==null?0xffffff:style.getColor().getValue(),style.getFont().toString(),style.isBold(),style.isItalic(),style.isUnderlined(),style.isStrikethrough(),style.isObfuscated()));return Optional.<Object>empty();},Style.EMPTY);
         return new Line(runs);
     }
-    private static Component localized(Component input,ResourcePackIndex resources,String locale,int[] budget,IdentityHashMap<Component,Boolean> path,int depth){
-        if(depth>32||--budget[0]<0||path.put(input,true)!=null)throw new IllegalArgumentException("Tooltip component budget exceeded");var out=Component.empty().setStyle(input.getStyle().withClickEvent(null).withHoverEvent(null).withInsertion(null));
-        if(input.getContents() instanceof LiteralContents literal)out.append(Component.literal(literal.text()));
+    private static Component localized(Component input,ResourcePackIndex resources,String locale,ExpansionBudget budget,IdentityHashMap<Component,Boolean> path,int depth){
+        if(depth>32||--budget.remainingInputs<0||path.put(input,true)!=null)throw new IllegalArgumentException("Tooltip component budget exceeded");var out=budget.empty().setStyle(input.getStyle().withClickEvent(null).withHoverEvent(null).withInsertion(null));
+        if(input.getContents() instanceof LiteralContents literal)out.append(budget.literal(literal.text()));
         else if(input.getContents() instanceof TranslatableContents tr){
             String fallback=Language.getInstance().getOrDefault(tr.getKey(),Objects.requireNonNullElse(tr.getFallback(),tr.getKey()));String template=resources.translation(locale,tr.getKey(),fallback);if(template.length()>8192)throw new IllegalArgumentException("Tooltip translation text budget exceeded");Object[] args=tr.getArgs();if(args.length>32)throw new IllegalArgumentException("Tooltip translation argument budget exceeded");int implicit=0;
-            for(int at=0;at<template.length();){int start=at;if(template.charAt(at++)!='%'){while(at<template.length()&&template.charAt(at)!='%')at++;out.append(Component.literal(template.substring(start,at)));continue;}
-                if(at<template.length()&&template.charAt(at)=='%'){out.append(Component.literal("%"));at++;continue;}int digits=at;while(at<template.length()&&Character.isDigit(template.charAt(at)))at++;int index=implicit;boolean numbered=at>digits;
-                if(numbered){if(at>=template.length()||template.charAt(at++)!='$'){out.append(Component.literal(template.substring(start,at)));continue;}try{index=Integer.parseInt(template.substring(digits,at-1))-1;}catch(NumberFormatException invalid){index=-1;}}
-                if(at<template.length()&&template.charAt(at)=='s'){at++;if(!numbered)implicit++;if(index>=0&&index<args.length){Object arg=args[index];out.append(arg instanceof Component c?localized(c,resources,locale,budget,path,depth+1):Component.literal(arg==null||arg instanceof String||arg instanceof Number||arg instanceof Boolean?String.valueOf(arg):"?"));}else out.append(Component.literal(template.substring(start,at)));}
-                else out.append(Component.literal(template.substring(start,at)));
+            for(int at=0;at<template.length();){int start=at;if(template.charAt(at++)!='%'){while(at<template.length()&&template.charAt(at)!='%')at++;out.append(budget.literal(template.substring(start,at)));continue;}
+                if(at<template.length()&&template.charAt(at)=='%'){out.append(budget.literal("%"));at++;continue;}int digits=at;while(at<template.length()&&Character.isDigit(template.charAt(at)))at++;int index=implicit;boolean numbered=at>digits;
+                if(numbered){if(at>=template.length()||template.charAt(at++)!='$'){out.append(budget.literal(template.substring(start,at)));continue;}try{index=Integer.parseInt(template.substring(digits,at-1))-1;}catch(NumberFormatException invalid){index=-1;}}
+                if(at<template.length()&&template.charAt(at)=='s'){at++;if(!numbered)implicit++;if(index>=0&&index<args.length){Object arg=args[index];out.append(arg instanceof Component c?localized(c,resources,locale,budget,path,depth+1):budget.literal(arg==null||arg instanceof String||arg instanceof Number||arg instanceof Boolean?String.valueOf(arg):"?"));}else out.append(budget.literal(template.substring(start,at)));}
+                else out.append(budget.literal(template.substring(start,at)));
             }
-        }else if(input.getContents()!=Component.empty().getContents())out.append(Component.literal("[unsupported tooltip component]"));
+        }else if(input.getContents()!=EMPTY)out.append(budget.literal("[unsupported tooltip component]"));
         for(var sibling:input.getSiblings())out.append(localized(sibling,resources,locale,budget,path,depth+1));path.remove(input);return out;
     }
 }

@@ -11,6 +11,7 @@ final class ComponentText {
     private final String locale;
     ComponentText(ResourcePackIndex resources,String locale){this.resources=resources;this.locale=locale;}
     ItemTooltip.Line tooltipLine(Component component){return ItemTooltip.localize(component,resources,locale);}
+    ItemTooltip.Line tooltipLine(Component component,ItemTooltip.ExpansionBudget budget){return ItemTooltip.localize(component,resources,locale,budget);}
     String render(Component component){
         var out=new StringBuilder();var budget=new int[]{512};append(component,out,new IdentityHashMap<>(),budget,0);return out.toString();
     }

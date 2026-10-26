@@ -7,6 +7,7 @@ import javax.imageio.ImageIO;
 final class ItemTooltipTest {
     static void run(ResourcePackIndex resources)throws Exception{
         FontInkCacheTest.run();
+        TooltipExpansionBudgetTest.run();
         int checks=0;var renderer=new ItemTooltipRenderer(resources);var white=ItemTooltip.nameOnly("星","test:custom");var image=renderer.render(white);var decoded=ImageIO.read(new ByteArrayInputStream(image.attachment().bytes()));boolean orange=false;for(int y=5;y<40;y++)for(int x=5;x<40;x++)orange|=decoded.getRGB(x,y)==0xffff8000;
         if(!orange||image.fontFallback())throw new AssertionError("Imported bitmap glyph not rendered without fallback");checks++;
         var colored=new ItemTooltip(List.of(new ItemTooltip.Line(List.of(new ItemTooltip.Run("星",0x00ffff,"test:custom",false,false,false,false,false)))));var tint=renderer.render(colored);decoded=ImageIO.read(new ByteArrayInputStream(tint.attachment().bytes()));boolean modulated=false;for(int y=5;y<40;y++)for(int x=5;x<40;x++)modulated|=decoded.getRGB(x,y)==0xff008000;
