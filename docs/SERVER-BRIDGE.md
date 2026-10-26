@@ -153,3 +153,12 @@ peers, serverless enhancement fallback and a synthetic incompatible channel.
 All REST/media requests terminate at its local fake-credential receiver. These
 offline controlled-world checks do not establish production online-session
 cryptographic validation or compatibility with an arbitrary modpack.
+
+Native chat moderation is conservative: DisCraft snapshots bounded content
+structure (512 components, depth 32, 16 KiB representation) before/after its own
+item replacement. A prior or later textual/decorator rewrite, unknown dynamic
+content, obfuscated presentation or non-passthrough filter suppresses the Discord
+relay. It never falls back to the original signed body after such a change.
+Style-only changes with identical non-obfuscated content remain relayable.
+This intentionally prefers missing a modified chat message over disclosing its
+unmoderated original; native packets and their signatures are not rewritten.

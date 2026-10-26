@@ -25,8 +25,8 @@ public final class VanillaChatRelay {
     private static final Map<UUID,Peer> peers=new HashMap<>();
     private static final AtomicInteger admissions=new AtomicInteger();
     private static int pendingCount;
-    private record Pending(ServerChatEvent event,ItemSnapshot item,long started){}
-    private record Observed(String raw,String filtered,Component unsigned){}
+    private record Pending(ServerChatEvent event,ItemSnapshot item,String expected,long started){}
+    private record Observed(String raw,boolean unfiltered,Component unsigned){}
     private record Admission(Component replacement){}
     private static final class Peer {
         ServerPlayer player;final AtomicBoolean alive=new AtomicBoolean(true),scheduled=new AtomicBoolean();final AtomicInteger pending=new AtomicInteger();
@@ -41,7 +41,7 @@ public final class VanillaChatRelay {
         channel.pipeline().addBefore("packet_handler","discraft_native_chat",new ChannelOutboundHandlerAdapter(){
             @Override public void write(ChannelHandlerContext context,Object message,ChannelPromise promise)throws Exception{
                 try{if(peer.alive.get()&&peer.pending.get()>0&&message instanceof ClientboundPlayerChatPacket packet&&packet.sender().equals(senderId)){
-                    String raw=packet.body().content(),filtered=packet.filterMask().apply(raw);if(filtered!=null&&raw.length()<=1800&&filtered.length()<=1800&&peer.observed.offer(new Observed(raw,filtered,packet.unsignedContent())))schedule(peer);
+                    String raw=packet.body().content();if(raw.length()<=1800&&peer.observed.offer(new Observed(raw,packet.filterMask().isEmpty(),packet.unsignedContent())))schedule(peer);
                 }}catch(Exception ignored){/* Observation never changes, drops or retries a native packet. */}finally{context.write(message,promise);}
             }
         });
@@ -50,7 +50,7 @@ public final class VanillaChatRelay {
         try{if(active!=server||!peer.alive.get()||peers.get(peer.player.getUUID())!=peer)return;for(Observed observed;(observed=peer.observed.poll())!=null;){
             Pending chosen=null;for(var message:peer.messages){if(message.event().isCanceled()||!message.event().getRawText().equals(observed.raw()))continue;
                 if(observed.unsigned()!=null?message.event().getMessage()==observed.unsigned():message.item()==null){chosen=message;break;}}
-            if(chosen!=null){peer.messages.remove(chosen);peer.pending.decrementAndGet();pendingCount--;ServerBridge.relayVanilla(peer.player,observed.filtered(),chosen.item());}
+            if(chosen!=null){peer.messages.remove(chosen);peer.pending.decrementAndGet();pendingCount--;try{Component visible=observed.unsigned()!=null?observed.unsigned():Component.literal(observed.raw());if(observed.unfiltered()&&chosen.expected().equals(NativeChatProjection.shape(visible)))ServerBridge.relayVanilla(peer.player,observed.raw(),chosen.item());}catch(IllegalArgumentException unsupported){/* A moderation/decorator rewrite or unmappable filter never falls back to raw text. */}}
         }}finally{peer.scheduled.set(false);if(!peer.observed.isEmpty()&&peer.alive.get())schedule(peer);else if(!peer.alive.get())peer.observed.clear();}
     });}
     @SubscribeEvent(priority=EventPriority.LOWEST,receiveCanceled=true) public static void chat(ServerChatEvent event){
@@ -60,9 +60,9 @@ public final class VanillaChatRelay {
             future=server.submit(()->{
                 if(expired.get()||active!=server||pendingCount>=128)return null;var player=event.getPlayer();var peer=peers.get(player.getUUID());
                 if(peer==null||!peer.alive.get()||peer.player!=player||server.getPlayerList().getPlayer(player.getUUID())!=player||!ServerBridge.admitVanillaChat(player))return null;
-                String raw=event.getRawText();Limits.text(raw,1800,"native chat");var item=ServerBridge.vanillaItem(player,raw);Component replacement=null;
+                String raw=event.getRawText();Limits.text(raw,1800,"native chat");if(!NativeChatProjection.shape(event.getMessage()).equals(NativeChatProjection.shape(Component.literal(raw))))return null;var item=ServerBridge.vanillaItem(player,raw);Component replacement=null;
                 if(item!=null){var nativeItem=item.nativeItem()!=null?item.nativeItem():new NativeItemData("minecraft:air",0,"{}");replacement=NativeItemComponents.replaceMarkers(event.getMessage(),nativeItem,item.label());}
-                if(expired.get())return null;peer.messages.addLast(new Pending(event,item,System.nanoTime()));peer.pending.incrementAndGet();pendingCount++;return new Admission(replacement);
+                if(expired.get())return null;peer.messages.addLast(new Pending(event,item,NativeChatProjection.shape(replacement!=null?replacement:event.getMessage()),System.nanoTime()));peer.pending.incrementAndGet();pendingCount++;return new Admission(replacement);
             });
             var result=future.get(2,TimeUnit.SECONDS);if(result!=null&&result.replacement()!=null)event.setMessage(result.replacement());
         }catch(InterruptedException interrupted){Thread.currentThread().interrupt();}catch(Exception ignored){/* Original raw body and vanilla delivery remain owned by Forge. */}

@@ -14,6 +14,7 @@ with zipfile.ZipFile(jar) as archive:
         'dev/discraft/forge/bridge/NativeFallbackChat.class',
         'dev/discraft/forge/bridge/NativeItemComponents.class',
         'dev/discraft/forge/server/VanillaChatRelay.class',
+        'dev/discraft/forge/server/NativeChatProjection.class',
         'dev/discraft/forge/bridge/RelayRecord.class',
         'dev/discraft/forge/server/ServerBridge.class',
         'dev/discraft/forge/server/ServerConfig.class',
