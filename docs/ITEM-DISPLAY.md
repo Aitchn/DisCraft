@@ -236,3 +236,17 @@ does not claim pixel-identical lighting, full vanilla asset coverage, human game
 modded rendering or live Discord delivery. Vanilla font providers are not imported
 in this check: headless Chinese text uses the bundled CJK fallback; native labels use
 Minecraft's font. Bitmap-provider support remains independently fixture-tested.
+
+## Short marker alias
+
+`%i` and `%item` mean the same authoritative main-hand snapshot. They may be
+mixed and repeated, sharing the total limit of eight active markers and one
+Discord tooltip PNG. The common parser uses longest match (`%item` before `%i`)
+and UTF-16 spans. `%` starts a token; an immediately following ASCII letter,
+digit or underscore prevents the match, so `%inventory`, `%itemized`, `%i_`
+and `%i9` stay literal. Chinese adjacency such as `看看%i吧` is supported.
+Only lowercase tokens are defined. Selected mention ranges remain literal and
+are excluded before the eight-marker expansion limit. Variable token lengths
+remap both native and escaped Discord mention offsets. Empty hand, upload/item
+conflicts, output limits and safe native hover rules are unchanged. Expansion
+never recursively processes the generated item name.

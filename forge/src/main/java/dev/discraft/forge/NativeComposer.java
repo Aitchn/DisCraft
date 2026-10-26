@@ -76,7 +76,7 @@ public final class NativeComposer {
     @SubscribeEvent public static void editsFinished(net.minecraftforge.event.TickEvent.ClientTickEvent event){if(event.phase==net.minecraftforge.event.TickEvent.Phase.END)DraftMentions.endEdit();}
     @SubscribeEvent public static void keys(ScreenEvent.KeyPressed.Pre event){
         if(!(event.getScreen() instanceof ChatScreen screen)||(event.getKeyCode()!=GLFW.GLFW_KEY_ENTER&&event.getKeyCode()!=GLFW.GLFW_KEY_KP_ENTER))return;
-        String text=input(screen).getValue();String normalized=screen.normalizeChatMessage(text);if(normalized.startsWith("/")||(!bridge&&attachment==null&&!loading&&DraftMentions.snapshot(text).isEmpty()&&!(ClientBridge.available()&&normalized.contains("%item"))))return;
+        String text=input(screen).getValue();String normalized=screen.normalizeChatMessage(text);if(normalized.startsWith("/")||(!bridge&&attachment==null&&!loading&&DraftMentions.snapshot(text).isEmpty()&&!(ClientBridge.available()&&dev.discraft.core.ItemMarkers.contains(normalized))))return;
         if(sending||loading){event.setCanceled(true);return;} // Preserve the draft until the selected decode/ACK finishes.
         if(normalized.isEmpty()&&attachment!=null){
             // Vanilla rejects empty text before ClientChatEvent; an attachment-only submission needs its own path.
@@ -86,7 +86,7 @@ public final class NativeComposer {
     @SubscribeEvent public static void chat(ClientChatEvent event){
         if(event.getMessage().startsWith("/"))return;
         String raw=MC.screen instanceof ChatScreen screen?input(screen).getValue():event.getMessage();var selected=DraftMentions.snapshot(raw);
-        if(!bridge&&attachment==null&&!loading&&selected.isEmpty()&&!(ClientBridge.available()&&event.getMessage().contains("%item")))return;
+        if(!bridge&&attachment==null&&!loading&&selected.isEmpty()&&!(ClientBridge.available()&&dev.discraft.core.ItemMarkers.contains(event.getMessage())))return;
         // Capture routing from the actual raw selection before vanilla's known whitespace transform.
         var mapped=dev.discraft.forge.bridge.MentionDraft.normalized(raw,selected,event.getMessage());
         event.setCanceled(true);send(event.getMessage(),mapped);

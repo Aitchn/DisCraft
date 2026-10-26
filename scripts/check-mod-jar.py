@@ -11,6 +11,7 @@ with zipfile.ZipFile(jar) as archive:
         'dev/discraft/forge/DisCraft.class',
         'dev/discraft/core/ChatSession.class',
         'dev/discraft/core/TwemojiCatalog.class',
+        'dev/discraft/core/ItemMarkers.class',
         'twemoji/index.tsv',
         'twemoji/NOTICE.txt',
         'twemoji/LICENSE-GRAPHICS.txt',

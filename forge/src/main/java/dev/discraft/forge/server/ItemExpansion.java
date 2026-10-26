@@ -11,7 +11,7 @@ final class ItemExpansion {
     static boolean requested(byte[] draft)throws IOException{
         try(var in=new DataInputStream(new ByteArrayInputStream(draft))){
             in.readLong();in.readLong();if(!in.readUTF().equals("draft"))throw new IOException("Invalid draft header");
-            String text=in.readUTF();Limits.text(text,1800,"bridge text");return text.contains("%item");
+            String text=in.readUTF();Limits.text(text,1800,"bridge text");return ItemMarkers.contains(text);
         }
     }
     static Result expand(RelayRecord record,ItemSnapshot item,HeadlessItemRenderer renderer)throws Exception{
@@ -37,16 +37,14 @@ final class ItemExpansion {
         return new RelayRecord(record.id(),record.author(),text.toString(),record.attachments(),catalog,record.emoji(),record.actor(),mentions);
     }
     private static String aliases(String text,Map<String,String> changes){for(var change:changes.entrySet())text=text.replace(change.getKey(),change.getValue());return text;}
-    static List<Integer> positions(RelayRecord record){
-        var positions=new ArrayList<Integer>();for(int at=0;(at=record.text().indexOf("%item",at))>=0;at+=5){
-            final int start=at;if(record.mentions().stream().noneMatch(m->start<m.end()&&start+5>m.start()))positions.add(at);
-            if(positions.size()>8)throw new IllegalArgumentException("Too many item markers");
-        }return positions;
+    private static List<ItemMarkers.Span> tokens(RelayRecord record){
+        var tokens=new ArrayList<ItemMarkers.Span>();for(var token:ItemMarkers.spans(record.text())){if(record.mentions().stream().noneMatch(m->token.start()<m.end()&&token.end()>m.start()))tokens.add(token);if(tokens.size()>8)throw new IllegalArgumentException("Too many item markers");}return List.copyOf(tokens);
     }
+    static List<Integer> positions(RelayRecord record){return tokens(record).stream().map(ItemMarkers.Span::start).toList();}
     private static RelayRecord replace(RelayRecord record,String label,List<Attachment> attachments,NativeItemData nativeItem){
-        var items=new ArrayList<ItemInline>();var positions=positions(record);var text=new StringBuilder();int at=0;for(int position:positions){text.append(record.text(),at,position);int start=text.length();text.append(label);if(nativeItem!=null)items.add(new ItemInline(start,text.length(),nativeItem));at=position+5;}text.append(record.text(),at,record.text().length());
+        var items=new ArrayList<ItemInline>();var positions=tokens(record);var text=new StringBuilder();int at=0;for(var token:positions){int position=token.start();text.append(record.text(),at,position);int start=text.length();text.append(label);if(nativeItem!=null)items.add(new ItemInline(start,text.length(),nativeItem));at=token.end();}text.append(record.text(),at,record.text().length());
         Limits.text(text.toString(),1800,"expanded item text");var mentions=new ArrayList<Mention>();
-        for(var mention:record.mentions()){int shift=0;for(int position:positions)if(position<mention.start())shift+=label.length()-5;mentions.add(new Mention(mention.start()+shift,mention.end()+shift,mention.target()));}
+        for(var mention:record.mentions()){int shift=0;for(var token:positions)if(token.start()<mention.start())shift+=label.length()-token.length();mentions.add(new Mention(mention.start()+shift,mention.end()+shift,mention.target()));}
         return new RelayRecord(record.id(),record.author(),text.toString(),attachments,record.catalog(),record.emoji(),record.actor(),mentions,items);
     }
     static String literal(String text){

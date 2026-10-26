@@ -19,8 +19,8 @@ public final class NativeItemComponents {
     private static Component replace(Component input,NativeItemData item,String fallback,int[] budget,int depth){
         if(depth>32||--budget[0]<0)throw new IllegalArgumentException("Native chat component budget exceeded");MutableComponent result;
         if(input.getContents() instanceof LiteralContents literal){
-            String text=literal.text();if((budget[2]-=text.length())<0)throw new IllegalArgumentException("Native chat text budget exceeded");result=Component.empty();int at=0,next;
-            while((next=text.indexOf("%item",at))>=0){if(++budget[1]>8)throw new IllegalArgumentException("Too many item markers");result.append(Component.literal(text.substring(at,next))).append(name(item,fallback));at=next+5;}result.append(Component.literal(text.substring(at)));
+            String text=literal.text();if((budget[2]-=text.length())<0)throw new IllegalArgumentException("Native chat text budget exceeded");result=Component.empty();int at=0;
+            for(var token:dev.discraft.core.ItemMarkers.spans(text)){int next=token.start();if(++budget[1]>8)throw new IllegalArgumentException("Too many item markers");result.append(Component.literal(text.substring(at,next))).append(name(item,fallback));at=token.end();}result.append(Component.literal(text.substring(at)));
         }else if(input.getContents() instanceof TranslatableContents tr){Object[] args=tr.getArgs().clone();if(args.length>32)throw new IllegalArgumentException("Native chat argument budget exceeded");for(int i=0;i<args.length;i++)if(args[i] instanceof Component c)args[i]=replace(c,item,fallback,budget,depth+1);result=Component.translatableWithFallback(tr.getKey(),tr.getFallback(),args);}
         else result=MutableComponent.create(input.getContents());
         result.setStyle(input.getStyle());for(var sibling:input.getSiblings())result.append(replace(sibling,item,fallback,budget,depth+1));return result;
