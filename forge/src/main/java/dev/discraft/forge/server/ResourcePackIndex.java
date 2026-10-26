@@ -14,12 +14,12 @@ final class ResourcePackIndex {
     static final int MAX_PACKS=8,MAX_FILES=20000,MAX_ENTRY=4*1024*1024,MAX_STORED=64*1024*1024;
     static final long MAX_EXPANDED=128L*1024*1024;
     private final Map<String,byte[]> assets;
-    private final Map<String,Map<String,String>> languages;
+    private final LanguageIndex languages;
     private final String fingerprint;
-    private ResourcePackIndex(Map<String,byte[]> assets,Map<String,Map<String,String>> languages,String fingerprint){
-        this.assets=Map.copyOf(assets);var copy=new HashMap<String,Map<String,String>>();languages.forEach((k,v)->copy.put(k,Map.copyOf(v)));this.languages=Map.copyOf(copy);this.fingerprint=fingerprint;
+    private ResourcePackIndex(Map<String,byte[]> assets,LanguageIndex languages,String fingerprint){
+        this.assets=Map.copyOf(assets);this.languages=languages;this.fingerprint=fingerprint;
     }
-    static ResourcePackIndex empty(){return new ResourcePackIndex(Map.of(),Map.of(),"empty");}
+    static ResourcePackIndex empty(){return new ResourcePackIndex(Map.of(),LanguageIndex.empty(),"empty");}
     /** Listed later means higher priority. Every file, including ignored data, consumes the ZIP budget. */
     static ResourcePackIndex load(Path root,List<String> names)throws IOException{
         try{
@@ -29,12 +29,12 @@ final class ResourcePackIndex {
             // Refuse symbolic links in the entire source path, not just the final ZIP filename.
             Path absolute=root.toAbsolutePath().normalize();
             for(Path p=absolute;p!=null;p=p.getParent())if(Files.isSymbolicLink(p))throw new IOException();
-            var assets=new LinkedHashMap<String,byte[]>();var languages=new HashMap<String,Map<String,String>>();
+            var assets=new LinkedHashMap<String,byte[]>();var languages=new LanguageIndex.Builder();
             var digest=MessageDigest.getInstance("SHA-256");long total=0,stored=0;int files=0;
             for(String name:names){
                 if(!name.matches("[a-zA-Z0-9_-][a-zA-Z0-9_.-]{0,95}\\.zip"))throw new IOException();
                 Path file=absolute.resolve(name);if(!Files.isRegularFile(file,LinkOption.NOFOLLOW_LINKS)||Files.size(file)>MAX_STORED)throw new IOException();
-                boolean metadata=false;var seen=new HashSet<String>();
+                boolean metadata=false;var seen=new HashSet<String>();var languagePaths=new TreeSet<String>();
                 try(var stream=Files.newInputStream(file,LinkOption.NOFOLLOW_LINKS);var zip=new ZipInputStream(stream,StandardCharsets.UTF_8)){
                     for(ZipEntry entry;(entry=zip.getNextEntry())!=null;){
                         if(++files>MAX_FILES)throw new IOException();String path=entry.getName();
@@ -51,21 +51,15 @@ final class ResourcePackIndex {
                         }
                         if(path.endsWith(".json")||path.endsWith(".mcmeta")){
                             var object=json(value);
-                            if(path.contains("/lang/")){
-                                String locale=path.substring(path.lastIndexOf('/')+1,path.length()-5);
-                                var language=languages.computeIfAbsent(locale,k->new HashMap<>());
-                                for(var member:object.entrySet()){
-                                    if(member.getKey().length()>256||!member.getValue().isJsonPrimitive()||!member.getValue().getAsJsonPrimitive().isString())throw new IOException();
-                                    String text=member.getValue().getAsString();if(text.length()>8192||language.size()>=100000&&!language.containsKey(member.getKey()))throw new IOException();language.put(member.getKey(),text);
-                                }
-                            }
+                            if(path.contains("/lang/"))languagePaths.add(path);
                         }else validateImage(value);
                         var previous=assets.put(path,value);stored+=value.length-(previous==null?0:previous.length);if(stored>MAX_STORED)throw new IOException();
                     }
                 }
                 if(!metadata)throw new IOException();
+                for(String path:languagePaths){String locale=path.substring(path.lastIndexOf('/')+1,path.length()-5);languages.json(locale,json(assets.get(path)));}
             }
-            return new ResourcePackIndex(assets,languages,HexFormat.of().formatHex(digest.digest()));
+            return new ResourcePackIndex(assets,languages.build(),HexFormat.of().formatHex(digest.digest()));
         }catch(Exception rejected){throw new IOException("Invalid or unreadable DisCraft resource pack");}
     }
     private static boolean safePath(String path){
@@ -88,9 +82,14 @@ final class ResourcePackIndex {
         }
     }
     String translation(String locale,String key,String fallback){
-        String english=languages.getOrDefault("en_us",Map.of()).getOrDefault(key,fallback);
-        return languages.getOrDefault(locale,Map.of()).getOrDefault(key,english);
+        return languages.translation(locale,key,fallback);
     }
+    ResourcePackIndex withBase(LanguageIndex base)throws IOException{
+        var merged=new LanguageIndex.Builder();merged.add(base);merged.add(languages);
+        return new ResourcePackIndex(assets,merged.build(),base.fingerprint()+":"+fingerprint);
+    }
+    int languageKeys(String locale){return languages.keys(locale);}
+
     byte[] asset(String path){byte[] bytes=assets.get(path);return bytes==null?null:bytes.clone();}
     static String resourcePath(String id,String directory,String suffix)throws IOException{
         if(id.length()>256)throw new IOException("Invalid resource reference");String[] parts=id.split(":",-1);String namespace=parts.length==1?"minecraft":parts[0],path=parts.length==1?parts[0]:parts.length==2?parts[1]:"";
