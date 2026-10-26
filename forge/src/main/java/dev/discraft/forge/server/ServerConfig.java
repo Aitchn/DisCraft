@@ -10,10 +10,13 @@ final class ServerConfig {
     private final boolean enabled;
     private final String channel,token;
     private final Set<String> players;
-    private ServerConfig(boolean enabled,String channel,String token,Set<String> players){
+    private final String locale;
+    private final List<String> packs;
+    private ServerConfig(boolean enabled,String channel,String token,Set<String> players,String locale,List<String> packs){
         this.enabled=enabled;this.channel=channel;this.token=token;this.players=Set.copyOf(players);
+        this.locale=locale;this.packs=List.copyOf(packs);
     }
-    static ServerConfig disabled(){return new ServerConfig(false,"","",Set.of());}
+    static ServerConfig disabled(){return new ServerConfig(false,"","",Set.of(),"en_us",List.of());}
     static ServerConfig load(Path file)throws IOException{
         try {
             if(!Files.exists(file,LinkOption.NOFOLLOW_LINKS))return disabled();
@@ -23,7 +26,7 @@ final class ServerConfig {
             if(bytes.length>MAX_BYTES)throw new IOException();
             var properties=new Properties();
             properties.load(new StringReader(new String(bytes,java.nio.charset.StandardCharsets.UTF_8)));
-            if(!Set.of("enabled","channel","botToken","allowedPlayers").containsAll(properties.stringPropertyNames()))throw new IOException();
+            if(!Set.of("enabled","channel","botToken","allowedPlayers","locale","resourcePacks").containsAll(properties.stringPropertyNames()))throw new IOException();
             String flag=properties.getProperty("enabled","false").trim();
             if(!flag.equals("true")&&!flag.equals("false"))throw new IOException();
             boolean enabled=flag.equals("true");
@@ -36,7 +39,11 @@ final class ServerConfig {
                 players.add(value);
             }
             if(enabled)validateCredentials(channel,token);
-            return new ServerConfig(enabled,channel,token,players);
+            String locale=properties.getProperty("locale","en_us").trim();if(!locale.matches("[a-z]{2,3}_[a-z]{2,3}"))throw new IOException();
+            var packs=new ArrayList<String>();String packList=properties.getProperty("resourcePacks","").trim();
+            if(!packList.isEmpty())for(String entry:packList.split(",",-1)){String name=entry.trim();if(!name.matches("[a-zA-Z0-9_-][a-zA-Z0-9_.-]{0,95}\\.zip")||packs.contains(name))throw new IOException();packs.add(name);}
+            if(packs.size()>ResourcePackIndex.MAX_PACKS)throw new IOException();
+            return new ServerConfig(enabled,channel,token,players,locale,packs);
         }catch(Exception rejected){
             // Properties/UUID/path exceptions can quote input; never preserve their message or cause.
             throw new IOException("Invalid or unreadable DisCraft server configuration");
@@ -49,5 +56,7 @@ final class ServerConfig {
     boolean allows(UUID player){return players.contains("*")||players.contains(player.toString());}
     String channel(){return channel;}
     String token(){return token;}
+    String locale(){return locale;}
+    List<String> resourcePacks(){return packs;}
     @Override public String toString(){return "ServerConfig[redacted]";}
 }

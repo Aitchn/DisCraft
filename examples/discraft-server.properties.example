@@ -5,3 +5,8 @@ channel=
 botToken=
 # Comma-separated authenticated player UUIDs. Empty denies all; * permits all.
 allowedPlayers=
+# Discord-side locale. Imported pack -> imported en_us -> common-server en_us -> key.
+locale=en_us
+# Local ZIP basenames under config/discraft-resourcepacks, low to high priority.
+# Resource format 15 (Minecraft 1.20.1), up to 8 packs. Never a URL or absolute path.
+resourcePacks=

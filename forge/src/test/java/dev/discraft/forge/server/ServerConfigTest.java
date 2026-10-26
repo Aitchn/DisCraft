@@ -38,6 +38,12 @@ final class ServerConfigTest {
             String wire=new String(packet,StandardCharsets.ISO_8859_1);
             check(!wire.contains(TOKEN)&&!wire.contains(CHANNEL),"Packet serialization carries no server configuration");
             Files.writeString(file,valid.replace(player.toString(),"*"));check(ServerConfig.load(file).allows(other),"Explicit wildcard allows authenticated players");
+            Files.writeString(file,valid+"locale=zh_tw\nresourcePacks=base.zip,custom.zip\n");var localized=ServerConfig.load(file);
+            check(localized.locale().equals("zh_tw")&&localized.resourcePacks().equals(List.of("base.zip","custom.zip")),"Resource locale and ordered local pack names come only from server config");
+            rejects(file,valid+"resourcePacks=../private.zip\n");
+            rejects(file,valid+"resourcePacks=https://example.invalid/pack.zip\n");
+            rejects(file,valid+"resourcePacks=base.zip,base.zip\n");
+            rejects(file,valid+"locale=not a locale\n");
             rejects(file,valid.replace(TOKEN,"short"));
             rejects(file,valid.replace(CHANNEL,"bad-channel"));
             rejects(file,valid.replace(player.toString(),TOKEN));
