@@ -40,6 +40,11 @@ final class ServerConfigTest {
             Files.writeString(file,valid.replace(player.toString(),"*"));check(ServerConfig.load(file).allows(other),"Explicit wildcard allows authenticated players");
             Files.writeString(file,valid+"locale=zh_tw\nresourcePacks=base.zip,custom.zip\n");var localized=ServerConfig.load(file);
             check(localized.locale().equals("zh_tw")&&localized.resourcePacks().equals(List.of("base.zip","custom.zip")),"Resource locale and ordered local pack names come only from server config");
+            check(!config.notifies("lifecycle")&&!blank.notifies("join"),"Automatic notifications default off even with a live-enabled configuration");
+            try{ServerConfig.testEvents();throw new AssertionError("Ungated fixture config accepted");}catch(IllegalStateException expected){check(true,"Event fixture config cannot activate outside isolated multiplayer smoke mode");}
+            Files.writeString(file,valid+"notifications=join,quit,death,advancement,lifecycle\n");var notices=ServerConfig.load(file);
+            check(notices.notifies("join")&&notices.notifies("quit")&&notices.notifies("death")&&notices.notifies("advancement")&&notices.notifies("lifecycle"),"All event categories require explicit server-config opt-in");
+            rejects(file,valid+"notifications=all\n");rejects(file,valid+"notifications=join,join\n");
             rejects(file,valid+"resourcePacks=../private.zip\n");
             rejects(file,valid+"resourcePacks=https://example.invalid/pack.zip\n");
             rejects(file,valid+"resourcePacks=base.zip,base.zip\n");

@@ -37,5 +37,5 @@ with zipfile.ZipFile(jar) as archive:
     assert required <= names, f'Missing mod contents: {required - names}'
     assert not any(name.endswith('discraft-server.properties') or 'ServerConfigTest' in name for name in names), 'Private config/test leaked into mod JAR'
     assert 'assets/discraft/textures/gui/smiley.png' not in names, 'Reference screenshot icon leaked into mod JAR'
-    assert not any('/smoke/' in name or 'BridgeProtocolTest' in name or 'GuildEmojiTest' in name or 'LiveCatalog' in name for name in names), 'Test driver leaked into mod JAR'
+    assert not any('/smoke/' in name or 'BridgeProtocolTest' in name or 'GuildEmojiTest' in name or 'LiveCatalog' in name or 'ServerEventAcceptance' in name for name in names), 'Test driver leaked into mod JAR'
 print(f'PASS packaged mod: {jar.name} SHA256={hashlib.sha256(jar.read_bytes()).hexdigest()}')

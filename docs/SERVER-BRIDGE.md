@@ -33,6 +33,40 @@ Official references: [message API](https://docs.discord.com/developers/resources
 - 429 `retry_after` blocks early HTTP retries, conservatively across this adapter. A queue-full, rate-limit, rejected upload or uncertain delivery is reported to the sending client. No network exception body, authorization header or bot token is logged by the adapter.
 - Discord static/animated custom markup is resolved through bounded official CDN paths. Outbound custom emoji must be available to the bot in the configured guild catalog; stale names are canonicalized by stable ID, and unknown/deleted/unavailable/restricted IDs are rejected before sending. Inbound channel emoji still use the bounded decoder. There is no arbitrary external GIF provider.
 
+## Automatic server notifications
+
+`notifications=join,quit,death,advancement,lifecycle` explicitly enables categories;
+the default is empty, including on existing configurations. Nothing automatically
+posts merely because the mod was upgraded or a test server was started. Player
+events follow the existing player allowlist; lifecycle notices are server-wide.
+All notices use the `Server` author prefix and have no selected mentions. Generated
+names/text escape Discord Markdown and neutralize `@` syntax. Overlong generated
+text is bounded. Delivery is best effort on the existing 16-job queue: overload,
+network failure or an uncertain POST can lose a notice; there is no automatic resend.
+
+Join/quit use login/logout events, not dimension changes or respawns; repeated
+login/logout callbacks are suppressed. Death messages use the combat tracker's
+semantic component and wait until END tick, checking the event's final cancellation
+and dead state; a cancelled death or immediate rescue is suppressed. The same dead
+player entity is announced once until respawn/logout (bounded to 128 tracked deaths).
+Advancements use the completion event and recheck progress after the event. They
+respect `announceAdvancements`, display/announce flags and omit recipes and hidden
+advancements. The 4,096-entry per-server-run dedup window sends a completed player/
+advancement pair once while retained; revocation/recompletion inside that window
+does not generate another notice. Pending deaths/advancements cap at 128 each.
+
+The transport is created at `ServerAboutToStartEvent`. Starting and ready notices
+are separate; only `ServerStartedEvent` claims ready. Normal stop admits a final
+notice after earlier work and drains within **one eight-second total deadline**,
+then interrupts remaining jobs and closes transport. Failed startup cleanup does
+not claim ready or normal shutdown. Crash, kill, network loss and power failure
+cannot reliably deliver a closing message; no such promise is made.
+
+Discord localization is independent of game clients: see [local resource packs and
+component fallback](RESOURCE-PACKS.md). The headless dedicated-server acceptance
+uses synthetic Forge events/fake player state and a recording TEST recipient; it
+does not contact Discord or prove human gameplay/live notice delivery.
+
 ## Guild emoji catalog and native picker
 
 The server resolves the guild from the configured text channel and reads its official [guild emoji list](https://docs.discord.com/developers/resources/emoji#list-guild-emojis) and its own bot member roles. It never accepts a guild ID, role policy, CDN URL or credential from the client. Production continues to read credentials only from server config. Metadata retains stable emoji ID, current name, animation, availability and conservative bot-role eligibility; clients receive only safe metadata and restricted/permitted flags, never role IDs or credentials. A role-restricted emoji is enabled only when the bot has an explicitly matching role; no Administrator exception is assumed.

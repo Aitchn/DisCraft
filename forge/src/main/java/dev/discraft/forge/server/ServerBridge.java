@@ -8,6 +8,11 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.network.chat.Component;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.entity.player.PlayerEvent;
+import net.minecraftforge.event.entity.player.AdvancementEvent;
+import net.minecraftforge.event.entity.living.LivingDeathEvent;
+import net.minecraftforge.eventbus.api.EventPriority;
+import net.minecraft.advancements.Advancement;
+import net.minecraft.world.level.GameRules;
 import net.minecraftforge.event.server.*;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
@@ -23,6 +28,14 @@ public final class ServerBridge {
     private static ThreadPoolExecutor worker;
     private static String mode="disabled";
     private static ServerConfig config=ServerConfig.disabled();
+    private static ComponentText text=new ComponentText(ResourcePackIndex.empty(),"en_us");
+    private static boolean running,stopping;
+    private record DeathNotice(ServerPlayer player,LivingDeathEvent event,Component message){}
+    private record AdvancementNotice(ServerPlayer player,Advancement advancement){}
+    private static final Map<UUID,DeathNotice> deaths=new LinkedHashMap<>();
+    private static final Map<String,AdvancementNotice> advancements=new LinkedHashMap<>();
+    private static final Set<String> announcedAdvancements=new LinkedHashSet<>();
+    private static final Map<UUID,ServerPlayer> announcedDeaths=new HashMap<>();
     private static final Map<UUID,Transfer> transfers=new HashMap<>();
     private static final Map<UUID,Peer> peers=new HashMap<>();
     private static final Deque<RelayRecord> history=new ArrayDeque<>();
@@ -45,14 +58,18 @@ public final class ServerBridge {
         if(mode.equals("test"))return true;
         return config.allows(p.getUUID());
     }
-    @SubscribeEvent public static void start(ServerStartedEvent event){
+    @SubscribeEvent public static void starting(ServerAboutToStartEvent event){
         server=event.getServer();mode="disabled";config=ServerConfig.disabled();
+        running=false;stopping=false;text=new ComponentText(ResourcePackIndex.empty(),"en_us");
         worker=new ThreadPoolExecutor(1,1,0,TimeUnit.SECONDS,new ArrayBlockingQueue<>(16),r->{var t=new Thread(r,"DisCraft server bridge");t.setDaemon(true);return t;});
         try {
-            if(Boolean.getBoolean("discraft.multiplayerSmoke")){mode="test";adapter=new TestDiscordAdapter();}
+            if(Boolean.getBoolean("discraft.multiplayerSmoke")){mode="test";adapter=new TestDiscordAdapter();if(Boolean.getBoolean("discraft.serverEventsSmoke"))config=ServerConfig.testEvents();}
             else if(server.isDedicatedServer()&&server.usesAuthentication()){
                 config=ServerConfig.load(net.minecraftforge.fml.loading.FMLPaths.CONFIGDIR.get().resolve("discraft-server.properties"));
-                if(config.enabled()&&Boolean.getBoolean("discraft.discord.enabled")){adapter=DiscordBotAdapter.fromConfig(config);mode="discord";}
+                if(config.enabled()&&Boolean.getBoolean("discraft.discord.enabled")){
+                    var resources=ResourcePackIndex.load(net.minecraftforge.fml.loading.FMLPaths.CONFIGDIR.get().resolve("discraft-resourcepacks"),config.resourcePacks());
+                    text=new ComponentText(resources,config.locale());adapter=DiscordBotAdapter.fromConfig(config);mode="discord";
+                }
                 else adapter=null;
             }else adapter=null;
         } catch(Exception failure){
@@ -60,22 +77,64 @@ public final class ServerBridge {
             mode="disabled";adapter=null;config=ServerConfig.disabled();
         }
         nextPoll=0;nextCatalogBroadcast=0;nextThumbnail=0;guildCatalog=GuildEmojiCatalog.empty(0);polling.set(false);thumbnailBusy.set(false);
+        notice("lifecycle",Component.translatableWithFallback("discraft.notice.starting","Server is starting"));
+    }
+    @SubscribeEvent public static void start(ServerStartedEvent event){
+        if(server!=event.getServer()||stopping)return;running=true;
+        notice("lifecycle",Component.translatableWithFallback("discraft.notice.ready","Server is ready"));
     }
     @SubscribeEvent public static void stop(ServerStoppingEvent event){
+        if(server!=event.getServer()||stopping)return;stopping=true;
         peers.values().forEach(p->p.alive.set(false));peers.clear();transfers.clear();history.clear();requests.clear();actors.clear();
-        if(adapter!=null)adapter.close();if(worker!=null)worker.shutdownNow();adapter=null;server=null;mode="disabled";config=ServerConfig.disabled();guildCatalog=GuildEmojiCatalog.empty(0);
+        Runnable finalNotice=running?noticeTask("lifecycle",Component.translatableWithFallback("discraft.notice.stopping","Server is shutting down normally")):null;
+        NoticeDelivery.drain(worker,finalNotice,TimeUnit.SECONDS.toNanos(8));
+        if(adapter!=null)adapter.close();worker=null;adapter=null;server=null;running=false;mode="disabled";config=ServerConfig.disabled();guildCatalog=GuildEmojiCatalog.empty(0);deaths.clear();advancements.clear();announcedAdvancements.clear();announcedDeaths.clear();text=new ComponentText(ResourcePackIndex.empty(),"en_us");
     }
+    @SubscribeEvent public static void stopped(ServerStoppedEvent event){
+        // Startup failure can skip ServerStoppingEvent; release transport without claiming ready/normal shutdown.
+        if(server==event.getServer()){
+            if(worker!=null)worker.shutdownNow();if(adapter!=null)adapter.close();worker=null;adapter=null;server=null;running=false;mode="disabled";config=ServerConfig.disabled();
+            deaths.clear();advancements.clear();announcedAdvancements.clear();announcedDeaths.clear();text=new ComponentText(ResourcePackIndex.empty(),"en_us");
+        }
+    }
+    private static Runnable noticeTask(String kind,Component message){
+        if(adapter==null||!config.notifies(kind))return null;
+        try{return NoticeDelivery.task(adapter,NoticeDelivery.record(text.render(message)));}catch(RuntimeException oversized){return null;}
+    }
+    private static void notice(String kind,Component message){var task=noticeTask(kind,message);if(task!=null&&!stopping)NoticeDelivery.submit(worker,task);}
+    @SubscribeEvent(priority=EventPriority.LOWEST) public static void death(LivingDeathEvent event){
+        if(!running||stopping||!config.notifies("death")||event.isCanceled()||!(event.getEntity() instanceof ServerPlayer p)||!allowed(p)||deaths.size()>=128)return;
+        // The event finishes before END tick; a later handler may still cancel or rescue the player.
+        deaths.putIfAbsent(p.getUUID(),new DeathNotice(p,event,p.getCombatTracker().getDeathMessage().copy()));
+    }
+    @SubscribeEvent public static void advancement(AdvancementEvent.AdvancementEarnEvent event){
+        if(!running||stopping||!config.notifies("advancement")||!(event.getEntity() instanceof ServerPlayer p)||!allowed(p)||advancements.size()>=128)return;
+        var advancement=event.getAdvancement();advancements.putIfAbsent(p.getUUID()+":"+advancement.getId(),new AdvancementNotice(p,advancement));
+    }
+    @SubscribeEvent public static void respawn(PlayerEvent.PlayerRespawnEvent event){deaths.remove(event.getEntity().getUUID());announcedDeaths.remove(event.getEntity().getUUID());}
     @SubscribeEvent public static void login(PlayerEvent.PlayerLoggedInEvent event){
         if(!(event.getEntity() instanceof ServerPlayer p))return;
-        peers.put(p.getUUID(),new Peer());var actor=new ActorRef(ActorRef.Kind.MINECRAFT,p.getUUID().toString(),p.getGameProfile().getName());remember(actor);
+        boolean first=peers.putIfAbsent(p.getUUID(),new Peer())==null;var actor=new ActorRef(ActorRef.Kind.MINECRAFT,p.getUUID().toString(),p.getGameProfile().getName());remember(actor);
         BridgeNetwork.notice(p,STATUS,adapter!=null&&allowed(p),"SERVER "+mode.toUpperCase(Locale.ROOT)+(allowed(p)?"":" (not authorized)"));
         if(allowed(p)){BridgeNetwork.catalog(p,guildCatalog);for(var record:history)deliver(p,record);}
+        if(first&&running&&allowed(p))notice("join",Component.translatable("multiplayer.player.joined",p.getDisplayName().copy()));
     }
     @SubscribeEvent public static void logout(PlayerEvent.PlayerLoggedOutEvent event){
         var peer=peers.remove(event.getEntity().getUUID());if(peer!=null)peer.alive.set(false);transfers.remove(event.getEntity().getUUID());BridgeNetwork.forget(event.getEntity().getUUID());
+        deaths.remove(event.getEntity().getUUID());announcedDeaths.remove(event.getEntity().getUUID());
+        if(peer!=null&&running&&!stopping&&event.getEntity() instanceof ServerPlayer p&&allowed(p))notice("quit",Component.translatable("multiplayer.player.left",p.getDisplayName().copy()));
     }
     @SubscribeEvent public static void tick(TickEvent.ServerTickEvent event){
-        if(event.phase!=TickEvent.Phase.END||server==null)return;
+        if(event.phase!=TickEvent.Phase.END||server==null||!running||stopping)return;
+        for(var death:deaths.values())if(!death.event().isCanceled()&&death.player().isDeadOrDying()&&announcedDeaths.get(death.player().getUUID())!=death.player()){
+            if(announcedDeaths.size()<128||announcedDeaths.containsKey(death.player().getUUID())){announcedDeaths.put(death.player().getUUID(),death.player());notice("death",death.message());}
+        }deaths.clear();
+        for(var entry:advancements.entrySet()){
+            var pending=entry.getValue();var p=pending.player();var advancement=pending.advancement();var display=advancement.getDisplay();
+            if(display==null||!display.shouldAnnounceChat()||display.isHidden()||advancement.getId().getPath().startsWith("recipes/")||!p.level().getGameRules().getBoolean(GameRules.RULE_ANNOUNCE_ADVANCEMENTS)||!p.getAdvancements().getOrStartProgress(advancement).isDone()||!announcedAdvancements.add(entry.getKey()))continue;
+            if(announcedAdvancements.size()>4096)announcedAdvancements.remove(announcedAdvancements.iterator().next());
+            notice("advancement",Component.translatable("chat.type.advancement."+display.getFrame().getName(),p.getDisplayName().copy(),advancement.getChatComponent().copy()));
+        }advancements.clear();
         transfers.entrySet().removeIf(e->{if(System.nanoTime()-e.getValue().started<15_000_000_000L)return false;var p=server.getPlayerList().getPlayer(e.getKey());if(p!=null)BridgeNetwork.notice(p,e.getValue().id,false,"Upload expired");return true;});
         if(adapter==null||System.nanoTime()<nextPoll||!polling.compareAndSet(false,true))return;
         nextPoll=System.nanoTime()+2_000_000_000L;

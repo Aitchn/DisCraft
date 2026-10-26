@@ -64,7 +64,7 @@ public final class BridgeNetwork {
         c.enqueueWork(()->{try{ServerBridge.upload(player,p);}finally{QUEUED.decrementAndGet();}});
     }
     private static void client(Supplier<NetworkEvent.Context> supplied,Runnable work){var c=supplied.get();c.setPacketHandled(true);c.enqueueWork(()->DistExecutor.unsafeRunWhenOn(Dist.CLIENT,()->()->work.run()));}
-    public static boolean present(ServerPlayer p){return CHANNEL.isRemotePresent(p.connection.connection);}
+    public static boolean present(ServerPlayer p){return p.connection!=null&&p.connection.connection.channel()!=null&&CHANNEL.isRemotePresent(p.connection.connection);}
     public static void notice(ServerPlayer p,UUID id,boolean accepted,String text){if(present(p))CHANNEL.send(PacketDistributor.PLAYER.with(()->p),new Notice(id,accepted,text));}
     public static void deliver(ServerPlayer p,RelayRecord record)throws java.io.IOException{
         byte[] b=record.encode();for(int at=0;at<b.length;at+=CHUNK)CHANNEL.send(PacketDistributor.PLAYER.with(()->p),new Download(record.id(),b.length,at,Arrays.copyOfRange(b,at,Math.min(b.length,at+CHUNK))));

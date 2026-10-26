@@ -59,6 +59,18 @@ jobs:
         run: ./gradlew -Pforge :forge:build :forge:reobfJar --console=plain
       - name: Check packaged mod contents
         run: python3 scripts/check-mod-jar.py
+      - name: Headless lifecycle and synthetic Forge event acceptance
+        run: |
+          python3 scripts/verify-server-events.py
+          python3 scripts/verify-server-events.py --startup-failure
+      - name: Upload headless event evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: server-events-${{ github.sha }}
+          path: build/evidence/server-events/
+          if-no-files-found: warn
+          retention-days: 14
       - name: Upload mod JAR
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

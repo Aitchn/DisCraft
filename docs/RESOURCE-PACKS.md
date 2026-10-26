@@ -4,8 +4,8 @@ The server-only index reads local ZIP files from `config/discraft-resourcepacks`
 `resourcePacks=base.zip,custom.zip` lists low to high priority; `locale=zh_tw`
 selects Discord text independently of connected clients. Both settings live in
 `discraft-server.properties`; there is no environment source or remote download.
-Restart is required. The foundation is internal until the event/item integration
-uses it; it does not change ordinary Minecraft chat or load client rendering code.
+Restart is required. Automatic event notifications consume this index; it does not
+change ordinary Minecraft chat or load client rendering code.
 
 This stage accepts Minecraft 1.20.1 resource format **15**. Language JSON is merged
 per key across namespaces and packs; later definitions win. Model, texture and

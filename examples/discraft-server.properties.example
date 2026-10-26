@@ -10,3 +10,6 @@ locale=en_us
 # Local ZIP basenames under config/discraft-resourcepacks, low to high priority.
 # Resource format 15 (Minecraft 1.20.1), up to 8 packs. Never a URL or absolute path.
 resourcePacks=
+# Explicit opt-in only; blank sends no automatic event notifications.
+# Comma-separated: join,quit,death,advancement,lifecycle
+notifications=
