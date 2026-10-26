@@ -106,6 +106,9 @@ public final class BridgeProtocolTest {
             check(plainPayload.getAsJsonObject("allowed_mentions").getAsJsonArray("users").isEmpty(),"Typed mention-like display text does not create real Discord pings");
             var spoiler=Attachment.of("SPOILER_image.png",Attachment.fromResource("landscape.png").bytes());adapter.send(RelayRecord.draft(UUID.randomUUID(),"spoiler",spoiler));String spoilerMultipart=new String(posts.get(posts.size()-1),StandardCharsets.ISO_8859_1);
             check(spoilerMultipart.contains("SPOILER_image.png")&&spoilerMultipart.contains("\"is_spoiler\":true"),"Multipart uses spoiler filename and official is_spoiler attachment metadata");
+            adapter.send(new RelayRecord(UUID.randomUUID(),"Aitchn","你好",List.of(),Map.of(),Map.of()));
+            var namedPayload=JsonParser.parseString(new String(posts.get(posts.size()-1),StandardCharsets.UTF_8)).getAsJsonObject();
+            check(namedPayload.get("content").getAsString().equals("<Aitchn> 你好"),"Discord text uses angle-bracket player name and preserves Unicode");
             var convert=DiscordBotAdapter.class.getDeclaredMethod("convert",JsonObject.class);convert.setAccessible(true);
             for(String flag:List.of("is_spoiler","flags")){
                 var message=new JsonObject();message.addProperty("id","8234567890123456");message.addProperty("content","spoiler");var source=new JsonObject();source.addProperty("id",target.id());source.addProperty("username","Human");message.add("author",source);

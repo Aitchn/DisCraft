@@ -85,7 +85,7 @@ public final class DiscordBotAdapter implements DiscordAdapter {
             else text.append(mention.target().label());at=mention.end();
         }
         text.append(expandEmoji(message.text().substring(at),message.catalog()));mentioned.forEach(users::add);
-        payload.addProperty("content","[Minecraft "+message.author()+"] "+text);
+        payload.addProperty("content","<"+message.author()+"> "+text);
         payload.addProperty("tts",false);payload.addProperty("nonce",message.id().toString().replace("-","").substring(0,24));payload.addProperty("enforce_nonce",true);
         var mentions=new JsonObject();mentions.add("parse",new JsonArray());mentions.add("users",users);payload.add("allowed_mentions",mentions);
         if(message.attachments().isEmpty())return receipt(request("POST","channels/"+channel+"/messages",payload.toString().getBytes(StandardCharsets.UTF_8),"application/json"));
