@@ -6,17 +6,65 @@ authenticated sender's **main hand on the game thread** when upload finishes;
 the offhand and client-supplied text cannot select another stack. Workers receive
 only an immutable appearance whitelist: registry ID, localized/custom name, root
 font ID, count, CustomModelData, damage fraction/flag, handedness, known leather or
-potion tint and enchanted flag. No full NBT, lore, book pages, container contents,
-attributes or hover/click payloads are transmitted or retained in the snapshot.
+potion tint and enchanted flag. A separate native-only tooltip DTO contains an
+allowlist of safe item detail. No original stack/NBT, book pages, container contents
+or arbitrary hover/click actions are retained or transmitted.
 
 Up to eight markers outside selected mention labels expand to `[name ×count]` and
-share one 288×256 PNG. Empty hand expands to `[Empty hand]` without a fabricated
+share one 288×256 PNG **on Discord**. Minecraft displays a styled inline name with
+the original native item tooltip; it does not automatically expand that PNG or
+open another Screen. A plain native T message containing `%item` explicitly routes
+to the bridge when available; ordinary text remains vanilla chat. A server with
+item display disabled rejects explicit markers. Empty hand expands to `[Empty hand]` without a fabricated
 image. A marker within a selected actor label stays literal. Combining an item
 display with an uploaded attachment is rejected; expansion over the existing text
 budget is rejected. Native game text keeps the actual name; only generated Discord
 literals escape Markdown, neutralize `@` and prevent emoji-alias substitution.
 Existing explicitly selected mentions keep their exact IDs with separately remapped
 offsets. User message formatting and the `<Aitchn> text` prefix remain unchanged.
+
+## Minecraft native components and hover
+
+The item label uses native component styling and a native `SHOW_ITEM` hover,
+not a screenshot or separate viewer. Server rarity supplies the base color;
+explicit custom name color/format/font and translation components retain their
+meaning and inherit normally. Counts above one appear inline. Wrapping, tooltip
+positioning, scaling and scrolling remain Minecraft's own ChatComponent/ChatScreen
+behavior. Item names carry no click action. The existing author mention click and
+ordinary image behavior remain separate.
+
+Protocol **4** adds up to eight server-authoritative UTF-16 item ranges. Client
+drafts containing any item metadata are rejected; main-hand capture happens only
+on the server game thread. Each immutable native DTO is at most 8,192 characters
+of canonical, type-checked NBT, with depth at most sixteen. It permits only safe
+display name/lore/color, damage/CMD, capped enchantment lists, capped numeric
+attribute modifiers, unbreakable/hide flags and a base potion identifier. Lore
+caps at eight safe component strings of 512 characters each; name JSON caps at
+2,048. Optional detail is dropped to fit the total limit. Name/lore components
+allow bounded literals, translation keys/arguments/siblings and formatting only;
+selectors, scores, NBT queries, click/insertion and nested hover actions are absent.
+Attribute internal names are replaced by a fixed tooltip label. No book body,
+container inventory, arbitrary mod NBT or server configuration enters the DTO.
+The Discord record carries neither this DTO nor Minecraft-only hover semantics;
+Discord still receives its rendered item PNG and safe text. This does not claim
+Discord supports arbitrary custom text hover.
+
+Vanilla advancement announcements already have the requested inline component,
+frame color and title/description hover. DisCraft does not re-add or flatten them
+on the Minecraft side. Enabling Discord advancement notices creates only the
+separate Discord delivery. Task/goal/challenge styles remain vanilla; no green
+color is forced by DisCraft. Native component reflow rewrites only owned bridge
+messages and retains other vanilla messages.
+
+`verify-native-hover.py` uses a real isolated Forge server/client, physical T,
+Enter, hover and author clicks. It checks wrapped gold custom item text, native
+item detail, original green task and purple challenge hover, move-out dismissal,
+the same ChatScreen throughout hovering/clicking, scale two/three and scrolling,
+spoofed client metadata rejection, retained normal images and no duplicated
+advancement announcements while Discord notices are enabled. Its recording TEST
+recipient verifies two advancement notices and two PNG-bearing sends; there is
+no real Discord send. Required client mods/resources still determine native
+mod-specific tooltip behavior; the allowlist is not a complete arbitrary-NBT mirror.
 
 ## Resource data and rendering
 

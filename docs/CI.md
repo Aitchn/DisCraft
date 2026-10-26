@@ -5,7 +5,7 @@ The workflow uses Ubuntu 24.04, Temurin JDK17, Gradle 8.8 and SHA-pinned Actions
 | Job | Checks | Artifact |
 | --- | --- | --- |
 | Core tests | `:core:build`, including 49 executable behavior assertions | Core output/reports |
-| Forge build/reobfuscation | `:forge:build :forge:reobfJar`, including 30 fake server-config/redaction checks, 33 headless resource/localization checks, 32 headless item/model/font checks, nine bounded notice-delivery checks, 32 synthetic guild catalog/thumbnail checks and 65 local REST/wire protocol checks; validate packaged client/server/core/media classes and exclude test drivers | Installable mod JAR |
+| Forge build/reobfuscation | `:forge:build :forge:reobfJar`, including 30 fake server-config/redaction checks, 33 headless resource/localization checks, 32 headless item/model/font checks, 16 native item wire/safety checks, nine bounded notice-delivery checks, 32 synthetic guild catalog/thumbnail checks and 65 local REST/wire protocol checks; validate packaged client/server/core/media classes and exclude test drivers | Installable mod JAR |
 | Minecraft client acceptance | Real Xvfb/Mesa client, 36 original mock-preview checks including latch-controlled Clear/send-edit races | Native screenshots and result summary |
 | Dedicated server and two clients | Real server and Alice/Bob clients, native input and protocol checks through actual game packets, including native chat media, vanilla Enter, ordinary chat, a real slash command, independent fixture catalog/thumbnail synchronization, picker selection and rename/delete/permission/reset invalidation | Server/client logs, screenshots and separate result summaries |
 

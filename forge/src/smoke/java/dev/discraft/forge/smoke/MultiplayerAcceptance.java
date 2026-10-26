@@ -35,7 +35,7 @@ public final class MultiplayerAcceptance {
     private static boolean done;
     private static long lastDiagnostic;
     @SubscribeEvent public static void tick(TickEvent.ClientTickEvent event){
-        if(Boolean.getBoolean("discraft.uiTextSmoke")||Boolean.getBoolean("discraft.vanillaItemsSmoke")||!Boolean.getBoolean("discraft.multiplayerSmoke")||done||event.phase!=TickEvent.Phase.END)return;
+        if(Boolean.getBoolean("discraft.uiTextSmoke")||Boolean.getBoolean("discraft.vanillaItemsSmoke")||Boolean.getBoolean("discraft.nativeHoverSmoke")||!Boolean.getBoolean("discraft.multiplayerSmoke")||done||event.phase!=TickEvent.Phase.END)return;
         try{
             if(System.nanoTime()-lastDiagnostic>5_000_000_000L){
                 lastDiagnostic=System.nanoTime();
