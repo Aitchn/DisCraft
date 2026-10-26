@@ -109,7 +109,8 @@ retain color, font, bold/italic, underline and strike styles. Obfuscated glyphs 
 non-revealing deterministic placeholder. Language selection, per-key merges and fallback
 follow the configured [resource-pack stack](RESOURCE-PACKS.md). Supported bitmap/space/
 reference fonts use their imported glyphs. Otherwise bundled OFL Noto CJK TC is used,
-with a visible font-fallback footer; unsupported glyphs use `?` plus a visible Unicode
+without a font-source footer or extra padding. Fallback use stays in internal result/
+acceptance metadata; unsupported glyphs still use `?` plus a visible Unicode
 codepoint notice, never an implicit system font. The two current examples use cached
 vanilla en_us/zh_tw text and bundled CJK glyphs, not imported complete vanilla fonts.
 

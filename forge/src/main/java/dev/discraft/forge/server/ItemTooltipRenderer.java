@@ -36,9 +36,9 @@ final class ItemTooltipRenderer {
                 }rows.add(List.copyOf(row));if(rows.size()>MAX_ROWS)throw new IllegalArgumentException("Tooltip needs too many rows");
             }
             if(rows.isEmpty())throw new IllegalArgumentException("Empty tooltip");
-            // A visible font-source/missing-glyph notice is part of the measured layout, never overlaid on content.
+            // Font fallback remains internal metadata; only actual missing glyphs need a visible notice.
             contentRows=rows.size();
-            if(fallback){var run=new ItemTooltip.Run("",0xaaaaaa,"minecraft:default",false,false,false,false,false);String notice="Font fallback: bundled Noto CJK TC";if(!missing.isEmpty()){if(missing.size()>16)throw new IllegalArgumentException("Tooltip missing glyph budget exceeded");notice+=" / Missing: "+String.join(", ",missing);}
+            if(!missing.isEmpty()){var run=new ItemTooltip.Run("",0xaaaaaa,"minecraft:default",false,false,false,false,false);if(missing.size()>16)throw new IllegalArgumentException("Tooltip missing glyph budget exceeded");String notice="Missing glyphs: "+String.join(", ",missing);
                 var row=new ArrayList<Cell>();int width=0;for(int cp:notice.codePoints().toArray()){int advance=font.measure(g,cp,run,12);if(width+advance>MAX_WIDTH-padding*2){rows.add(List.copyOf(row));row.clear();width=0;}row.add(new Cell(cp,run,advance));width+=advance;}rows.add(List.copyOf(row));}
         }finally{g.dispose();}
         int width=Math.max(64,rows.stream().mapToInt(r->r.stream().mapToInt(Cell::width).sum()).max().orElse(0)+padding*2),height=padding*2+rows.size()*lineHeight+4;
@@ -46,7 +46,7 @@ final class ItemTooltipRenderer {
         var image=new BufferedImage(width,height,BufferedImage.TYPE_INT_ARGB);g=image.createGraphics();
         try{
             g.setColor(new Color(16,0,16));g.fillRect(1,1,width-2,height-2);g.setColor(new Color(36,0,56));g.drawRect(0,0,width-1,height-1);g.setPaint(new GradientPaint(0,1,new Color(92,32,148),0,height-2,new Color(42,11,72)));g.drawRect(2,2,width-5,height-5);
-            for(int y=0;y<rows.size();y++){int x=padding,baseline=padding+18+y*lineHeight+(y>0?4:0);boolean notice=fallback&&y>=contentRows;for(var cell:rows.get(y)){deadline(started);
+            for(int y=0;y<rows.size();y++){int x=padding,baseline=padding+18+y*lineHeight+(y>0?4:0);boolean notice=y>=contentRows;for(var cell:rows.get(y)){deadline(started);
                     int drawSize=notice?12:18;g.setColor(new Color((cell.run().color()&0xfcfcfc)>>2));font.glyph(g,cell.cp(),cell.run(),drawSize,x+1,baseline+1);g.setColor(new Color(cell.run().color()));font.glyph(g,cell.cp(),cell.run(),drawSize,x,baseline);x+=cell.width();}
             }
         }finally{g.dispose();}
