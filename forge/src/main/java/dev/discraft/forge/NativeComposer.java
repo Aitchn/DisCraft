@@ -76,21 +76,25 @@ public final class NativeComposer {
     @SubscribeEvent public static void editsFinished(net.minecraftforge.event.TickEvent.ClientTickEvent event){if(event.phase==net.minecraftforge.event.TickEvent.Phase.END)DraftMentions.endEdit();}
     @SubscribeEvent public static void keys(ScreenEvent.KeyPressed.Pre event){
         if(!(event.getScreen() instanceof ChatScreen screen)||(event.getKeyCode()!=GLFW.GLFW_KEY_ENTER&&event.getKeyCode()!=GLFW.GLFW_KEY_KP_ENTER))return;
-        String text=input(screen).getValue();if(text.startsWith("/")||(!bridge&&attachment==null&&!loading&&DraftMentions.snapshot(text).isEmpty()))return;
+        String text=input(screen).getValue();String normalized=screen.normalizeChatMessage(text);if(normalized.startsWith("/")||(!bridge&&attachment==null&&!loading&&DraftMentions.snapshot(text).isEmpty()))return;
         if(sending||loading){event.setCanceled(true);return;} // Preserve the draft until the selected decode/ACK finishes.
-        if(text.isBlank()&&attachment!=null){
+        if(normalized.isEmpty()&&attachment!=null){
             // Vanilla rejects empty text before ClientChatEvent; an attachment-only submission needs its own path.
-            event.setCanceled(true);if(send(""))MC.setScreen(null);
+            event.setCanceled(true);if(send("",java.util.List.of()))MC.setScreen(null);
         }
     }
     @SubscribeEvent public static void chat(ClientChatEvent event){
-        if(event.getMessage().startsWith("/")||(!bridge&&attachment==null&&!loading&&DraftMentions.snapshot(event.getMessage()).isEmpty()))return;
-        event.setCanceled(true);send(event.getMessage());
+        if(event.getMessage().startsWith("/"))return;
+        String raw=MC.screen instanceof ChatScreen screen?input(screen).getValue():event.getMessage();var selected=DraftMentions.snapshot(raw);
+        if(!bridge&&attachment==null&&!loading&&selected.isEmpty())return;
+        // Capture routing from the actual raw selection before vanilla's known whitespace transform.
+        var mapped=dev.discraft.forge.bridge.MentionDraft.normalized(raw,selected,event.getMessage());
+        event.setCanceled(true);send(event.getMessage(),mapped);
     }
-    private static boolean send(String text){
+    private static boolean send(String text,java.util.List<dev.discraft.forge.bridge.Mention> mentions){
         if(sending||loading){notice("Attachment validation or a bridge acknowledgement is still pending.");return false;}
         if(!ClientBridge.available()){notice("Server bridge unavailable. Switch To: Minecraft for ordinary chat.");return false;}
-        Attachment file=attachment;boolean hidden=spoiler;var mentions=DraftMentions.snapshot(text);long connection=epoch,version=revision;sending=true;
+        Attachment file=attachment;boolean hidden=spoiler;long connection=epoch,version=revision;sending=true;
         try{worker.execute(()->{
             try{Attachment submitted=file;if(hidden&&file!=null&&!file.name().startsWith("SPOILER_")){String name=file.name();if(name.length()>112)name=name.substring(0,112);submitted=Attachment.of("SPOILER_"+name,file.bytes());}ClientBridge.send(text,submitted,mentions);MC.execute(()->{if(epoch==connection&&revision==version&&attachment==file){attachment=null;revision++;}});}
             catch(Exception failed){MC.execute(()->{if(epoch==connection)notice("Bridge send rejected or delivery uncertain; no automatic retry. Draft remains in vanilla input history.");});}

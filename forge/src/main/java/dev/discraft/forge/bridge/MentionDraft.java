@@ -20,5 +20,15 @@ public final class MentionDraft {
         int end=start+actor.label().length();if(start<0||end>text.length()||!text.substring(start,end).equals(actor.label()))return;
         tokens.removeIf(t->t.start()<end&&t.end()>start);if(tokens.size()<8){tokens.add(new Mention(start,end,actor));tokens.sort(Comparator.comparingInt(Mention::start));}
     }
+    /** Deterministic 1.20.1 trim/normalizeSpace/256-char transform, verified against the actual event. */
+    public static List<Mention> normalized(String raw,List<Mention> selected,String actual){
+        String full=org.apache.commons.lang3.StringUtils.normalizeSpace(raw.trim());String expected=full.substring(0,Math.min(256,full.length()));if(!expected.equals(actual))return List.of();
+        var result=new ArrayList<Mention>();for(var token:selected){
+            if(token.end()>raw.length())continue;
+            int start=org.apache.commons.lang3.StringUtils.normalizeSpace(raw.substring(0,token.start())+"\ue000").length()-1;
+            int end=org.apache.commons.lang3.StringUtils.normalizeSpace(raw.substring(0,token.end())+"\ue000").length()-1;
+            if(start>=0&&end>start&&end<=actual.length()&&actual.substring(start,end).equals(token.target().label()))result.add(new Mention(start,end,token.target()));
+        }return List.copyOf(result);
+    }
     public List<Mention> snapshot(String value){synchronize(value);return List.copyOf(tokens);}
 }

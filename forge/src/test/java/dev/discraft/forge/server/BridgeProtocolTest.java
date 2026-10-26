@@ -30,8 +30,16 @@ public final class BridgeProtocolTest {
         draft.invalidate(2,3);draft.edit("x"+one.substring(0,1)+one.substring(2),2,3);check(draft.snapshot("x"+one.substring(0,1)+one.substring(2)).isEmpty(),"Deletion inside a mention invalidates that selection");
         draft.clear();draft.synchronize(one);draft.select(0,first);draft.synchronize(both);check(draft.snapshot(both).isEmpty(),"Unknown ambiguous text changes conservatively discard identities rather than guessing a diff");
     }
+    private static void normalizedMentions(){
+        var first=new ActorRef(ActorRef.Kind.DISCORD,"2234567890123456","Same");var second=new ActorRef(ActorRef.Kind.DISCORD,"3234567890123456","Same");String label=first.label();
+        var mapped=MentionDraft.normalized(label+" ",List.of(new Mention(0,label.length(),first)),label);check(mapped.size()==1&&mapped.get(0).target().equals(first)&&mapped.get(0).start()==0,"Vanilla trailing-space normalization preserves Enter-only selected mention");
+        String raw="  prefix   "+label+" ";int at=raw.indexOf(label);mapped=MentionDraft.normalized(raw,List.of(new Mention(at,at+label.length(),first)),"prefix "+label);check(mapped.size()==1&&mapped.get(0).start()==7&&mapped.get(0).target().equals(first),"Leading and doubled spaces before a mention map its exact selected ID");
+        raw=" "+label+"   "+label+" ";mapped=MentionDraft.normalized(raw,List.of(new Mention(1,1+label.length(),first),new Mention(raw.lastIndexOf(label),raw.lastIndexOf(label)+label.length(),second)),label+" "+label);check(mapped.size()==2&&mapped.get(0).target().equals(first)&&mapped.get(1).target().equals(second)&&mapped.get(1).start()==label.length()+1,"Whitespace mapping retains distinct IDs for same-display mentions");
+        check(MentionDraft.normalized(label+" ",List.of(),label).isEmpty(),"Normalized typed lookalike text never gains a mention binding");check(MentionDraft.normalized(label+" ",List.of(new Mention(0,label.length(),first)),"changed "+label).isEmpty(),"Unknown message transforms withdraw mention bindings");
+        raw="x".repeat(256)+label;mapped=MentionDraft.normalized(raw,List.of(new Mention(256,raw.length(),first)),"x".repeat(256));check(mapped.isEmpty(),"Vanilla truncation withdraws a mention outside the retained text");
+    }
     public static void main(String[] args)throws Exception{
-        mentionEdits();
+        mentionEdits();normalizedMentions();
         var id=UUID.randomUUID();var gif=Attachment.fromResource("dance.gif");
         var original=RelayRecord.draft(id,"Unicode 世界 👋",gif);var decoded=RelayRecord.decode(original.encode());
         check(decoded.id().equals(id)&&decoded.text().equals(original.text())&&decoded.attachments().get(0).media().frames().size()>1,"Wire roundtrip preserves Unicode and real GIF frames");

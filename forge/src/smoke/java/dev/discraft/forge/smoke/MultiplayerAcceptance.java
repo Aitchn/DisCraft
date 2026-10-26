@@ -53,7 +53,7 @@ public final class MultiplayerAcceptance {
                 // Login packets can enable the bridge before vanilla finishes its terrain screen.
                 // Opening our screen then lets vanilla replace it, stranding the stage-2 gate.
                 if(MC.player==null||MC.level==null||!ClientBridge.available()||MC.screen!=null||MC.getOverlay()!=null)return;
-                check(true,"Vanilla join presentation completed before opening bridge");
+                check(true,(stage==1?"Initial":"Reconnect")+" vanilla join presentation completed before opening bridge");
                 MC.setScreen(new DisCraftScreen(null));stage=stage==1?2:13;return;
             }
             if(stage==11){if(MC.getConnection()!=null)return;check(ClientBridge.snapshot().isEmpty(),"Disconnect clears old server history");connect();stage=12;return;}
