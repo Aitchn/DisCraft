@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Isolated loopback/offline acceptance; never configures or contacts a real Discord bot."""
 from pathlib import Path
+from multiplayer_startup import wait_for_graphics_ready
 import json, os, signal, socket, subprocess, time, zipfile, platform, fcntl
 
 ROOT=Path(__file__).resolve().parents[1]
@@ -95,7 +96,11 @@ try:
         assert server.poll() is None,'Dedicated server exited; see server.log'
         assert time.monotonic()<deadline,'Dedicated server startup timeout'
         time.sleep(.25)
-    alice=launch('Alice');bob=launch('Bob');deadline=time.monotonic()+250
+    alice=launch('Alice');wait_for_graphics_ready(alice,OUT/'Alice.log','Alice')
+    print('Alice: graphics ready before launching Bob',flush=True)
+    bob=launch('Bob');wait_for_graphics_ready(bob,OUT/'Bob.log','Bob')
+    print('Bob: graphics ready; both real clients now running',flush=True)
+    deadline=time.monotonic()+250
     last_states={}
     while alice.poll() is None or bob.poll() is None:
         for role,p in (('Alice',alice),('Bob',bob)):

@@ -60,3 +60,12 @@ CI and compare horizontal/single-axis cases directly with pinned 1.20.1 metadata
 The headless item acceptance also checks real native tooltip semantics and bounded adaptive Discord PNGs via the production loopback adapter. Tooltip PNGs, semantic-line metadata and their result summary are included in server-events evidence. It never uses live Discord credentials or emits real notifications.
 
 Headless event acceptance also verifies actual installed Forge CN/TW resources, native DisCraft English reuse and partial operator overrides without a client or DISPLAY. The optional --language-pack argument is local-only evidence; user packs remain outside uploaded artifact roots. Synthetic tests cover deterministic source/namespace order and bounded language growth.
+
+The real multiplayer controller waits for Alice's successful Forge GL-context marker
+before launching Bob, then waits for Bob's context. It keeps both game clients running
+for all existing multiplayer assertions; the game-side deadlines and check counts are
+unchanged. This avoids overlapping cold software-GL initialization observed in failed
+CI artifacts. Explicit Forge early-display/main-thread failures and premature exits
+fail immediately instead of waiting at a console dialog until the integration deadline.
+The controller never automatically restarts a failed client. Startup gates have bounded
+process/log IPC regressions and a 120-second readiness deadline per client.

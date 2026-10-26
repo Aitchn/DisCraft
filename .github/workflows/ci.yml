@@ -132,6 +132,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y xvfb xauth libgl1-mesa-dri libglx-mesa0 libopenal1
+      - name: Check isolated client startup gates
+        run: python3 scripts/test-multiplayer-startup.py
       - name: Run isolated server and two real clients
         run: timeout --kill-after=45s 1500 xvfb-run -a -s '-screen 0 1280x900x24 -nolisten tcp' python3 scripts/verify-multiplayer.py
       - name: Run native UI text, glyph metrics and resource reload checks
