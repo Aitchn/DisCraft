@@ -89,3 +89,35 @@ not vanilla artwork fidelity. Test source/fixtures are excluded from the mod JAR
 No GPL renderer or addon code/dependency was copied or linked; no project license
 was changed. Architecture was informed by the user-supplied InteractiveChat addon
 research. Standard model concepts follow the official [Forge model documentation](https://docs.minecraftforge.net/en/1.20.1/resources/client/models/).
+
+### Optional original-asset/native-client comparison
+
+The original green TEST card remains a synthetic fixture. A separate local check
+now uses legally existing Minecraft 1.20.1 cache resources: diamond sword and stone
+with their actual parent-model/texture dependency closure, `en_us` and `zh_tw`.
+`prepare-vanilla-item-evidence.py` selects only 13 files from the cached
+`client-extra.jar` and indexed language object; it performs no downloads. It checks
+the cached game version and language object integrity and records selected-file
+hashes in `build/evidence/vanilla-items/provenance.json`. The temporary selected
+source ZIP stays in ignored `build/local-vanilla-item-assets`, outside CI artifact
+directories. No complete game asset pack is committed, uploaded or distributed.
+
+Run with a cache that already contains the assets:
+
+```sh
+python3 scripts/prepare-vanilla-item-evidence.py --gradle-cache <existing-gradle-cache>
+python3 scripts/verify-server-events.py --items --vanilla-pack build/local-vanilla-item-assets/vanilla-evidence.zip
+xvfb-run -a -s '-screen 0 1280x900x24 -nolisten tcp' python3 scripts/verify-vanilla-item-client.py
+```
+
+The dedicated-server check captures real ItemStacks for both items and renders
+the original cached models/textures with names `鑽石劍` and `石頭`, without model
+fallback. The separate client check opens an isolated test screen, connects to no
+server, and compares those cards with the actual Minecraft renderer and native
+`zh_tw` names. Its original 1100×800 framebuffer at verified GUI scale two is
+`build/evidence/vanilla-items/native-vs-headless-1100x800.png`. Headless PNGs display
+at original pixels; native icons are explicitly labelled 4× enlarged. The screenshot
+does not claim pixel-identical lighting, full vanilla asset coverage, human gameplay,
+modded rendering or live Discord delivery. Vanilla font providers are not imported
+in this check: headless Chinese text uses the bundled CJK fallback; native labels use
+Minecraft's font. Bitmap-provider support remains independently fixture-tested.

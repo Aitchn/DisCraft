@@ -44,3 +44,10 @@ game-thread main-hand capture, mutation/offhand isolation, appearance whitelist,
 imported Traditional Chinese/custom bitmap glyphs/CMD model PNG, actual official
 adapter multipart to a loopback-only mock, and empty hand. The item HTTP mock uses
 the existing fixed fake test token; no host credential or Discord endpoint is used.
+
+An optional local-only original-resource comparison uses already-cached Minecraft
+1.20.1 diamond sword/stone assets and native `zh_tw` labels; see
+[item evidence commands and limits](ITEM-DISPLAY.md#optional-original-assetnative-client-comparison).
+It is separate from default synthetic CI and never redistributes its selected source
+ZIP or downloads additional game assets. Animation size regressions run in ordinary
+CI and compare horizontal/single-axis cases directly with pinned 1.20.1 metadata code.

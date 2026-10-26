@@ -69,6 +69,16 @@ public final class ServerEventAcceptance {
         check(ItemSnapshot.capture(player,text).name().equals("測試鑽石劍"),"Unrenamed real ItemStack resolves its description component through imported Traditional Chinese language key");
         player.setItemInHand(InteractionHand.MAIN_HAND,ItemStack.EMPTY);
         check(ItemSnapshot.capture(player,text).empty(),"Actual empty main hand stays empty even while offhand holds an item");
+        String local=System.getProperty("discraft.vanillaItemPack");if(local!=null){
+            Path pack=Path.of(local);var vanillaResources=ResourcePackIndex.load(pack.getParent(),List.of(pack.getFileName().toString()));var vanillaText=new ComponentText(vanillaResources,"zh_tw");var vanillaRenderer=new HeadlessItemRenderer(vanillaResources);
+            var vanillaItems=List.of(Items.DIAMOND_SWORD,Items.STONE);var expected=List.of("鑽石劍","石頭");var names=List.of("diamond-sword","stone");
+            for(int i=0;i<vanillaItems.size();i++){
+                player.setItemInHand(InteractionHand.MAIN_HAND,new ItemStack(vanillaItems.get(i)));var real=ItemSnapshot.capture(player,vanillaText);var rendered=vanillaRenderer.render(real);
+                check(real.name().equals(expected.get(i))&&rendered.status().equals("Standard model"),"Cached original Minecraft 1.20.1 "+names.get(i)+" models/textures and Traditional Chinese language render without model fallback");
+                Files.write(output.resolve("vanilla-"+names.get(i)+".png"),rendered.attachment().bytes());
+            }
+            player.setItemInHand(InteractionHand.MAIN_HAND,ItemStack.EMPTY);
+        }
     }
     @SubscribeEvent(priority=EventPriority.LOWEST) public static void tick(TickEvent.ServerTickEvent event){
         if(!enabled()||server==null||event.phase!=TickEvent.Phase.END||failure!=null||++ticks%10!=0)return;
