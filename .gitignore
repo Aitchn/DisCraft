@@ -17,3 +17,6 @@ __pycache__/
 # Unified private configuration, imported packs and local staged media.
 **/config/discraft/
 **/discraft-uploads/
+
+# Generated Minecraft/diagnostic log trees may contain private runtime data.
+**/logs/
