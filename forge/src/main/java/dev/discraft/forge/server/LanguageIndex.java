@@ -34,6 +34,7 @@ final class LanguageIndex {
         var out=new StringBuilder();for(int at=0;at<value.length();){int begin=at;if(value.charAt(at++)!='%'){out.append(value.charAt(begin));continue;}int digits=at;while(at<value.length()&&digit(value.charAt(at)))at++;boolean indexed=at>digits&&at<value.length()&&value.charAt(at)=='$';String index=indexed?value.substring(digits,++at):"";if(!indexed)at=digits;while(at<value.length()&&(digit(value.charAt(at))||value.charAt(at)=='.'))at++;if(at<value.length()&&(value.charAt(at)=='d'||value.charAt(at)=='f')){out.append('%').append(index).append('s');at++;}else{out.append('%');at=begin+1;}}return out.toString();
     }
     String translation(String locale,String key,String fallback){String english=tables.getOrDefault("en_us",Map.of()).getOrDefault(key,fallback);return tables.getOrDefault(locale,Map.of()).getOrDefault(key,english);}
+    Set<String> englishKeys(){return tables.getOrDefault("en_us",Map.of()).keySet();}
     int keys(String locale){return tables.getOrDefault(locale,Map.of()).size();}
     String fingerprint(){try{var digest=MessageDigest.getInstance("SHA-256");for(var locale:new TreeMap<>(tables).entrySet())for(var entry:new TreeMap<>(locale.getValue()).entrySet())for(String text:List.of(locale.getKey(),entry.getKey(),entry.getValue())){digest.update(text.getBytes(StandardCharsets.UTF_8));digest.update((byte)0);}return HexFormat.of().formatHex(digest.digest());}catch(Exception impossible){throw new IllegalStateException("Language fingerprint unavailable");}}
 }

@@ -5,7 +5,7 @@ The workflow uses Ubuntu 24.04, Temurin JDK17, Gradle 8.8 and SHA-pinned Actions
 | Job | Checks | Artifact |
 | --- | --- | --- |
 | Core tests | `:core:build`, including 49 executable behavior assertions | Core output/reports |
-| Forge build/reobfuscation | `:forge:build :forge:reobfJar`, including 30 fake server-config/redaction checks, 33 headless resource/localization checks, 32 headless item/model/font checks, 17 native item wire/safety checks, nine bounded notice-delivery checks, 32 synthetic guild catalog/thumbnail checks and 65 local REST/wire protocol checks; validate packaged client/server/core/media classes and exclude test drivers | Installable mod JAR |
+| Forge build/reobfuscation | `:forge:build :forge:reobfJar`, including 30 fake server-config/redaction checks, 33 headless resource/localization checks, 32 headless item/model/font checks, 17 native item wire/safety checks, nine bounded notice-delivery checks, 32 synthetic guild catalog/thumbnail checks and 67 local REST/wire protocol checks; validate packaged client/server/core/media classes and exclude test drivers | Installable mod JAR |
 | Minecraft client acceptance | Real Xvfb/Mesa client, 36 original mock-preview checks including latch-controlled Clear/send-edit races | Native screenshots and result summary |
 | Dedicated server and two clients | Real server and Alice/Bob clients, native input and protocol checks through actual game packets, including native chat media, vanilla Enter, ordinary chat, a real slash command, independent fixture catalog/thumbnail synchronization, picker selection and rename/delete/permission/reset invalidation | Server/client logs, screenshots and separate result summaries |
 
@@ -106,3 +106,5 @@ actual production-loader decoding), then `scripts/verify-twemoji.py` exercises
 native ordinary/bridge chat, picker search/selection, guild coexistence, GUI
 scales, reload and cleanup in a real isolated server/client. Evidence is saved
 under `build/evidence/twemoji/`; it contacts no live Discord or external provider.
+
+Preview.8 adds deterministic fake-manifest tests for official URI/size/digest checks, selected-locale-only acquisition, verified offline cache, loaded-mod/admin priority, symlinks and directory-payload ZIP limits. These fixtures require no Mojang or Discord network access. Optional `verify-server-events.py --items --vanilla-auto` explicitly validates official asset acquisition and actual headless ItemStack/model/tooltip/adapter-loopback behavior; it is not a production Discord test and does not redistribute the downloaded resources. `--items --timing` records capture/render/cache/queue/encode/loopback timings. UI-text acceptance also checks real render-thread finite GIF playback, independent message clocks and GPU cleanup.

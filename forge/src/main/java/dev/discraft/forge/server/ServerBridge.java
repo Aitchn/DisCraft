@@ -31,6 +31,7 @@ public final class ServerBridge {
     private static ServerConfig config=ServerConfig.disabled();
     private static ComponentText text=new ComponentText(ResourcePackIndex.empty(),"en_us");
     private static HeadlessItemRenderer itemRenderer;
+    private static VanillaAssets vanillaAssets;
     private static boolean running,stopping;
     private record DeathNotice(ServerPlayer player,LivingDeathEvent event,Component message){}
     private record AdvancementNotice(ServerPlayer player,Advancement advancement){}
@@ -62,6 +63,7 @@ public final class ServerBridge {
     }
     private static void background(Runnable work){worker.execute(BridgeWorkQueue.background(work));}
     @SubscribeEvent public static void starting(ServerAboutToStartEvent event){
+        if(vanillaAssets!=null){vanillaAssets.close();vanillaAssets=null;}
         server=event.getServer();mode="disabled";config=ServerConfig.disabled();
         running=false;stopping=false;text=new ComponentText(ResourcePackIndex.empty(),"en_us");itemRenderer=null;
         worker=new ThreadPoolExecutor(1,1,0,TimeUnit.SECONDS,new BridgeWorkQueue(16),r->{var t=new Thread(r,"DisCraft server bridge");t.setDaemon(true);return t;});
@@ -76,17 +78,26 @@ public final class ServerBridge {
                 if(config.canConnect(server.isDedicatedServer(),server.usesAuthentication())){
                     startupStage=BridgeDiagnostics.Startup.RESOURCES_FAILED;
                     var resources=ResourcePackIndex.load(DisCraftPaths.resourcePacks(net.minecraftforge.fml.loading.FMLPaths.CONFIGDIR.get(),DisCraftPaths::warn),config.resourcePacks()).withBase(InstalledModLanguages.load(config.locale()));
-                    text=new ComponentText(resources,config.locale());if(config.itemDisplay())itemRenderer=new HeadlessItemRenderer(resources);startupStage=BridgeDiagnostics.Startup.ADAPTER_FAILED;adapter=DiscordBotAdapter.fromConfig(config);mode="discord";BridgeDiagnostics.startup(BridgeDiagnostics.Startup.CONNECTING_UNVERIFIED,configSource);
+                    text=new ComponentText(resources,config.locale());if(config.itemDisplay()){itemRenderer=new HeadlessItemRenderer(resources);startVanilla(resources);}startupStage=BridgeDiagnostics.Startup.ADAPTER_FAILED;adapter=DiscordBotAdapter.fromConfig(config);mode="discord";BridgeDiagnostics.startup(BridgeDiagnostics.Startup.CONNECTING_UNVERIFIED,configSource);
                 }
                 else {adapter=null;BridgeDiagnostics.startup(BridgeDiagnostics.Startup.DISABLED_CONFIG,configSource);}
             }else {adapter=null;BridgeDiagnostics.startup(server.isDedicatedServer()?BridgeDiagnostics.Startup.DISABLED_OFFLINE:BridgeDiagnostics.Startup.DISABLED_INTEGRATED,configSource);}
         } catch(Exception failure){
             if(mode.equals("test")&&Boolean.getBoolean("discraft.multiplayerSmoke"))throw new IllegalStateException("DisCraft TEST adapter initialization failed",failure);
             BridgeDiagnostics.startup(failure instanceof ServerConfig.MissingCredentials?BridgeDiagnostics.Startup.CONFIG_CREDENTIALS_MISSING:startupStage,configSource);
+            if(vanillaAssets!=null){vanillaAssets.close();vanillaAssets=null;}
             mode="disabled";adapter=null;config=ServerConfig.disabled();
         }
         nextPoll=0;nextCatalogBroadcast=0;nextThumbnail=0;guildCatalog=GuildEmojiCatalog.empty(0);polling.set(false);thumbnailBusy.set(false);
         notice("lifecycle",Component.translatableWithFallback("discraft.notice.starting","Server is starting"));
+    }
+    private static void startVanilla(ResourcePackIndex higher){
+        final var active=server;final String locale=config.locale();final var loading=new VanillaAssets();vanillaAssets=loading;
+        loading.start(net.minecraftforge.fml.loading.FMLPaths.CONFIGDIR.get().resolve("discraft/cache/vanilla/1.20.1"),locale,lower->{
+            try{var resources=higher.withVanilla(lower,InstalledModAssets.load());var nextText=new ComponentText(resources,locale);var nextRenderer=new HeadlessItemRenderer(resources);
+                active.execute(()->{if(server==active&&!stopping&&vanillaAssets==loading&&mode.equals("discord")){text=nextText;itemRenderer=nextRenderer;}});
+            }catch(Exception rejected){com.mojang.logging.LogUtils.getLogger().warn("DisCraft vanilla resources: RESOURCE_INDEX_UNAVAILABLE; retaining local fallback");}
+        });
     }
     @SubscribeEvent public static void start(ServerStartedEvent event){
         if(server!=event.getServer()||stopping)return;running=true;
@@ -94,6 +105,7 @@ public final class ServerBridge {
     }
     @SubscribeEvent public static void stop(ServerStoppingEvent event){
         if(server!=event.getServer()||stopping)return;stopping=true;
+        if(vanillaAssets!=null){vanillaAssets.close();vanillaAssets=null;}
         peers.values().forEach(p->p.alive.set(false));peers.clear();transfers.clear();history.clear();requests.clear();actors.clear();
         Runnable finalNotice=running?noticeTask("lifecycle",Component.translatableWithFallback("discraft.notice.stopping","Server is shutting down normally")):null;
         NoticeDelivery.drain(worker,finalNotice,TimeUnit.SECONDS.toNanos(8));
@@ -102,6 +114,7 @@ public final class ServerBridge {
     @SubscribeEvent public static void stopped(ServerStoppedEvent event){
         // Startup failure can skip ServerStoppingEvent; release transport without claiming ready/normal shutdown.
         if(server==event.getServer()){
+            if(vanillaAssets!=null){vanillaAssets.close();vanillaAssets=null;}
             if(worker!=null)worker.shutdownNow();if(adapter!=null)adapter.close();worker=null;adapter=null;server=null;running=false;mode="disabled";config=ServerConfig.disabled();
             deaths.clear();advancements.clear();announcedAdvancements.clear();announcedDeaths.clear();text=new ComponentText(ResourcePackIndex.empty(),"en_us");itemRenderer=null;
         }

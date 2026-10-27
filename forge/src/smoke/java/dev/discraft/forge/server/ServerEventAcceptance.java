@@ -55,6 +55,7 @@ public final class ServerEventAcceptance {
     }
     private static void items()throws Exception{
         attributeOverrides();
+        if(Boolean.getBoolean("discraft.vanillaAutoSmoke"))vanillaAuto();
         Path output=Path.of(System.getProperty("discraft.serverEventsOutput"));Path packs=output.resolve("item-fixture-packs");ItemFixtures.create(packs);
         var resources=ResourcePackIndex.load(packs,List.of("fixture.zip"));var text=new ComponentText(resources,"zh_tw");var renderer=new HeadlessItemRenderer(resources);
         var stack=new ItemStack(Items.DIAMOND_SWORD,3);stack.setHoverName(Component.literal("星光劍 · TEST").withStyle(Style.EMPTY.withFont(new ResourceLocation("test","custom"))));stack.getOrCreateTag().putInt("CustomModelData",1);
@@ -85,6 +86,22 @@ public final class ServerEventAcceptance {
             player.setItemInHand(InteractionHand.MAIN_HAND,ItemStack.EMPTY);
         }
         ItemTooltipAcceptance.run(player,output,tooltipResources,local!=null);
+    }
+    private static void vanillaAuto()throws Exception{
+        Path output=Path.of(System.getProperty("discraft.serverEventsOutput"));var cache=output.resolve("verified-vanilla-cache");
+        var lower=VanillaAssets.load(cache,"zh_tw",VanillaAssets.network());var installed=InstalledModAssets.load();
+        check(installed.asset("assets/discraft/font/ui.json")!=null,"Actual loaded Forge resource roots are readable on dedicated server without client classes");
+        var resources=ResourcePackIndex.empty().withBase(InstalledModLanguages.load("zh_tw")).withVanilla(lower,installed);
+        var offline=VanillaAssets.load(cache,"zh_tw",(uri,max)->{throw new AssertionError("Verified offline cache attempted network");});
+        check(offline.assetCount()>6000,"Official hash-verified 1.20.1 assets load from cache with no network on second initialization");
+        var text=new ComponentText(resources,"zh_tw");var renderer=new HeadlessItemRenderer(resources);var names=List.of("鑽石劍","石頭");var items=List.of(Items.DIAMOND_SWORD,Items.STONE);
+        for(int i=0;i<items.size();i++){
+            player.setItemInHand(InteractionHand.MAIN_HAND,new ItemStack(items.get(i)));var snapshot=ItemSnapshot.capture(player,text);var model=renderer.render(snapshot);
+            check(snapshot.name().equals(names.get(i))&&model.status().equals("Standard model"),"Automatic official base resolves actual vanilla model and Traditional Chinese name "+i);
+            var expanded=ItemExpansion.expand(new dev.discraft.forge.bridge.RelayRecord(UUID.randomUUID(),"Aitchn","看看我的 %i",List.of(),Map.of(),Map.of()),snapshot,renderer);var record=expanded.discord();
+            var payload=ItemFixtures.sendToLocalDiscord(record);check(payload.get("content").getAsString().contains(names.get(i)),"Actual ItemStack through tooltip and adapter loopback uses automatically acquired locale "+i);
+            Files.write(output.resolve("automatic-vanilla-"+i+".png"),expanded.discord().attachments().get(0).bytes());
+        }
     }
     private static void attributeOverrides(){
         // Pinned 1.20.1 ItemStack.getAttributeModifiers branches on LIST presence,

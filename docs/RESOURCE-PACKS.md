@@ -126,3 +126,8 @@ Source behavior was checked against official pinned [Forge LanguageHook](https:/
 and [ModList](https://github.com/MinecraftForge/MinecraftForge/blob/1.20.1/fmlcore/src/main/java/net/minecraftforge/fml/ModList.java),
 plus the environment's actual Forge 47.4.0/SecureJar 2.1.10 APIs. No upstream renderer
 or addon code/dependency was introduced.
+
+
+Preview.8 automatically loads a verified Minecraft 1.20.1 base for enabled, configured authenticated dedicated bridges with item display. The download runs independently of the server tick and adapter queue. Official version metadata supplies hash/size; the known client SHA-1 is additionally pinned. Only the selected locale object is requested from the asset index. The inert client JAR is never executed or redistributed. A verified receipt/cache supports offline restarts; invalid cached bytes fail closed. Vanilla is below loaded-mod resources and administrator ZIPs. Model/texture/font data comes from loaded Forge roots in deterministic mod-ID order, lazily cached with entry/byte limits. Unsupported or malformed mod resources do not silently turn into a vanilla model. Full custom loaders, callbacks and client decorations remain unsupported.
+
+Official resource stacking reference: https://docs.minecraftforge.net/en/1.20.1/concepts/resources/ . Version source: https://piston-meta.mojang.com/mc/game/version_manifest_v2.json .

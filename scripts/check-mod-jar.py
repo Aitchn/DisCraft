@@ -54,6 +54,9 @@ with zipfile.ZipFile(jar) as archive:
         'dev/discraft/forge/server/HeadlessItemRenderer.class',
         'dev/discraft/forge/server/PackBitmapFont.class',
         'dev/discraft/forge/server/ResourcePackIndex.class',
+        'dev/discraft/forge/server/VanillaAssets.class',
+        'dev/discraft/forge/server/InstalledModAssets.class',
+        'dev/discraft/forge/server/BridgeWorkQueue.class',
         'dev/discraft/forge/server/LanguageIndex.class',
         'dev/discraft/forge/server/InstalledModLanguages.class',
         'dev/discraft/forge/bridge/GuildEmojiCatalog.class',
@@ -94,7 +97,7 @@ with zipfile.ZipFile(jar) as archive:
     assert not any(n.startswith(('com/ebicep/', 'kotlin/', 'thedarkcolour/')) for n in names), 'Optional chat dependency leaked into mod JAR'
     assert not any(name.endswith('.properties') or 'ServerConfigTest' in name or 'ServerConfigInitTest' in name or 'BridgeDiagnosticsTest' in name for name in names), 'Private config/test leaked into mod JAR'
     assert 'assets/discraft/textures/gui/smiley.png' not in names, 'Reference screenshot icon leaked into mod JAR'
-    assert not any('/smoke/' in name or 'BridgeProtocolTest' in name or 'GuildEmojiTest' in name or 'LiveCatalog' in name or 'ServerEventAcceptance' in name or 'NativeHoverServerAcceptance' in name or 'DiscordAuthor' in name or 'NativeItemDataTest' in name or 'ItemFixtures' in name or 'ItemTooltipAcceptance' in name or 'InstalledLanguageAcceptance' in name or 'OptionalServerAcceptance' in name or 'ChatPlusServerAcceptance' in name or '/optionaltest/' in name or 'NativeFallbackTest' in name or 'ItemRenderTest' in name for name in names), 'Test driver leaked into mod JAR'
+    assert not any('/smoke/' in name or 'BridgeProtocolTest' in name or 'GuildEmojiTest' in name or 'LiveCatalog' in name or 'ServerEventAcceptance' in name or 'NativeHoverServerAcceptance' in name or 'DiscordAuthor' in name or 'NativeItemDataTest' in name or 'ItemPipelineTiming' in name or 'VanillaAssetsTest' in name or 'ItemFixtures' in name or 'ItemTooltipAcceptance' in name or 'InstalledLanguageAcceptance' in name or 'OptionalServerAcceptance' in name or 'ChatPlusServerAcceptance' in name or '/optionaltest/' in name or 'NativeFallbackTest' in name or 'ItemRenderTest' in name for name in names), 'Test driver leaked into mod JAR'
 print(f'PASS packaged mod: {jar.name} SHA256={hashlib.sha256(jar.read_bytes()).hexdigest()}')
 
 if args.github_output is not None:
