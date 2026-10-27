@@ -7,7 +7,7 @@ import java.util.*;
 
 final class NativeFallbackTest {
     private static void check(boolean value,String label){if(!value)throw new AssertionError(label);System.out.println("PASS "+label);}
-    static void run()throws Exception{
+    static void run()throws Exception{NativeMentionDisplayTest.run();
         var wireOne=Component.empty().append(Component.literal("same text"));var wireTwo=Component.empty().append(Component.literal("same text"));
         var nativeOne=PlayerChatMessage.unsigned(UUID.randomUUID(),"same text").withUnsignedContent(wireOne);var nativeTwo=PlayerChatMessage.unsigned(UUID.randomUUID(),"same text").withUnsignedContent(wireTwo);
         check(wireOne!=wireTwo&&wireOne.equals(wireTwo)&&nativeOne.unsignedContent()==wireOne&&nativeTwo.unsignedContent()==wireTwo,"Pinned native unsigned messages retain distinct structural presentation identities despite equal visible text");

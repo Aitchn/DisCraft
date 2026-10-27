@@ -65,7 +65,7 @@ public final class NativeChat {
         var header=NativeAuthorHeader.create(record.author(),record.actor());var component=Component.empty().append(header.component());
         if(header.authorClick()!=null){nameEvents.put(header.authorClick(),record.actor());ownedNames.get(record.id()).add(header.authorClick());}
         int at=0;for(var item:record.nativeItems()){
-            appendBody(component,record,record.text().substring(at,item.start()),owned);
+            appendBody(component,record,at,item.start(),owned);
             if(item.item().count()==0)component.append(Component.literal(record.text().substring(item.start(),item.end())).withStyle(Style.EMPTY.withColor(ChatFormatting.GRAY).withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT,Component.translatableWithFallback("discraft.item.empty","Empty hand")))));
             else{
                 var stack=new net.minecraft.world.item.ItemStack(net.minecraft.core.registries.BuiltInRegistries.ITEM.get(new ResourceLocation(item.item().itemId())),item.item().count());stack.setTag(item.item().safeTag());
@@ -73,7 +73,7 @@ public final class NativeChat {
                 else {var name=stack.getHoverName().copy();if(stack.getCount()>1)name.append(Component.literal(" ×"+stack.getCount()));component.append(ComponentUtils.wrapInSquareBrackets(name).withStyle(Style.EMPTY.withColor(name.getStyle().getColor()!=null?name.getStyle().getColor():TextColor.fromLegacyFormat(stack.getRarity().color)).withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_ITEM,new HoverEvent.ItemStackInfo(stack)))));}
             }
             at=item.end();
-        }appendBody(component,record,record.text().substring(at),owned);
+        }appendBody(component,record,at,record.text().length(),owned);
         for(var a:record.attachments()){
             component.append(Component.literal("\n["+a.name()+"]").withStyle(ChatFormatting.GRAY));
             if(!ChatPlusCompat.canRender())continue;
@@ -86,7 +86,14 @@ public final class NativeChat {
     }
     static Component emojiLiteral(String text){if(text.indexOf('\ufe0e')<0)return Component.literal(text);var result=Component.empty();int at=0,next;while((next=text.indexOf('\ufe0e',at))>=0){result.append(Component.literal(text.substring(at,next)));result.append(Component.literal("\ufe0e").withStyle(Style.EMPTY.withFont(new ResourceLocation(DisCraft.ID,"selector"))));at=next+1;}return result.append(Component.literal(text.substring(at)));}
     private static void wantUnicode(RelayRecord record,String text,Map<String,TwemojiCatalog.Entry> wanted){for(var part:Content.parse(text,record.catalog()))if(part instanceof Content.Text literal)for(var span:TwemojiCatalog.parts(literal.value()))if(span.emoji()!=null)wanted.putIfAbsent(span.emoji().asset(),span.emoji());}
-    private static void appendBody(MutableComponent component,RelayRecord record,String text,Set<Integer> owned){
+    private static void appendBody(MutableComponent component,RelayRecord record,int start,int end,Set<Integer> owned){
+        NativeMentions.parts(record,start,end,text->appendLiteralBody(component,record,text,owned),actor->{
+            var click=new ClickEvent(ClickEvent.Action.SUGGEST_COMMAND,actor.label()+" ");
+            component.append(NativeMentions.name(actor).copy().withStyle(style->style.withClickEvent(click)));
+            nameEvents.put(click,actor);ownedNames.get(record.id()).add(click);
+        });
+    }
+    private static void appendLiteralBody(MutableComponent component,RelayRecord record,String text,Set<Integer> owned){
         for(var part:Content.parse(text,record.catalog())){
             if(part instanceof Content.Text t){for(var span:TwemojiCatalog.parts(t.value())){var image=!ChatPlusCompat.canRender()||span.emoji()==null?null:unicodeMedia.get(span.emoji().asset());if(image==null)component.append(emojiLiteral(span.text()));else row(component,image,Math.min(8,layout.emojiCell()),8,0,layout.emojiCell(),8,"\u3000",owned,record.id(),false);}}
             else if(part instanceof Content.CustomEmoji e){var a=record.emoji().get(e.mediaKey());if(a!=null&&ChatPlusCompat.canRender())row(component,a,Math.min(8,layout.emojiCell()),8,0,layout.emojiCell(),8,"\u3000",owned,record.id(),false);else component.append(":"+e.name()+":");}
