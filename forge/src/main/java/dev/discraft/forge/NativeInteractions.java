@@ -104,7 +104,7 @@ public final class NativeInteractions {
         if(NativeChat.revealAt(x,y))event.setCanceled(true);
     }
     @SubscribeEvent public static void scroll(ScreenEvent.MouseScrolled.Pre event){if(!open||MC.screen!=screen)return;var area=compact()?footer().bounds():picker();if(area.contains(event.getMouseX(),event.getMouseY())){if(!compact())scroll=Math.max(0,scroll+(event.getScrollDelta()<0?1:-1));event.setCanceled(true);}}
-    @SubscribeEvent(priority=EventPriority.HIGH) public static void keys(ScreenEvent.KeyPressed.Pre event){if(!open||!(event.getScreen() instanceof ChatScreen))return;if(event.getKeyCode()==256){closePicker();screen.setFocused(input);event.setCanceled(true);}else if(event.getKeyCode()==257){if(!compact()){var all=filtered();if(!all.isEmpty())pick(all.get(0));}event.setCanceled(true);}}
+    @SubscribeEvent(priority=EventPriority.HIGH) public static void keys(ScreenEvent.KeyPressed.Pre event){if(!open||!(event.getScreen() instanceof ChatScreen))return;if(event.getKeyCode()==256){closePicker();screen.setFocused(input);event.setCanceled(true);}else if(event.getKeyCode()==257||event.getKeyCode()==335){if(!compact()){var all=filtered();if(!all.isEmpty())pick(all.get(0));}event.setCanceled(true);}}
     private static boolean manageClick(PendingCardLayout.Placement layout,double x,double y){
         if(layout.remove().contains(x,y)){NativeComposer.removeStaged();return true;}if(layout.spoiler().contains(x,y)){NativeComposer.toggleSpoiler();return true;}
         if(layout.mode()==PendingCardLayout.Mode.FULL&&layout.image().contains(x,y)&&NativeComposer.isSpoiler()){NativeComposer.togglePreview();return true;}return false;
