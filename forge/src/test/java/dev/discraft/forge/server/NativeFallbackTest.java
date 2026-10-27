@@ -15,6 +15,11 @@ final class NativeFallbackTest {
         var plain=Component.literal("private-original");String originalShape=NativeChatProjection.shape(plain);
         check(originalShape.equals(NativeChatProjection.shape(plain.copy().withStyle(net.minecraft.ChatFormatting.GOLD,net.minecraft.ChatFormatting.BOLD))),"Native projection permits style-only changes without changing visible content");
         check(!originalShape.equals(NativeChatProjection.shape(Component.literal("[redacted]"))),"Native projection rejects a moderator replacement instead of forwarding original text");
+        var origin=Component.empty().append(Component.literal("same text"));var view=Component.translatable("chat.type.text",Component.literal("Player"),origin);
+        check(!NativeConvertedPresentation.shape(view,origin).isEmpty(),"Pinned visible vanilla decoration retains the exact native origin identity");
+        for(Component denied:List.of(Component.translatable("chat.type.text",Component.literal("Player"),origin.copy()),Component.literal("same text"),Component.literal("hidden").withStyle(s->s.withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT,origin))),Component.translatableWithFallback("custom.hidden","redacted",origin),Component.empty().append(origin).append(origin),Component.empty().withStyle(net.minecraft.ChatFormatting.OBFUSCATED).append(origin))){
+            try{NativeConvertedPresentation.shape(denied,origin);throw new AssertionError("Unsafe converted association accepted");}catch(IllegalArgumentException expected){check(true,"Clone/text/hover/unknown-translation/duplicate/obfuscated origin cannot establish converted delivery");}
+        }
         try{NativeChatProjection.shape(Component.literal("private-original").withStyle(net.minecraft.ChatFormatting.OBFUSCATED));throw new AssertionError("Missing obfuscation guard");}catch(IllegalArgumentException expected){check(true,"Obfuscated text cannot disclose its hidden literal through Discord");}
         var cycle=Component.empty();cycle.append(cycle);try{NativeChatProjection.shape(cycle);throw new AssertionError("Missing cycle guard");}catch(IllegalArgumentException expected){check(true,"Native presentation comparison rejects cycles before serialization");}
         String body="{\"clickEvent\":{\"action\":\"run_command\",\"value\":\"/op x\"}} :Fixture:";

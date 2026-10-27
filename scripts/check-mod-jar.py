@@ -52,6 +52,11 @@ with zipfile.ZipFile(jar) as archive:
         'assets/discraft/font/ui.otf',
         'assets/discraft/font/ofl.txt',
         'dev/discraft/forge/server/DiscordBotAdapter.class',
+        'dev/discraft/forge/server/DiscordGateway.class',
+        'dev/discraft/forge/server/NativeConvertedPresentation.class',
+        'dev/discraft/forge/mixin/ServerChatOriginMixin.class',
+        'dev/discraft/forge/mixin/ForgeChatCompletionMixin.class',
+        'discraft.mixins.json',
         'dev/discraft/forge/ClientBridge.class',
         'dev/discraft/forge/ClipboardDesktop.class',
         'dev/discraft/forge/ClipboardDesktop$Pixels.class',
@@ -71,6 +76,8 @@ with zipfile.ZipFile(jar) as archive:
     assert archive.getinfo('assets/discraft/font/ui.otf').file_size<10*1024*1024, 'UI font exceeded packaged resource budget'
     assert len([n for n in names if n.startswith('twemoji/') and n.endswith('.png')])==3953, 'Pinned emoji inventory missing'
     assert required <= names, f'Missing mod contents: {required - names}'
+    assert 'MixinConfigs: discraft.mixins.json' in archive.read('META-INF/MANIFEST.MF').decode(), 'Missing production origin observer configuration'
+    assert 'discraft.ncr-test.mixins.json' not in names and not any('nochatreports' in n.lower() for n in names), 'External compatibility fixture leaked into mod JAR'
     assert not any(name.endswith('.properties') or 'ServerConfigTest' in name or 'ServerConfigInitTest' in name or 'BridgeDiagnosticsTest' in name for name in names), 'Private config/test leaked into mod JAR'
     assert 'assets/discraft/textures/gui/smiley.png' not in names, 'Reference screenshot icon leaked into mod JAR'
     assert not any('/smoke/' in name or 'BridgeProtocolTest' in name or 'GuildEmojiTest' in name or 'LiveCatalog' in name or 'ServerEventAcceptance' in name or 'NativeHoverServerAcceptance' in name or 'DiscordAuthor' in name or 'NativeItemDataTest' in name or 'ItemFixtures' in name or 'ItemTooltipAcceptance' in name or 'InstalledLanguageAcceptance' in name or 'OptionalServerAcceptance' in name or '/optionaltest/' in name or 'NativeFallbackTest' in name or 'ItemRenderTest' in name for name in names), 'Test driver leaked into mod JAR'

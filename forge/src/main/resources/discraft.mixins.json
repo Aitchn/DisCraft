@@ -1,0 +1,8 @@
+{
+  "required": false,
+  "minVersion": "0.8",
+  "package": "dev.discraft.forge.mixin",
+  "compatibilityLevel": "JAVA_17",
+  "mixins": ["ServerChatOriginMixin", "ForgeChatCompletionMixin"],
+  "injectors": { "defaultRequire": 0 }
+}

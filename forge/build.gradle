@@ -9,6 +9,7 @@ java.toolchain.languageVersion = JavaLanguageVersion.of(17)
 if (providers.gradleProperty('smoke').isPresent() || providers.gradleProperty('multiplayerSmoke').isPresent()) {
     sourceSets.main.java.srcDir 'src/smoke/java'
     sourceSets.main.java.srcDir 'src/testFixtures/java'
+    sourceSets.main.resources.srcDir 'src/smoke/resources'
 }
 sourceSets.test.java.srcDir 'src/testFixtures/java'
 sourceSets {
@@ -22,6 +23,7 @@ minecraft {
     copyIdeResources = true
     runs {
         configureEach {
+            args '--mixin.config', 'discraft.mixins.json'
             workingDirectory rootProject.file('run')
             if (providers.gradleProperty('multiplayerSmoke').isPresent()) {
                 workingDirectory rootProject.file('run-mp/' + providers.gradleProperty('bridgeRole').getOrElse('server'))
@@ -47,9 +49,17 @@ minecraft {
 dependencies {
     minecraft 'net.minecraftforge:forge:1.20.1-47.4.0'
     implementation project(':core')
+    // Isolated compatibility acceptance only. Never part of normal builds or the distributable.
+    if (providers.gradleProperty('compatNcr').isPresent()) {
+        repositories { maven { url = 'https://api.modrinth.com/maven'; content { includeModule 'maven.modrinth', 'no-chat-reports' } } }
+        runtimeOnly fg.deobf('maven.modrinth:no-chat-reports:2XUIKIAa')
+    }
+
 }
 tasks.named('jar', Jar) {
+    manifest.attributes('MixinConfigs': 'discraft.mixins.json')
     exclude 'dev/discraft/forge/smoke/**'
+    exclude 'discraft.ncr-test.mixins.json'
     exclude 'dev/discraft/forge/server/ServerEventAcceptance*'
     exclude 'dev/discraft/forge/server/NativeHoverServerAcceptance*'
     exclude 'dev/discraft/forge/server/DiscordAuthorServerAcceptance*'

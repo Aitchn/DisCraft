@@ -7,9 +7,18 @@ import java.util.concurrent.TimeUnit;
 
 /** Only closed enums/numeric HTTP status reach logs. No Throwable, URI, body, IDs or user text API. */
 public final class BridgeDiagnostics {
-    public enum Operation { IDENTITY, CHANNEL, CATALOG, MEMBER, POLL, SEND, NOTICE, MEDIA, BACKGROUND, GATEWAY }
+    public enum Operation { IDENTITY, CHANNEL, CATALOG, MEMBER, POLL, SEND, NOTICE, MEDIA, BACKGROUND, GATEWAY, NATIVE }
     enum Terminal { YES, NO, UNKNOWN }
     enum Code {
+        NATIVE_ADMITTED(false,"Native chat admission recorded; no send is implied"),
+        NATIVE_ORIGIN_HOOK(false,"Native origin hook observed a player packet before transport conversion"),
+        NATIVE_CONVERTED(false,"Converted system/disguised packet retains a nested native origin and recipient view"),
+        NATIVE_CONFIRMED(false,"Native recipient delivery confirmed; queued for independent Discord send validation"),
+        NATIVE_NOT_ADMITTED(true,"Native chat not admitted: unavailable peer, policy, lifecycle or rate budget"),
+        NATIVE_NO_RECEIPT(true,"Native admission expired without a correlatable recipient packet; chat mod integration may be required"),
+        NATIVE_CHANGED(true,"Native presentation cancelled, filtered or changed; original text was not forwarded"),
+        NATIVE_UNSUPPORTED(true,"Native packet/presentation cannot be safely correlated; original text was not forwarded"),
+        NATIVE_OBSERVER_MISSING(true,"Native packet encoder observation unavailable; original text was not forwarded"),
         TARGET_VERIFIED(false,"Bot identity and configured guild text channel validated; read/send delivery not yet proven"),
         READ_READY(false,"A valid message page was read; no outbound delivery is implied"),
         AUTH_REJECTED(true,"Bot authorization rejected; correct server config and restart"),
