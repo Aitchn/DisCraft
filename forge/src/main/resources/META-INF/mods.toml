@@ -5,8 +5,18 @@ license="All Rights Reserved"
 modId="discraft"
 version="${mod_version}"
 displayName="DisCraft"
+logoFile="discraft-banner.png"
+logoBlur=false
+displayURL="https://github.com/Aitchn/DisCraft"
 displayTest="IGNORE_SERVER_VERSION"
-description="Server-authoritative multiplayer chat/media with opt-in server-only Discord Bot REST adapter. Local fixtures are explicitly labelled tests."
+description="""Connect Minecraft and Discord with two-way chat, images, animated media and emoji.
+The server owns Discord configuration; installing DisCraft on the client is optional.
+Install the matching client version for the native emoji picker, clipboard images, inline item tooltips and local preferences.
+Client settings: Config button for screenshot clipboard copying and mention sounds. F2 always keeps native screenshot saving.
+Server setup: config/discraft/server.properties. Additional mod tooltips may require specific compatibility support.
+
+Minecraft 與 Discord 雙向聊天、圖片、動畫與表情符號。客戶端可選裝；安裝後提供原生表情選擇器、剪貼簿圖片與內嵌物品提示。點選 Config 調整本機偏好。
+伺服器設定集中於 config/discraft/；模組額外物品提示並非全部相容。"""
 [[dependencies.discraft]]
 modId="forge"
 mandatory=true
