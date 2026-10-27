@@ -81,7 +81,7 @@ public final class ServerBridge {
             }else {adapter=null;BridgeDiagnostics.startup(server.isDedicatedServer()?BridgeDiagnostics.Startup.DISABLED_OFFLINE:BridgeDiagnostics.Startup.DISABLED_INTEGRATED,configSource);}
         } catch(Exception failure){
             if(mode.equals("test")&&Boolean.getBoolean("discraft.multiplayerSmoke"))throw new IllegalStateException("DisCraft TEST adapter initialization failed",failure);
-            BridgeDiagnostics.startup(startupStage,configSource);
+            BridgeDiagnostics.startup(failure instanceof ServerConfig.MissingCredentials?BridgeDiagnostics.Startup.CONFIG_CREDENTIALS_MISSING:startupStage,configSource);
             mode="disabled";adapter=null;config=ServerConfig.disabled();
         }
         nextPoll=0;nextCatalogBroadcast=0;nextThumbnail=0;guildCatalog=GuildEmojiCatalog.empty(0);polling.set(false);thumbnailBusy.set(false);

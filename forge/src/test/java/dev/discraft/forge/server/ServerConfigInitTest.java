@@ -22,10 +22,13 @@ final class ServerConfigInitTest {
         Path base=Files.createTempDirectory("discraft-init-test");
         try{
             var notices=new ArrayList<String>();Path first=base.resolve("first"),file=ServerConfig.initialize(first,notices::add);
-            String template=Files.readString(file);var config=ServerConfig.load(file);
-            check(file.equals(first.resolve("discraft/server.properties"))&&!config.enabled()&&config.token().isEmpty()&&config.channel().isEmpty()&&!config.allows(UUID.randomUUID()),"First dedicated initialization creates an empty-credential disabled deny-all template");
-            check(template.contains("#")&&template.contains("notifications=")&&template.contains("itemDisplay=false")&&template.contains("resourcePacks=")&&template.contains("locale=en_us"),"Generated UTF-8 template documents all supported configuration fields");
-            check(notices.stream().anyMatch(s->s.contains("created disabled")),"First initialization reports the disabled relative config path");
+            String template=Files.readString(file);var config=ServerConfig.disabled();var defaults=new Properties();defaults.load(new StringReader(template));
+            try{ServerConfig.load(file);throw new AssertionError("Empty credentials accepted");}catch(ServerConfig.MissingCredentials expected){check(expected.getCause()==null,"Enabled empty-credential template fails before any adapter/network request with safe diagnostic");}
+            Path filled=base.resolve("filled.properties");Files.writeString(filled,template.replace("channel=\n","channel="+CHANNEL+"\n").replace("botToken=\n","botToken="+TOKEN+"\n"));var ready=ServerConfig.load(filled);
+            check(ready.enabled()&&ready.itemDisplay()&&ready.allows(UUID.randomUUID())&&List.of("join","quit","death","advancement","lifecycle").stream().allMatch(ready::notifies),"Filling only credentials enables all requested defaults for authenticated players");
+            check(file.equals(first.resolve("discraft/server.properties"))&&defaults.getProperty("enabled").equals("true")&&defaults.getProperty("botToken").isEmpty()&&defaults.getProperty("channel").isEmpty()&&defaults.getProperty("allowedPlayers").equals("*"),"First dedicated initialization creates an enabled-feature empty-credential wildcard template");
+            check(template.contains("#")&&template.contains("notifications=")&&template.contains("itemDisplay=true")&&template.contains("resourcePacks=")&&template.contains("locale=en_us"),"Generated UTF-8 template documents all supported configuration fields");
+            check(notices.stream().anyMatch(s->s.contains("created config/")),"First initialization reports the relative config path and missing credential requirement");
             ServerConfig.initialize(first,notices::add);check(Files.readString(file).equals(template),"Second initialization preserves the existing template byte-for-byte");
             Files.writeString(file,CUSTOM);ServerConfig.initialize(first,notices::add);
             check(Files.readString(file).equals(CUSTOM)&&ServerConfig.load(file).token().equals(TOKEN),"Custom operator configuration and fake token survive initialization unchanged");

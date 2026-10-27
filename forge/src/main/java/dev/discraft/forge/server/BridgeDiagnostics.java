@@ -57,6 +57,7 @@ public final class BridgeDiagnostics {
         DISABLED_CONFIG("enabled=false; no Discord connection"),DISABLED_OFFLINE("Authenticated dedicated server required; config values were not loaded"),
         DISABLED_INTEGRATED("Integrated server/client scope; server credentials not loaded and no Discord connection"),
         CONNECTING_UNVERIFIED("Config enabled; REST adapter created but bot/channel/read/send are not yet verified"),
+        CONFIG_CREDENTIALS_MISSING("botToken/channel missing; fill config locally and restart; no network connection attempted"),
         CONFIG_INIT_FAILED("Config initialization failed; bridge disabled"),CONFIG_LOAD_FAILED("Config invalid or unreadable; bridge disabled"),
         RESOURCES_FAILED("Local language/resource-pack initialization failed; bridge disabled"),ADAPTER_FAILED("Adapter setup failed; bridge disabled");
         final String message;Startup(String message){this.message=message;}
