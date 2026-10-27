@@ -36,7 +36,7 @@ public final class ClientPreferences {
         synchronized(data){
             var table=data.valueMap();var wanted=selection.values();var previous=new LinkedHashMap<String,Object>();
             for(String key:wanted.keySet()){if(!table.containsKey(key))throw new IllegalStateException("Client config unavailable");previous.put(key,table.get(key));}
-            try{table.putAll(wanted);}
+            try{table.putAll(wanted);for(var entry:wanted.entrySet())if(!Objects.equals(table.get(entry.getKey()),entry.getValue()))throw new IllegalStateException("Client config changed during save");}
             catch(RuntimeException failure){try{table.putAll(previous);}catch(RuntimeException rollback){failure.addSuppressed(rollback);}throw failure;}
             finally{invalidate.run();}
         }
