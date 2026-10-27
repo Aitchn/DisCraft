@@ -1,7 +1,7 @@
 # Server item presentation: Discord tooltips and native hover
 
 Set `itemDisplay=true` in the private server config to expand `%item` in DisCraft
-native chat. It defaults off for existing installations. The server copies the
+native chat. Existing configurations with no itemDisplay key remain off; newly generated templates set itemDisplay=true. The server copies the
 authenticated sender's **main hand on the game thread** when upload finishes;
 the offhand and client-supplied text cannot select another stack. Workers receive
 only an immutable appearance whitelist and localized semantic tooltip lines: registry ID, localized/custom name, root

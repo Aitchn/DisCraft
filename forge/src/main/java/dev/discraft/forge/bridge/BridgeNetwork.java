@@ -14,6 +14,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
 
 public final class BridgeNetwork {
+    // Existing Notice wire format; old clients safely ignore these reserved control receipts.
+    public static final UUID HISTORY_BEGIN=new UUID(0,1),HISTORY_END=new UUID(0,2);
     public static final int CHUNK=16*1024;
     public static final SimpleChannel CHANNEL=NetworkRegistry.newSimpleChannel(new ResourceLocation(DisCraft.ID,"bridge"),()->"4",
         NetworkRegistry.acceptMissingOr("4"),

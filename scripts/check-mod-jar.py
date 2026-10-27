@@ -19,6 +19,10 @@ with zipfile.ZipFile(jar) as archive:
     required = {
         'META-INF/mods.toml',
         'defaults/discraft/server.properties.example',
+        'discraft-banner.png',
+        'dev/discraft/forge/ClientPreferences.class',
+        'dev/discraft/forge/ClientSettingsScreen.class',
+        'dev/discraft/forge/MentionNotifications.class',
         'dev/discraft/forge/DisCraft.class',
         'dev/discraft/forge/DisCraftPaths.class',
         'dev/discraft/core/ChatSession.class',

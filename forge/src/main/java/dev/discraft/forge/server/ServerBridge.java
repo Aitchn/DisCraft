@@ -124,7 +124,7 @@ public final class ServerBridge {
         if(!(event.getEntity() instanceof ServerPlayer p))return;
         boolean first=peers.putIfAbsent(p.getUUID(),new Peer())==null;var actor=new ActorRef(ActorRef.Kind.MINECRAFT,p.getUUID().toString(),p.getGameProfile().getName());remember(actor);
         BridgeNetwork.notice(p,STATUS,adapter!=null&&allowed(p),"SERVER "+mode.toUpperCase(Locale.ROOT)+(allowed(p)?"":" (not authorized)"));
-        if(allowed(p)){BridgeNetwork.catalog(p,guildCatalog);for(var record:history)deliver(p,record);}
+        if(allowed(p)){BridgeNetwork.catalog(p,guildCatalog);BridgeNetwork.notice(p,BridgeNetwork.HISTORY_BEGIN,true,"History begin");for(var record:history)deliver(p,record);BridgeNetwork.notice(p,BridgeNetwork.HISTORY_END,true,"History end");}
         if(first&&running&&allowed(p))notice("join",Component.translatable("multiplayer.player.joined",p.getDisplayName().copy()));
     }
     @SubscribeEvent public static void logout(PlayerEvent.PlayerLoggedOutEvent event){

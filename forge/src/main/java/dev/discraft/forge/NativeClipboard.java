@@ -34,7 +34,7 @@ public final class NativeClipboard {
 
     @SubscribeEvent public static void screenshot(ScreenshotEvent event){
         // This excludes programmatic screenshot captures and never polls clipboard or screen pixels.
-        if(!InputConstants.isKeyDown(MC.getWindow().getWindow(),GLFW.GLFW_KEY_F2))return;
+        if(!InputConstants.isKeyDown(MC.getWindow().getWindow(),GLFW.GLFW_KEY_F2)||!ClientPreferences.SCREENSHOT_CLIPBOARD.get())return;
         try{
             var nativeImage=event.getImage();double scale=Math.min(1,Math.min(2048d/nativeImage.getWidth(),2048d/nativeImage.getHeight()));
             int w=Math.max(1,(int)(nativeImage.getWidth()*scale)),h=Math.max(1,(int)(nativeImage.getHeight()*scale));var copy=new BufferedImage(w,h,BufferedImage.TYPE_INT_ARGB);

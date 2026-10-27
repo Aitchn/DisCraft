@@ -38,7 +38,7 @@ Native `%item` expansion is configured with `itemDisplay=true`: see the
 [authoritative main-hand snapshot and headless model/font support profile](ITEM-DISPLAY.md).
 
 `notifications=join,quit,death,advancement,lifecycle` enables all categories in new templates;
-the default is empty, including on existing configurations. Nothing automatically
+an omitted key still means no categories in existing configurations. Existing files are not rewritten. Nothing automatically
 posts merely because the mod was upgraded or a test server was started. Player
 events follow the existing player allowlist; lifecycle notices are server-wide.
 All notices use the `Server` author prefix and have no selected mentions. Generated
