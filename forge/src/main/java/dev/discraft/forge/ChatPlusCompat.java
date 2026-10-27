@@ -69,6 +69,12 @@ public final class ChatPlusCompat {
             var manager=Class.forName("com.ebicep.chatplus.hud.ChatManager",true,loader);manager.getMethod("addSentMessage",String.class).invoke(manager.getField("INSTANCE").get(null),text);
         }}catch(Exception unsupported){warning();}
     }
+    static List<PendingCardLayout.Rect> protectedChatAreas(int width,int height){
+        if(!custom())return List.of();
+        try{if(!ready)throw new IllegalStateException();var windows=(List<?>)get(get(config,"getValues"),"getChatWindows");if(windows.isEmpty()||windows.size()>8)throw new IllegalStateException();var result=new ArrayList<PendingCardLayout.Rect>();
+            for(var window:windows){if((Boolean)get(get(window,"getGeneralSettings"),"getDisabled"))continue;var b=bounds(get(window,"getRenderer"));if(b.width()<=0||b.height()<=0)throw new IllegalStateException();long left=Math.max(0L,(long)b.x()-16),top=Math.max(0L,(long)b.y()-20);long right=Math.min((long)width,(long)b.x()+b.width()+12),bottom=Math.min((long)height,(long)b.y()+b.height()+20);if(right>left&&bottom>top)result.add(new PendingCardLayout.Rect((int)left,(int)top,(int)(right-left),(int)(bottom-top)));}return List.copyOf(result);
+        }catch(Exception unavailable){return List.of(new PendingCardLayout.Rect(0,0,width,height));}
+    }
     static Style styleAt(double x,double y){
         if(!ready||!(MC.screen instanceof ChatScreen))return null;
         try{var windows=(List<?>)get(get(config,"getValues"),"getChatWindows");if(windows.size()>8)return null;

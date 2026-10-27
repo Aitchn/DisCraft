@@ -128,6 +128,13 @@ public final class NativeChat {
             text.append(Component.literal(glyph).withStyle(Style.EMPTY.withFont(Minecraft.DEFAULT_FONT).withColor(color)));
         }
     }
+    static PendingCardLayout.Rect protectedChatArea(int width,int height){
+        var chat=MC.gui.getChat();double scale=chat.getScale();if(!Double.isFinite(scale)||scale<=0||scale>4)return new PendingCardLayout.Rect(0,0,width,height);int band=Math.max(9,(int)(9*(MC.options.chatLineSpacing().get()+1)));
+        double dy=(chatY-height+40)/scale,bottom=dy+scale*Math.floor((height-40)/scale)+8*scale;
+        int left=Math.max(0,chatX-8),top=Math.max(0,(int)Math.floor(bottom-chat.getLinesPerPage()*band*scale-16*scale));
+        int right=Math.min(width,(int)Math.ceil(chatX+chat.getWidth()+20*scale)),end=Math.min(height,(int)Math.ceil(bottom));
+        return new PendingCardLayout.Rect(left,top,Math.max(0,right-left),Math.max(0,end-top));
+    }
     static ActorRef actorAt(double x,double y){
         var style=ChatPlusCompat.custom()?ChatPlusCompat.styleAt(x,y):MC.gui.getChat().getClickedComponentStyleAt(x-chatX,y-(chatY-MC.getWindow().getGuiScaledHeight()+40)/MC.gui.getChat().getScale());if(style==null)return null;
         var actor=nameEvents.get(style.getClickEvent());if(actor!=null)return actor;

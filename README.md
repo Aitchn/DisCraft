@@ -35,7 +35,7 @@ explicit local TEST/demo fixtures are never a real provider.
 python3 scripts/check-mod-jar.py
 ```
 
-The distributable is `forge/build/libs/DisCraft-0.2.0-preview.5.jar`; no
+The distributable is `forge/build/libs/DisCraft-0.2.0-preview.6.jar`; no
 separate core JAR is needed. Smoke/test drivers and local credentials are excluded.
 [CI](docs/CI.md) retains JAR and test evidence. Full client/native tests require a
 display or Xvfb; production headless servers do not.

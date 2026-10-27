@@ -64,6 +64,7 @@ with zipfile.ZipFile(jar) as archive:
         'discraft.mixins.json',
         'dev/discraft/forge/ClientBridge.class',
         'dev/discraft/forge/ChatPlusCompat.class',
+        'dev/discraft/forge/PendingCardLayout.class',
         'dev/discraft/forge/ClipboardDesktop.class',
         'dev/discraft/forge/ClipboardDesktop$Pixels.class',
         'dev/discraft/forge/DesktopClipboardService.class',

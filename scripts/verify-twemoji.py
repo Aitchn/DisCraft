@@ -4,8 +4,8 @@ from pathlib import Path
 import argparse,fcntl,json,os,signal,socket,subprocess,time,zipfile,hashlib,urllib.request
 ROOT=Path(__file__).resolve().parents[1]
 
-parser=argparse.ArgumentParser();parser.add_argument('--chatplus',action='store_true');args=parser.parse_args()
-os.chdir(ROOT);OUT=ROOT/('build/evidence/chatplus' if args.chatplus else 'build/evidence/twemoji');OUT.mkdir(parents=True,exist_ok=True)
+parser=argparse.ArgumentParser();parser.add_argument('--chatplus',action='store_true');parser.add_argument('--pending-card',action='store_true');args=parser.parse_args()
+os.chdir(ROOT);OUT=ROOT/(('build/evidence/pending-card-chatplus' if args.chatplus else 'build/evidence/pending-card') if args.pending_card else ('build/evidence/chatplus' if args.chatplus else 'build/evidence/twemoji'));OUT.mkdir(parents=True,exist_ok=True)
 if args.chatplus:
  # Pinned official published fixtures only, never bundled with DisCraft.
  for slug,version,expected_size,expected_hash in [('chat-plus','T77CVU4z',27070339,'b7141f09fd6c5459078f9b4babe726a6a0c906b17a4d1acc94d2f2ded0993f1626d49a4b81f1633afa5c53f03ed7c4f60485a1d3a93c68c775383c43ea10441f')]:
@@ -38,12 +38,14 @@ if args.chatplus:
    if len(values)==3 and values[1].startswith('('):rows.append(f'MD: {right}/{values[2]} {values[1]} {left}/{values[0]} {values[1]}')
    elif len(values)==2:rows.append(f'FD: {right}/{values[1]} {left}/{values[0]}')
  assert len(rows)>10000;mapping.write_text('\n'.join(rows)+'\n')
+pending_run=str(time.time_ns()) if args.pending_card else None
 processes=[];logs=[]
 def interrupted(signum,frame):raise KeyboardInterrupt('Twemoji acceptance interrupted')
 signal.signal(signal.SIGTERM,interrupted)
 def launch(role):
- data=json.loads((ROOT/('build/mp-launch-'+('server' if role=='server' else 'Alice')+'.json')).read_text());command=data['command'];directory=ROOT/(('run-mp/chatplus-' if args.chatplus else 'run-mp/twemoji-')+role);directory.mkdir(parents=True,exist_ok=True)
- command=command[:1]+(['-Ddiscraft.chatPlusSmoke=true'] if args.chatplus else [])+(['-Dmixin.env.remapRefMap=true','-Dmixin.env.refMapRemappingFile='+str(mapping)] if args.chatplus and role!='server' else [])+['-Ddiscraft.twemojiSmoke=true','-Ddiscraft.twemojiOutput='+str(OUT)]+command[1:]
+ data=json.loads((ROOT/('build/mp-launch-'+('server' if role=='server' else 'Alice')+'.json')).read_text());command=data['command'];directory=ROOT/((('run-mp/pending-card-chatplus-' if args.chatplus else 'run-mp/pending-card-')+pending_run+'-' if args.pending_card else ('run-mp/chatplus-' if args.chatplus else 'run-mp/twemoji-'))+role);directory.mkdir(parents=True,exist_ok=True)
+ if args.pending_card and role!='server':command=[c for c in command if c!='-Ddiscraft.multiplayerSmoke=true']
+ command=command[:1]+(['-Ddiscraft.chatPlusSmoke=true'] if args.chatplus else [])+(['-Dmixin.env.remapRefMap=true','-Dmixin.env.refMapRemappingFile='+str(mapping)] if args.chatplus and role!='server' else [])+['-Ddiscraft.'+('pendingCardSmoke' if args.pending_card else 'twemojiSmoke')+'=true','-Ddiscraft.twemojiOutput='+str(OUT)]+command[1:]
  if '--gameDir' in command:command[command.index('--gameDir')+1]=str(directory)
  child=environment.copy();child.update(data['environment'])
  if role=='server':

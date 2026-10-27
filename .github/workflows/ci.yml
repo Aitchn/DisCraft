@@ -187,6 +187,10 @@ jobs:
         run: timeout --kill-after=45s 900 xvfb-run -a -s '-screen 0 1280x900x24 -nolisten tcp' python3 scripts/verify-optional-client.py --ncr
       - name: Verify pinned ChatPlus relocated input, Unicode, media and native routing
         run: timeout --kill-after=45s 600 xvfb-run -a -s '-screen 0 1280x900x24 -nolisten tcp' python3 scripts/verify-twemoji.py --chatplus
+      - name: Verify right-side pending cards in vanilla defaults and narrow layouts
+        run: timeout --kill-after=45s 600 xvfb-run -a -s '-screen 0 1280x900x24 -nolisten tcp' python3 scripts/verify-twemoji.py --pending-card
+      - name: Verify right-side pending cards with ChatPlus defaults and moved layout
+        run: timeout --kill-after=45s 600 xvfb-run -a -s '-screen 0 1280x900x24 -nolisten tcp' python3 scripts/verify-twemoji.py --pending-card --chatplus
       - name: Upload compatibility evidence only
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -195,5 +199,7 @@ jobs:
           path: |
             build/evidence/optional-client-ncr/
             build/evidence/chatplus/
+            build/evidence/pending-card/
+            build/evidence/pending-card-chatplus/
           if-no-files-found: warn
           retention-days: 14

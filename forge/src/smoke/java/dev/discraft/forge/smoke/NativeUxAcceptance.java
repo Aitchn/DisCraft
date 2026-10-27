@@ -47,6 +47,12 @@ final class NativeUxAcceptance {
     private static boolean noAutoSend(){return ClientBridge.snapshot().stream().filter(m->m.author().equals("Alice")).noneMatch(m->!beforeOwn.contains(m.id()));}
     private static void capture(String name)throws Exception{try(var image=Screenshot.takeScreenshot(MC.getMainRenderTarget())){image.writeToFile(OUT.resolve(name));}}
     @SuppressWarnings("unchecked") private static List<RelayRecord> records()throws Exception{return new ArrayList<>((Collection<RelayRecord>)get(ClientBridge.class,"history"));}
+    private static boolean cardMouse(boolean remove)throws Exception{
+        var valid=NativeInteractions.class.getDeclaredMethod("currentCard");valid.setAccessible(true);if(!(Boolean)valid.invoke(null))return false;
+        var layout=(PendingCardLayout.Placement)get(NativeInteractions.class,"displayedCard");boolean picker=(Boolean)get(NativeInteractions.class,"open");
+        if(layout.mode()==PendingCardLayout.Mode.HIDDEN&&!picker){NativeInteractions.openPicker();return false;}
+        if(picker&&layout.mode()==PendingCardLayout.Mode.HIDDEN){var method=NativeInteractions.class.getDeclaredMethod("footer");method.setAccessible(true);layout=(PendingCardLayout.Placement)method.invoke(null);}var button=remove?layout.remove():layout.spoiler();mouse(button.x()+9,button.y()+9);return true;
+    }
     static boolean tick()throws Exception{
         if(action!=null){if(!action.isDone())return false;action.get();action=null;}
         switch(phase){
@@ -61,7 +67,7 @@ final class NativeUxAcceptance {
             owner=new ProcessBuilder(Path.of(System.getProperty("java.home"),"bin/java").toString(),"-Xmx128m","-XX:ActiveProcessorCount=1","-cp",System.getProperty("java.class.path"),ClipboardFixture.class.getName(),source.toString(),ready.toString(),stop.toString()).redirectErrorStream(true).redirectOutput(OUT.resolve("clipboard-owner.log").toFile()).start();System.out.println("OS_CLIPBOARD ownerPid="+owner.pid());beforeOwn=ClientBridge.snapshot().stream().filter(m->m.author().equals("Alice")).map(Message::id).collect(java.util.stream.Collectors.toSet());next(3);
         }
         case 3 -> {if(!Files.exists(ready)){if(!owner.isAlive())throw new AssertionError("External clipboard owner exited before ready");return false;}chord(KeyEvent.VK_V);next(4);}
-        case 4 -> {if(loading()||selected()==null)return false;check(selected().name().equals("clipboard.png")&&selected().media().width()==192&&noAutoSend(),"Actual external-process X11 image Ctrl+V stages bounded pixels without auto-send");mouse(143,MC.screen.height-113);next(5);}
+        case 4 -> {if(loading()||selected()==null)return false;if(!cardMouse(true))return false;check(selected().name().equals("clipboard.png")&&selected().media().width()==192&&noAutoSend(),"Actual external-process X11 image Ctrl+V stages bounded pixels without auto-send");next(5);}
         case 5 -> {if(selected()!=null)return false;check(Files.exists(source)&&noAutoSend(),"Real remove-card click removes only staged data, preserving original disk file");cleanupOwner();beforeFiles=screenshots();key(KeyEvent.VK_ESCAPE);key(KeyEvent.VK_F2);next(6);}
         case 6 -> {
             var changed=new HashSet<>(screenshots());changed.removeAll(beforeFiles);if(changed.isEmpty())return false;
@@ -72,7 +78,7 @@ final class NativeUxAcceptance {
             check(selected()==null&&noAutoSend(),"F2 neither stages nor sends the copied screenshot automatically");key(KeyEvent.VK_T);next(7);
         }
         case 7 -> {if(!(MC.screen instanceof ChatScreen))return false;chord(KeyEvent.VK_V);next(8);}
-        case 8 -> {if(loading()||selected()==null)return false;check(selected().bytes().length<=RelayRecord.FILE_BYTES&&selected().media().width()<=1024&&selected().media().height()<=1024,"F2 image paste is resized/encoded inside bridge byte and dimension limits");digest=selected().digest();mouse(121,MC.screen.height-113);next(9);}
+        case 8 -> {if(loading()||selected()==null)return false;if(!cardMouse(false))return false;check(selected().bytes().length<=RelayRecord.FILE_BYTES&&selected().media().width()<=1024&&selected().media().height()<=1024,"F2 image paste is resized/encoded inside bridge byte and dimension limits");digest=selected().digest();next(9);}
         case 9 -> {if(!(Boolean)get(NativeComposer.class,"spoiler"))return false;check(!(Boolean)invoke(NativeComposer.class,"previewVisible"),"Real spoiler-card click conceals the local image without auto-send");mouse(MC.screen.width-14,MC.screen.height-9);next(10);}
         case 10 -> {if(!(Boolean)get(NativeInteractions.class,"open"))return false;if(++ticks<4)return false;capture("Native-X11-F2-picker-card.png");int x=Math.max(4,MC.screen.width-Math.min(350,MC.screen.width-8)-5),y=MC.screen.height-22-Math.min(260,MC.screen.height-28);mouse(x+100,y+45);textClipboard("grinning");chord(KeyEvent.VK_V);next(11);}
         case 11 -> {if(!((EditBox)get(NativeInteractions.class,"search")).getValue().equals("grinning"))return false;check(input().getValue().isEmpty()&&selected().digest().equals(digest),"Picker search uses normal text paste without mutating the draft or staged image");capture("Native-picker-search-X11.png");key(KeyEvent.VK_ESCAPE);next(12);}
