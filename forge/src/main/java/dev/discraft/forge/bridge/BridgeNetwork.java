@@ -21,6 +21,8 @@ public final class BridgeNetwork {
         NetworkRegistry.acceptMissingOr("4"),
         NetworkRegistry.acceptMissingOr("4"));
     private static final AtomicInteger QUEUED=new AtomicInteger();
+    // Entries are dropped on logout, so this only bounds concurrently online players.
+    private static final int INGRESS_PEERS=1024;
     private static final java.util.concurrent.ConcurrentHashMap<UUID,Ingress> ingress=new java.util.concurrent.ConcurrentHashMap<>();
     private static final class Ingress {
         double bytes=2*RelayRecord.MAX_BYTES, packets=128;long updated=System.nanoTime();
@@ -43,7 +45,7 @@ public final class BridgeNetwork {
     }
     private static void thumbnail(ThumbRequest packet,Supplier<NetworkEvent.Context> supplied){
         var context=supplied.get();var player=context.getSender();context.setPacketHandled(true);
-        if(player==null||(!ingress.containsKey(player.getUUID())&&ingress.size()>=64))return;
+        if(player==null||(!ingress.containsKey(player.getUUID())&&ingress.size()>=INGRESS_PEERS))return;
         if(!ingress.computeIfAbsent(player.getUUID(),id->new Ingress()).admit(128))return;
         if(QUEUED.incrementAndGet()>64){QUEUED.decrementAndGet();return;}
         context.enqueueWork(()->{try{ServerBridge.thumbnails(player,packet);}finally{QUEUED.decrementAndGet();}});
@@ -60,7 +62,7 @@ public final class BridgeNetwork {
     private static void write(FriendlyByteBuf b,UUID id,int total,int offset,byte[] bytes){b.writeUUID(id);b.writeVarInt(total);b.writeVarInt(offset);b.writeByteArray(bytes);}
     private static void upload(Upload p,Supplier<NetworkEvent.Context> supplied){
         var c=supplied.get();var player=c.getSender();c.setPacketHandled(true);
-        if(player==null||(!ingress.containsKey(player.getUUID())&&ingress.size()>=64))return;
+        if(player==null||(!ingress.containsKey(player.getUUID())&&ingress.size()>=INGRESS_PEERS))return;
         if(!ingress.computeIfAbsent(player.getUUID(),id->new Ingress()).admit(p.bytes.length+48))return;
         if(player==null||QUEUED.incrementAndGet()>64){if(player!=null)QUEUED.decrementAndGet();return;}
         c.enqueueWork(()->{try{ServerBridge.upload(player,p);}finally{QUEUED.decrementAndGet();}});

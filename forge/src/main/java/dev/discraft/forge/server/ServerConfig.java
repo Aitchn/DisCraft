@@ -84,7 +84,7 @@ final class ServerConfig {
             String flag=properties.getProperty("enabled","false").trim();
             if(!flag.equals("true")&&!flag.equals("false"))throw new IOException();
             boolean enabled=flag.equals("true");
-            String channel=properties.getProperty("channel","").trim(),token=properties.getProperty("botToken","");
+            String channel=properties.getProperty("channel","").trim(),token=properties.getProperty("botToken","").trim();
             var players=new HashSet<String>();
             String list=properties.getProperty("allowedPlayers","").trim();
             if(!list.isEmpty())for(String entry:list.split(",",-1)){

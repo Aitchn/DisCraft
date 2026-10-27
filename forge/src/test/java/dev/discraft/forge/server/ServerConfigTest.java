@@ -83,6 +83,7 @@ final class ServerConfigTest {
             rejects(file,valid+"resourcePacks=base.zip,base.zip\n");
             rejects(file,valid+"locale=not a locale\n");
             rejects(file,valid.replace(TOKEN,"short"));
+            Files.writeString(file,valid.replace("botToken="+TOKEN,"botToken="+TOKEN+"  "));check(ServerConfig.load(file).token().equals(TOKEN),"Trailing whitespace pasted after the bot token is ignored");
             rejects(file,valid.replace(CHANNEL,"bad-channel"));
             rejects(file,valid.replace(player.toString(),TOKEN));
             rejects(file,valid+"unexpected="+TOKEN+"\n");
