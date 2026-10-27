@@ -92,12 +92,13 @@ public final class NativeComposer {
         }
     }
     @SubscribeEvent public static void chat(ClientChatEvent event){
-        if(event.getMessage().startsWith("/"))return;
-        String raw=MC.screen instanceof ChatScreen screen?input(screen).getValue():event.getMessage();var selected=DraftMentions.snapshot(raw);
-        if(!requiresPayload(event.getMessage(),selected))return;
-        // Capture routing from the actual raw selection before vanilla's known whitespace transform.
-        var mapped=dev.discraft.forge.bridge.MentionDraft.normalized(raw,selected,event.getMessage());
-        event.setCanceled(true);send(event.getMessage(),mapped);
+        if(submitCustom(event.getMessage()))event.setCanceled(true);
+    }
+    /** Also used by the supported custom chat renderer's post-filter, pre-send event. */
+    static boolean submitCustom(String message){
+        if(message.startsWith("/"))return false;
+        String raw=MC.screen instanceof ChatScreen screen?input(screen).getValue():message;var selected=DraftMentions.snapshot(raw);if(!requiresPayload(message,selected))return false;
+        try{var mapped=dev.discraft.forge.bridge.MentionDraft.normalized(raw,selected,message);send(message,mapped);}catch(Exception invalid){notice("Enhanced draft changed or exceeded its bounds; message was not sent.");}return true;
     }
     private static boolean send(String text,java.util.List<dev.discraft.forge.bridge.Mention> mentions){
         if(sending||loading){notice("Attachment validation or a bridge acknowledgement is still pending.");return false;}

@@ -1,10 +1,22 @@
 #!/usr/bin/env python3
-"""Offline native Twemoji evidence at original framebuffer resolution. Never uses live Discord."""
+"""Isolated native Twemoji evidence; optional pinned ChatPlus fixture download, never live Discord."""
 from pathlib import Path
-import argparse,fcntl,json,os,signal,socket,subprocess,time,zipfile
+import argparse,fcntl,json,os,signal,socket,subprocess,time,zipfile,hashlib,urllib.request
 ROOT=Path(__file__).resolve().parents[1]
 
-os.chdir(ROOT);OUT=ROOT/'build/evidence/twemoji';OUT.mkdir(parents=True,exist_ok=True)
+parser=argparse.ArgumentParser();parser.add_argument('--chatplus',action='store_true');args=parser.parse_args()
+os.chdir(ROOT);OUT=ROOT/('build/evidence/chatplus' if args.chatplus else 'build/evidence/twemoji');OUT.mkdir(parents=True,exist_ok=True)
+if args.chatplus:
+ # Pinned official published fixtures only, never bundled with DisCraft.
+ for slug,version,expected_size,expected_hash in [('chat-plus','T77CVU4z',27070339,'b7141f09fd6c5459078f9b4babe726a6a0c906b17a4d1acc94d2f2ded0993f1626d49a4b81f1633afa5c53f03ed7c4f60485a1d3a93c68c775383c43ea10441f')]:
+  target=ROOT/'build/compat-research/chatplus-forge-2.8.1.jar';target.parent.mkdir(parents=True,exist_ok=True)
+  if not target.exists():
+   with urllib.request.urlopen(urllib.request.Request('https://api.modrinth.com/v2/version/'+version,headers={'User-Agent':'DisCraft-isolated-compat-test/0.2'}),timeout=20)as r:metadata=json.loads(r.read(1024*1024))
+   file=metadata['files'][0];assert file['hashes']['sha512']==expected_hash and file['url'].startswith('https://cdn.modrinth.com/')
+   with urllib.request.urlopen(file['url'],timeout=40)as r:data=r.read(32*1024*1024)
+   assert len(data)==expected_size and hashlib.sha512(data).hexdigest()==expected_hash;target.write_bytes(data)
+  assert target.stat().st_size==expected_size and hashlib.sha512(target.read_bytes()).hexdigest()==expected_hash
+
 lock=(OUT/'.runner.lock').open('w');fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
 (OUT/'result.txt').unlink(missing_ok=True)
 environment=os.environ.copy()
@@ -13,14 +25,25 @@ environment.update(LIBGL_ALWAYS_SOFTWARE='true',ALSOFT_DRIVERS='null',LP_NUM_THR
 with socket.socket() as reservation:reservation.bind(('127.0.0.1',0));port=reservation.getsockname()[1]
 for role in ('server','Alice'):
  with (OUT/(role+'-prepare.log')).open('w') as output:
-  result=subprocess.run(['./gradlew','-Pforge','-PmultiplayerSmoke','-PbridgeRole='+role,'-PbridgePort='+str(port),':forge:exportBridgeLaunch','--console=plain'],env=environment,stdout=output,stderr=subprocess.STDOUT,timeout=300)
+  result=subprocess.run(['./gradlew','-Pforge','-PmultiplayerSmoke']+(['-PcompatChatPlus'] if args.chatplus and role=='Alice' else [])+['-PbridgeRole='+role,'-PbridgePort='+str(port),':forge:exportBridgeLaunch']+([':forge:createMcpToSrg'] if args.chatplus else [])+['--console=plain'],env=environment,stdout=output,stderr=subprocess.STDOUT,timeout=300)
  if result.returncode:raise SystemExit('Twemoji launch preparation failed; see local log')
+if args.chatplus:
+ mapping=ROOT/'build/compat-research/chatplus-srg-to-named.srg';rows=[];left=right=None
+ for line in (ROOT/'forge/build/createMcpToSrg/output.tsrg').read_text().splitlines():
+  if line.startswith('tsrg2'):continue
+  values=line.split()
+  if not line.startswith('\t'):
+   if len(values)==2:left,right=values
+  elif not line.startswith('\t\t'):
+   if len(values)==3 and values[1].startswith('('):rows.append(f'MD: {right}/{values[2]} {values[1]} {left}/{values[0]} {values[1]}')
+   elif len(values)==2:rows.append(f'FD: {right}/{values[1]} {left}/{values[0]}')
+ assert len(rows)>10000;mapping.write_text('\n'.join(rows)+'\n')
 processes=[];logs=[]
 def interrupted(signum,frame):raise KeyboardInterrupt('Twemoji acceptance interrupted')
 signal.signal(signal.SIGTERM,interrupted)
 def launch(role):
- data=json.loads((ROOT/('build/mp-launch-'+('server' if role=='server' else 'Alice')+'.json')).read_text());command=data['command'];directory=ROOT/('run-mp/twemoji-'+role);directory.mkdir(parents=True,exist_ok=True)
- command=command[:1]+['-Ddiscraft.twemojiSmoke=true','-Ddiscraft.twemojiOutput='+str(OUT)]+command[1:]
+ data=json.loads((ROOT/('build/mp-launch-'+('server' if role=='server' else 'Alice')+'.json')).read_text());command=data['command'];directory=ROOT/(('run-mp/chatplus-' if args.chatplus else 'run-mp/twemoji-')+role);directory.mkdir(parents=True,exist_ok=True)
+ command=command[:1]+(['-Ddiscraft.chatPlusSmoke=true'] if args.chatplus else [])+(['-Dmixin.env.remapRefMap=true','-Dmixin.env.refMapRemappingFile='+str(mapping)] if args.chatplus and role!='server' else [])+['-Ddiscraft.twemojiSmoke=true','-Ddiscraft.twemojiOutput='+str(OUT)]+command[1:]
  if '--gameDir' in command:command[command.index('--gameDir')+1]=str(directory)
  child=environment.copy();child.update(data['environment'])
  if role=='server':
@@ -49,6 +72,7 @@ try:
  server.stdin.write(b'gamerule doDaylightCycle false\ntime set day\nweather clear\n');server.stdin.flush()
  client=launch('client');deadline=time.monotonic()+240
  while client.poll() is None:
+  if server.poll() is not None:raise RuntimeError('Isolated UI fixture server exited before client completion')
   if time.monotonic()>deadline:raise RuntimeError('Twemoji verification timed out')
   time.sleep(.25)
  summary=(OUT/'result.txt').read_text()

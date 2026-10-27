@@ -54,7 +54,13 @@ dependencies {
         repositories { maven { url = 'https://api.modrinth.com/maven'; content { includeModule 'maven.modrinth', 'no-chat-reports' } } }
         runtimeOnly fg.deobf('maven.modrinth:no-chat-reports:2XUIKIAa')
     }
-
+    if (providers.gradleProperty('compatChatPlus').isPresent()) {
+        repositories { maven { url = 'https://api.modrinth.com/maven'; content { includeGroup 'maven.modrinth' } } }
+        runtimeOnly fg.deobf('maven.modrinth:chat-plus:T77CVU4z')
+        runtimeOnly fg.deobf('maven.modrinth:cloth-config:nr1znv5v')
+        runtimeOnly fg.deobf('maven.modrinth:architectury-api:1MKTLiiG')
+        runtimeOnly 'maven.modrinth:kotlin-for-forge:9j6YaPp2' // Language provider, not a remapped Minecraft library.
+    }
 }
 tasks.named('jar', Jar) {
     manifest.attributes('MixinConfigs': 'discraft.mixins.json')
@@ -67,6 +73,7 @@ tasks.named('jar', Jar) {
     exclude 'dev/discraft/forge/server/ItemTooltipAcceptance*'
     exclude 'dev/discraft/forge/server/InstalledLanguageAcceptance*'
     exclude 'dev/discraft/forge/server/OptionalServerAcceptance*'
+    exclude 'dev/discraft/forge/server/ChatPlusServerAcceptance*'
     exclude 'dev/discraft/forge/server/DiscordAuthorFixtures*'
     from project(':core').sourceSets.main.output
     finalizedBy 'reobfJar'

@@ -47,6 +47,7 @@ public final class NativeChat {
     private static int nextColor=0x100000,chatX,chatY;
     public static int renderedTiles;
     private static final long started=System.nanoTime();
+    private static boolean externalFrameOpen;
 
     public static void reset(){nativeOriginals.clear();nativeComponents.clear();unicodeMedia.clear();TwemojiCatalog.clearAssets();assets.clear();tiles.clear();markers.clear();components.clear();records.clear();layout=null;spoilerHits.clear();revealed.clear();nameEvents.clear();ownedNames.clear();textures.close();NativeComposer.reset();}
     public static void receive(RelayRecord record,Collection<RelayRecord> retained){
@@ -75,6 +76,7 @@ public final class NativeChat {
         }appendBody(component,record,record.text().substring(at),owned);
         for(var a:record.attachments()){
             component.append(Component.literal("\n["+a.name()+"]").withStyle(ChatFormatting.GRAY));
+            if(!ChatPlusCompat.canRender())continue;
             int available=Math.max(layout.cell(),layout.width()/layout.cell()*layout.cell());
             double scale=Math.min(Math.min(96,available)/(double)a.media().width(),54d/a.media().height());
             int width=Math.max(1,(int)Math.round(a.media().width()*scale)),height=Math.max(1,(int)Math.round(a.media().height()*scale));
@@ -86,8 +88,8 @@ public final class NativeChat {
     private static void wantUnicode(RelayRecord record,String text,Map<String,TwemojiCatalog.Entry> wanted){for(var part:Content.parse(text,record.catalog()))if(part instanceof Content.Text literal)for(var span:TwemojiCatalog.parts(literal.value()))if(span.emoji()!=null)wanted.putIfAbsent(span.emoji().asset(),span.emoji());}
     private static void appendBody(MutableComponent component,RelayRecord record,String text,Set<Integer> owned){
         for(var part:Content.parse(text,record.catalog())){
-            if(part instanceof Content.Text t){for(var span:TwemojiCatalog.parts(t.value())){var image=span.emoji()==null?null:unicodeMedia.get(span.emoji().asset());if(image==null)component.append(emojiLiteral(span.text()));else row(component,image,Math.min(8,layout.emojiCell()),8,0,layout.emojiCell(),8,"\u3000",owned,record.id(),false);}}
-            else if(part instanceof Content.CustomEmoji e){var a=record.emoji().get(e.mediaKey());if(a!=null)row(component,a,Math.min(8,layout.emojiCell()),8,0,layout.emojiCell(),8,"\u3000",owned,record.id(),false);else component.append(":"+e.name()+":");}
+            if(part instanceof Content.Text t){for(var span:TwemojiCatalog.parts(t.value())){var image=!ChatPlusCompat.canRender()||span.emoji()==null?null:unicodeMedia.get(span.emoji().asset());if(image==null)component.append(emojiLiteral(span.text()));else row(component,image,Math.min(8,layout.emojiCell()),8,0,layout.emojiCell(),8,"\u3000",owned,record.id(),false);}}
+            else if(part instanceof Content.CustomEmoji e){var a=record.emoji().get(e.mediaKey());if(a!=null&&ChatPlusCompat.canRender())row(component,a,Math.min(8,layout.emojiCell()),8,0,layout.emojiCell(),8,"\u3000",owned,record.id(),false);else component.append(":"+e.name()+":");}
         }
     }
     private static void syncUnicode(Map<String,TwemojiCatalog.Entry> wanted){
@@ -111,7 +113,7 @@ public final class NativeChat {
     @SubscribeEvent(priority=EventPriority.LOWEST) public static void nativeMessage(ClientChatReceivedEvent event){
         // Disguised/server chat can legitimately use System while preserving the vanilla chat UI.
         // Action-bar overlays are a separate surface and never own chat sprite rows.
-        if(event instanceof ClientChatReceivedEvent.System system&&system.isOverlay())return;
+        if(event instanceof ClientChatReceivedEvent.System system&&system.isOverlay()||!ChatPlusCompat.canRender())return;
         var wanted=new LinkedHashMap<String,TwemojiCatalog.Entry>();boolean selector;try{selector=collectNative(event.getMessage(),wanted,new int[]{512,8192},0,new IdentityHashMap<>());}catch(IllegalArgumentException oversized){return;}if(wanted.isEmpty()&&!selector)return;
         reflow();UUID id=UUID.randomUUID();nativeOriginals.put(id,nativeEmoji(event.getMessage(),id,new HashSet<>(),false));while(nativeOriginals.size()>12){UUID first=nativeOriginals.keySet().iterator().next();nativeOriginals.remove(first);nativeComponents.remove(first);var old=markers.remove(first);if(old!=null)old.forEach(tiles::remove);}
         // Rebuild only a bounded union of our retained relay/native assets; no packet or signature is changed.
@@ -127,17 +129,19 @@ public final class NativeChat {
         }
     }
     static ActorRef actorAt(double x,double y){
-        var style=MC.gui.getChat().getClickedComponentStyleAt(x-chatX,y-(chatY-MC.getWindow().getGuiScaledHeight()+40)/MC.gui.getChat().getScale());if(style==null)return null;
+        var style=ChatPlusCompat.custom()?ChatPlusCompat.styleAt(x,y):MC.gui.getChat().getClickedComponentStyleAt(x-chatX,y-(chatY-MC.getWindow().getGuiScaledHeight()+40)/MC.gui.getChat().getScale());if(style==null)return null;
         var actor=nameEvents.get(style.getClickEvent());if(actor!=null)return actor;
         var hover=style.getHoverEvent();if(hover==null||MC.getConnection()==null)return null;
         var entity=hover.getValue(HoverEvent.Action.SHOW_ENTITY);if(entity==null||entity.type!=net.minecraft.world.entity.EntityType.PLAYER)return null;
         var player=MC.getConnection().getPlayerInfo(entity.id);return player==null?null:new ActorRef(ActorRef.Kind.MINECRAFT,player.getProfile().getId().toString(),player.getProfile().getName());
     }
-    static boolean revealAt(double x,double y){for(var hit:spoilerHits)if(x>=hit.x()&&x<hit.x()+hit.w()&&y>=hit.y()&&y<hit.y()+hit.h()){if(!revealed.add(hit.owner()))revealed.remove(hit.owner());return true;}return false;}
+    static boolean revealAt(double x,double y){if(ChatPlusCompat.custom()){for(int i=spoilerHits.size()-1;i>=0;i--){var hit=spoilerHits.get(i);if(x>=hit.x()&&x<hit.x()+hit.w()&&y>=hit.y()&&y<hit.y()+hit.h()){if(!revealed.add(hit.owner()))revealed.remove(hit.owner());return true;}}return false;}for(var hit:spoilerHits)if(x>=hit.x()&&x<hit.x()+hit.w()&&y>=hit.y()&&y<hit.y()+hit.h()){if(!revealed.add(hit.owner()))revealed.remove(hit.owner());return true;}return false;}
     private static void reflow(){
         var chat=MC.gui.getChat();
-        var next=new Layout(Math.max(1,(int)(chat.getWidth()/chat.getScale())),Math.max(9,(int)(9*(MC.options.chatLineSpacing().get()+1))),Math.max(1,MC.font.width("\u00a0")),Math.max(1,MC.font.width("\u3000")));
+        var next=new Layout(ChatPlusCompat.width(Math.max(1,(int)(chat.getWidth()/chat.getScale()))),Math.max(9,(int)(9*(MC.options.chatLineSpacing().get()+1))),Math.max(1,MC.font.width("\u00a0")),Math.max(1,MC.font.width("\u3000")));
         if(next.equals(layout))return;layout=next;
+        // ChatPlus owns copies and reflow; keep their stable marker identities instead of rewriting vanilla history behind it.
+        if(ChatPlusCompat.installed())return;
         // Rewrite only our own components, retaining native order, timestamps, signatures and other messages.
         var owned=new IdentityHashMap<Component,UUID>();components.forEach((id,c)->owned.put(c,id));nativeComponents.forEach((id,c)->owned.put(c,id));boolean changed=false;
         try{
@@ -152,8 +156,29 @@ public final class NativeChat {
         if(changed)chat.rescaleChat();
     }
     @SubscribeEvent(priority=EventPriority.LOWEST) public static void position(CustomizeGuiOverlayEvent.Chat event){chatX=event.getPosX();chatY=event.getPosY();reflow();}
+    @SubscribeEvent public static void externalFrame(net.minecraftforge.event.TickEvent.RenderTickEvent event){
+        if(event.phase==net.minecraftforge.event.TickEvent.Phase.START){if(!ChatPlusCompat.active())return;renderedTiles=0;spoilerHits.clear();textures.begin();externalFrameOpen=true;}else if(externalFrameOpen){textures.end();externalFrameOpen=false;}
+    }
+    static void externalLine(net.minecraft.client.gui.GuiGraphics graphics,net.minecraft.util.FormattedCharSequence content,float x,float y,int lineHeight,ChatPlusCompat.Bounds bounds,float opacity){
+        if(!Float.isFinite(x)||!Float.isFinite(y)||opacity<=.01f||MC.options.hideGui||bounds.width()<=0||bounds.height()<=0)return;
+        final float[] advance={x};final long elapsed=(System.nanoTime()-started)/1_000_000;
+        int left=Math.max(0,bounds.x()),top=Math.max(0,bounds.y()),right=Math.min(graphics.guiWidth(),bounds.x()+bounds.width()),bottom=Math.min(graphics.guiHeight(),bounds.y()+bounds.height());if(right<=left||bottom<=top)return;
+        var shader=RenderSystem.getShaderColor().clone();graphics.enableScissor(left,top,right,bottom);graphics.pose().pushPose();
+        try{graphics.pose().translate(0,0,1);content.accept((index,style,point)->{
+            var color=style.getColor();var tile=(point==160||point==0x3000)&&color!=null?tiles.get(color.getValue()):null;
+            if(tile!=null){var a=assets.get(tile.digest());if(a!=null){
+                int dw=Math.min(tile.cell(),tile.width()-tile.x()),dh=Math.min(tile.band(),tile.height()-tile.y());
+                int sx=tile.x()*a.width()/tile.width(),sy=tile.y()*a.height()/tile.height();
+                int sw=Math.max(1,(tile.x()+dw)*a.width()/tile.width()-sx),sh=Math.max(1,(tile.y()+dh)*a.height()/tile.height()-sy);
+                int px=Math.round(advance[0]),py=Math.round(y+tile.y()-(tile.y()/tile.band())*lineHeight);
+                if(tile.spoiler()&&spoilerHits.size()<4096){var matrix=graphics.pose().last().pose();var a0=matrix.transformPosition(new org.joml.Vector3f(px,py,0));var b0=matrix.transformPosition(new org.joml.Vector3f(px+dw,py+dh,0));double hx=Math.max(left,Math.min(a0.x(),b0.x())),hy=Math.max(top,Math.min(a0.y(),b0.y())),ex=Math.min(right,Math.max(a0.x(),b0.x())),ey=Math.min(bottom,Math.max(a0.y(),b0.y()));if(ex>hx&&ey>hy)spoilerHits.add(new SpoilerHit(hx,hy,ex-hx,ey-hy,tile.owner()));}
+                if(tile.spoiler()&&!revealed.contains(tile.owner()))graphics.fill(px,py,px+dw,py+dh,0xff3d3e45);
+                else{var texture=textures.frame(tile.digest(),a,elapsed);RenderSystem.enableBlend();RenderSystem.setShaderColor(1,1,1,opacity);graphics.blit(texture,px,py,dw,dh,sx,sy,sw,sh,a.width(),a.height());renderedTiles++;}
+            }}advance[0]+=MC.font.width(Component.literal(new String(Character.toChars(point))).setStyle(style));return true;
+        });}finally{RenderSystem.setShaderColor(shader[0],shader[1],shader[2],shader[3]);graphics.pose().popPose();graphics.disableScissor();}
+    }
     @SubscribeEvent public static void render(RenderGuiOverlayEvent.Post event){
-        if(!event.getOverlay().id().equals(VanillaGuiOverlay.CHAT_PANEL.id()))return;
+        if(!event.getOverlay().id().equals(VanillaGuiOverlay.CHAT_PANEL.id())||ChatPlusCompat.rendering())return;
         renderedTiles=0;spoilerHits.clear();
         if(MC.options.hideGui||MC.options.chatVisibility().get()==ChatVisiblity.HIDDEN||assets.isEmpty())return;
         var chat=MC.gui.getChat();var graphics=event.getGuiGraphics();double scale=chat.getScale();
