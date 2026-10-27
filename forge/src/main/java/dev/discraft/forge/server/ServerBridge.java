@@ -64,6 +64,7 @@ public final class ServerBridge {
     private static void background(Runnable work){worker.execute(BridgeWorkQueue.background(work));}
     @SubscribeEvent public static void starting(ServerAboutToStartEvent event){
         if(vanillaAssets!=null){vanillaAssets.close();vanillaAssets=null;}
+        if(worker!=null)worker.shutdownNow();if(adapter!=null)adapter.close();adapter=null;
         server=event.getServer();mode="disabled";config=ServerConfig.disabled();
         running=false;stopping=false;text=new ComponentText(ResourcePackIndex.empty(),"en_us");itemRenderer=null;
         worker=new ThreadPoolExecutor(1,1,0,TimeUnit.SECONDS,new BridgeWorkQueue(16),r->{var t=new Thread(r,"DisCraft server bridge");t.setDaemon(true);return t;});
@@ -179,7 +180,7 @@ public final class ServerBridge {
         try{background(()->{try{var images=transport.thumbnails(ids);var current=transport.catalog();active.execute(()->{
             if(server!=active||!peer.alive.get())return;applyCatalog(current);if(current.version()!=request.version())return;
             for(String id:ids)BridgeNetwork.thumbnail(player,current.version(),id,images.get(id));
-        });}finally{thumbnailBusy.set(false);}});}catch(RejectedExecutionException ignored){thumbnailBusy.set(false);}
+        });}catch(Exception unavailable){transport.failed(BridgeDiagnostics.Operation.BACKGROUND);}finally{thumbnailBusy.set(false);}});}catch(RejectedExecutionException ignored){thumbnailBusy.set(false);}
     }
     public static void upload(ServerPlayer p,BridgeNetwork.Upload packet){
         if(server==null||server.getPlayerList().getPlayer(p.getUUID())!=p)return;

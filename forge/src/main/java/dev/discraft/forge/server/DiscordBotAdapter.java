@@ -97,9 +97,10 @@ public final class DiscordBotAdapter implements DiscordAdapter {
         return Map.copyOf(result);
     }
     private String cursor;
-    private boolean initialized,terminal;
-    private volatile boolean closed;
-    private long blockedUntil,nextPoll;
+    private boolean initialized;
+    private volatile boolean closed,terminal;
+    private volatile long blockedUntil;
+    private long nextPoll;
     private int failures;
     private static final Pattern EMOJI=Pattern.compile("<(a?):([A-Za-z0-9_]{1,32}):([0-9]{15,22})>");
     static DiscordBotAdapter fromConfig(ServerConfig config){
@@ -199,7 +200,8 @@ public final class DiscordBotAdapter implements DiscordAdapter {
             if(response.size()>4)throw new IOException("Discord page budget exceeded");
             if(cursor==null){cursor=response.isEmpty()?"0":response.get(0).getAsJsonObject().get("id").getAsString();if(!cursor.matches("[0-9]{1,22}"))throw new IOException("Invalid cursor");readSucceeded();return records;}
             memberAttempts=0;memberNanosRemaining=TimeUnit.SECONDS.toNanos(2);
-            var sorted=new ArrayList<JsonObject>();response.forEach(e->sorted.add(e.getAsJsonObject()));sorted.sort(Comparator.comparing(o->new java.math.BigInteger(o.get("id").getAsString())));
+            var sorted=new ArrayList<JsonObject>();for(var e:response)if(e.isJsonObject()&&e.getAsJsonObject().has("id")&&e.getAsJsonObject().get("id").isJsonPrimitive()&&e.getAsJsonObject().get("id").getAsString().matches("[0-9]{1,22}"))sorted.add(e.getAsJsonObject());
+            sorted.sort(Comparator.comparing(o->new java.math.BigInteger(o.get("id").getAsString())));
             for(var m:sorted){
                 String id=m.get("id").getAsString();if(!id.matches("[0-9]{1,22}")||new java.math.BigInteger(id).compareTo(new java.math.BigInteger(cursor))<=0)continue;
                 try{
@@ -299,7 +301,7 @@ public final class DiscordBotAdapter implements DiscordAdapter {
         builder.method(method,body==null?HttpRequest.BodyPublishers.noBody():HttpRequest.BodyPublishers.ofByteArray(body));
         var r=execute(builder.build(),maxBytes,deadline,operation);
         if(r.statusCode()==429){
-            double seconds=60;try{seconds=json(r.body()).get("retry_after").getAsDouble();}catch(Exception ignored){}
+            double seconds=60;try{seconds=json(r.body()).get("retry_after").getAsDouble();}catch(Exception noBody){try{seconds=Double.parseDouble(r.headers().firstValue("retry-after").orElse("60").trim());}catch(RuntimeException noHeader){}}
             if(!Double.isFinite(seconds)||seconds<0||seconds>3600)seconds=3600;
             blockedUntil=System.nanoTime()+(long)Math.ceil(Math.max(1,seconds)*1e9);diagnostics.report(BridgeDiagnostics.Code.RATE_LIMITED,operation,429,BridgeDiagnostics.Terminal.NO);throw new IOException("Discord rate limited");
         }
