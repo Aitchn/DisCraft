@@ -76,7 +76,12 @@ try:
   if time.monotonic()>deadline:raise RuntimeError('Twemoji verification timed out')
   time.sleep(.25)
  summary=(OUT/'result.txt').read_text()
- if client.returncode!=0 or not summary.splitlines()[-1].startswith('PASS '):raise RuntimeError('Twemoji acceptance failed')
+ if client.returncode!=0 or not summary.splitlines() or not summary.splitlines()[-1].startswith('PASS '):
+  # Results contain only this isolated fixture's authored assertions (no live configuration/history).
+  # Prefix every bounded line so even an exception string cannot become an Actions command.
+  print('Fixture result: client_exit='+str(client.returncode),flush=True)
+  for line in summary.splitlines()[-12:]:print('FIXTURE_RESULT '+line[:600],flush=True)
+  raise RuntimeError('Twemoji acceptance failed; bounded fixture result is printed above')
  server.stdin.write(b'stop\n');server.stdin.flush();server.wait(timeout=40)
  if server.returncode!=0:raise RuntimeError('UI fixture server shutdown failed')
  print(summary.splitlines()[-1])
