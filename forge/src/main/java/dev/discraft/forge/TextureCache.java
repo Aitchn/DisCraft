@@ -9,27 +9,31 @@ import java.util.*;
 
 /** Render-thread only. Keep one uploaded frame per asset, release when no longer visible. */
 final class TextureCache implements AutoCloseable {
-    private record Entry(ResourceLocation location, DynamicTexture texture, int frame) {}
+    private record Entry(ResourceLocation location, DynamicTexture texture, int frame, long origin) {}
     private final Map<String, Entry> entries = new HashMap<>();
+    private final Map<String,Long> origins=new LinkedHashMap<>(128,.75f,true);
     private final Set<String> visible = new HashSet<>();
     void begin() { visible.clear(); }
     ResourceLocation frame(String key, MediaAsset media, long elapsed) {
+        com.mojang.blaze3d.systems.RenderSystem.assertOnRenderThread();
         visible.add(key);
-        int frame = media.frameIndex(elapsed);
         Entry old = entries.get(key);
+        long origin=old!=null?old.origin:media.animated()?origins.computeIfAbsent(key,k->elapsed):elapsed;
+        while(origins.size()>128)origins.remove(origins.keySet().iterator().next());
+        int frame = media.frameIndex(Math.max(0,elapsed-origin));
         if (old != null && old.frame == frame) return old.location;
         var source = media.frames().get(frame).image();
         if (old != null) {
             write(old.texture.getPixels(), source);
             old.texture.upload();
-            entries.put(key, new Entry(old.location, old.texture, frame));
+            entries.put(key, new Entry(old.location, old.texture, frame, origin));
             return old.location;
         }
         var pixels = new NativeImage(media.width(), media.height(), false);
         write(pixels, source);
         var texture = new DynamicTexture(pixels);
         var location = Minecraft.getInstance().getTextureManager().register("discraft_preview", texture);
-        entries.put(key, new Entry(location, texture, frame));
+        entries.put(key, new Entry(location, texture, frame, origin));
         return location;
     }
     private void write(NativeImage target, java.awt.image.BufferedImage source) {
@@ -48,6 +52,6 @@ final class TextureCache implements AutoCloseable {
     }
     @Override public void close() {
         entries.values().forEach(entry -> Minecraft.getInstance().getTextureManager().release(entry.location));
-        entries.clear();
+        entries.clear();origins.clear();
     }
 }

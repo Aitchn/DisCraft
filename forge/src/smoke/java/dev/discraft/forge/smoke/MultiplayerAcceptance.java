@@ -191,7 +191,7 @@ public final class MultiplayerAcceptance {
         if(stage==60&&SpoilerPrivacyAcceptance.tick())finish();
     }
     private static int nativeFrame()throws Exception{
-        var f=NativeChat.class.getDeclaredField("textures");f.setAccessible(true);var entries=(Map<?,?>)field(f.get(null),"entries");var e=entries.get(ClientBridge.emoji("dance.gif").digest());if(e==null)return -1;var get=e.getClass().getDeclaredMethod("frame");get.setAccessible(true);return (Integer)get.invoke(e);
+        var f=NativeChat.class.getDeclaredField("textures");f.setAccessible(true);var entries=(Map<?,?>)field(f.get(null),"entries");String digest=ClientBridge.emoji("dance.gif").digest();var e=entries.entrySet().stream().filter(row->row.getKey().toString().endsWith(":"+digest)).map(Map.Entry::getValue).findFirst().orElse(null);if(e==null)return -1;var get=e.getClass().getDeclaredMethod("frame");get.setAccessible(true);return (Integer)get.invoke(e);
     }
     @SuppressWarnings("unchecked") private static boolean nativeText(String value)throws Exception{
         var f=net.minecraftforge.fml.util.ObfuscationReflectionHelper.findField(net.minecraft.client.gui.components.ChatComponent.class,"f_93760_");return ((List<net.minecraft.client.GuiMessage>)f.get(MC.gui.getChat())).stream().anyMatch(m->m.content().getString().contains(value));

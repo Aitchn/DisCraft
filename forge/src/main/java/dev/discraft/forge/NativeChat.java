@@ -187,7 +187,7 @@ public final class NativeChat {
                 int px=Math.round(advance[0]),py=Math.round(y+tile.y()-(tile.y()/tile.band())*lineHeight);
                 if(tile.spoiler()&&spoilerHits.size()<4096){var matrix=graphics.pose().last().pose();var a0=matrix.transformPosition(new org.joml.Vector3f(px,py,0));var b0=matrix.transformPosition(new org.joml.Vector3f(px+dw,py+dh,0));double hx=Math.max(left,Math.min(a0.x(),b0.x())),hy=Math.max(top,Math.min(a0.y(),b0.y())),ex=Math.min(right,Math.max(a0.x(),b0.x())),ey=Math.min(bottom,Math.max(a0.y(),b0.y()));if(ex>hx&&ey>hy)spoilerHits.add(new SpoilerHit(hx,hy,ex-hx,ey-hy,tile.owner()));}
                 if(tile.spoiler()&&!revealed.contains(tile.owner()))graphics.fill(px,py,px+dw,py+dh,0xff3d3e45);
-                else{var texture=textures.frame(tile.digest(),a,elapsed);RenderSystem.enableBlend();RenderSystem.setShaderColor(1,1,1,opacity);graphics.blit(texture,px,py,dw,dh,sx,sy,sw,sh,a.width(),a.height());renderedTiles++;}
+                else{var texture=textures.frame((a.animated()?tile.owner()+":":"")+tile.digest(),a,elapsed);RenderSystem.enableBlend();RenderSystem.setShaderColor(1,1,1,opacity);graphics.blit(texture,px,py,dw,dh,sx,sy,sw,sh,a.width(),a.height());renderedTiles++;}
             }}advance[0]+=MC.font.width(Component.literal(new String(Character.toChars(point))).setStyle(style));return true;
         });}finally{RenderSystem.setShaderColor(shader[0],shader[1],shader[2],shader[3]);graphics.pose().popPose();graphics.disableScissor();}
     }
@@ -220,7 +220,7 @@ public final class NativeChat {
                             boolean secret=tile.spoiler();
                             if(secret)spoilerHits.add(new SpoilerHit(chatX+scale*(4+x[0]),(chatY-graphics.guiHeight()+40)/scale+scale*y,dw*scale,dh*scale,tile.owner()));
                             if(secret&&!revealed.contains(tile.owner()))graphics.fill(x[0],y,x[0]+dw,y+dh,0xff3d3e45);
-                            else{var texture=textures.frame(tile.digest(),a,elapsed);RenderSystem.enableBlend();RenderSystem.setShaderColor(1,1,1,opacity);graphics.blit(texture,x[0],y,dw,dh,sx,sy,sw,sh,a.width(),a.height());renderedTiles++;}
+                            else{var texture=textures.frame((a.animated()?tile.owner()+":":"")+tile.digest(),a,elapsed);RenderSystem.enableBlend();RenderSystem.setShaderColor(1,1,1,opacity);graphics.blit(texture,x[0],y,dw,dh,sx,sy,sw,sh,a.width(),a.height());renderedTiles++;}
                         }}
                         x[0]+=MC.font.width(Component.literal(new String(Character.toChars(point))).setStyle(style));return true;
                     });
