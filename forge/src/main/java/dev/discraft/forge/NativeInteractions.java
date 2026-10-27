@@ -26,12 +26,12 @@ public final class NativeInteractions {
     private static final List<Hit> hits=new ArrayList<>();
     private static String builtinKey="";private static List<Item> builtinItems=List.of();
     static void attach(ChatScreen owner,ScreenEvent.Init.Post event,EditBox nativeInput){
-        screen=owner;input=nativeInput;input.setWidth(Math.max(40,owner.width-30));
+        screen=owner;input=nativeInput;hits.clear();input.setWidth(Math.max(40,owner.width-30));
         event.addListener(new Smiley(owner.width-23,owner.height-17));
         search=new EditBox(UiText.font(),px()+10,py()+35,pw()-20,20,Component.literal("搜尋表情"));search.setHint(Component.literal("搜尋"));search.setMaxLength(80);search.setValue(query);search.setResponder(s->{query=s;scroll=0;});search.visible=open;search.active=open;event.addListener(search);
     }
     static void reset(){ClientGuildEmoji.visible(List.of());open=false;query="";hits.clear();textures.close();screen=null;search=null;}
-    static void closePicker(){ClientGuildEmoji.visible(List.of());open=false;if(search!=null){search.visible=false;search.active=false;}if(screen!=null&&MC.screen==screen&&input!=null){screen.setFocused(input);input.setFocused(true);}}
+    static void closePicker(){ClientGuildEmoji.visible(List.of());open=false;if(search!=null){search.visible=false;search.active=false;}if(screen!=null&&MC.screen==screen&&input!=null){input=NativeComposer.input(screen);screen.setFocused(input);input.setFocused(true);}}
     public static void openPicker(){if(MC.screen instanceof ChatScreen){open=true;if(search!=null){search.visible=true;search.active=true;screen.setFocused(search);search.setFocused(true);}}}
     private static int px(){return Math.max(4,screen.width-pw()-5);}private static int pw(){return Math.min(350,screen.width-8);}private static int ph(){return Math.min(260,screen.height-28);}private static int py(){return screen.height-22-ph();}
     private static boolean inside(double x,double y,int a,int b,int w,int h){return x>=a&&x<a+w&&y>=b&&y<b+h;}

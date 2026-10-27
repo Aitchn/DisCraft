@@ -70,3 +70,5 @@ The finite range table is checksum-verified; scanning advances monotonically
 within the existing 2,000-code-point input limit and a 32-point trie lookup.
 This is conservative emoji-cluster matching, not a general-purpose text editor's
 implementation of every Unicode grapheme/Indic shaping rule.
+
+Picker insertion reads the pinned native `ChatScreen.input` field, not the first editable child. Real mouse regression reorders the search listener ahead of native input and checks empty/cursor/selected-range/consecutive insertion, focus restoration and no automatic send. Other chat widgets therefore cannot silently redirect insertion into the hidden search field.

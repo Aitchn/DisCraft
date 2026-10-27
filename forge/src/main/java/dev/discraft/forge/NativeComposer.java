@@ -37,7 +37,8 @@ public final class NativeComposer {
     }
     private static Component target(){return Component.literal(bridge?"To: bridge":"To: Minecraft");}
     private static void notice(String text){MC.gui.getChat().addMessage(Component.literal("[DisCraft] "+text));}
-    private static EditBox input(ChatScreen screen){return screen.children().stream().filter(w->w instanceof EditBox).map(w->(EditBox)w).findFirst().orElseThrow();}
+    private static final java.lang.reflect.Field CHAT_INPUT=net.minecraftforge.fml.util.ObfuscationReflectionHelper.findField(ChatScreen.class,"f_95573_");
+    static EditBox input(ChatScreen screen){try{var input=(EditBox)CHAT_INPUT.get(screen);if(input==null)throw new IllegalStateException("Native chat input unavailable");return input;}catch(IllegalAccessException unavailable){throw new IllegalStateException("Native chat input unavailable");}}
     private static Attachment decodeUpload(String name){
         try{var root=DisCraftPaths.uploads(net.minecraftforge.fml.loading.FMLPaths.CONFIGDIR.get(),MC.gameDirectory.toPath(),DisCraftPaths::warn);java.nio.file.Files.createDirectories(root);return Attachment.fromUpload(root,name);}
         catch(Exception invalid){throw new CompletionException(invalid);}
@@ -68,11 +69,11 @@ public final class NativeComposer {
     @SubscribeEvent public static void closing(ScreenEvent.Closing event){if(event.getScreen() instanceof ChatScreen){if(loading)clear();bridge=false;DraftMentions.clear();NativeInteractions.closePicker();}}
     @SubscribeEvent public static void init(ScreenEvent.Init.Post event){if(event.getScreen() instanceof ChatScreen screen){DraftMentions.install(input(screen));NativeInteractions.attach(screen,event,input(screen));}}
     @SubscribeEvent(priority=net.minecraftforge.eventbus.api.EventPriority.HIGH) public static void editKeys(ScreenEvent.KeyPressed.Pre event){
-        DraftMentions.endEdit();if(!(event.getScreen() instanceof ChatScreen screen)||!input(screen).isFocused())return;int key=event.getKeyCode();
+        DraftMentions.endEdit();if(!(event.getScreen() instanceof ChatScreen screen)||screen.getFocused()!=input(screen)||!input(screen).isFocused())return;int key=event.getKeyCode();
         if(key==GLFW.GLFW_KEY_BACKSPACE||key==GLFW.GLFW_KEY_DELETE)DraftMentions.beforeEdit(input(screen),key==GLFW.GLFW_KEY_BACKSPACE?-1:1,Screen.hasControlDown());
         else if(Screen.hasControlDown()&&(key==GLFW.GLFW_KEY_V||key==GLFW.GLFW_KEY_X))DraftMentions.beforeEdit(input(screen));
     }
-    @SubscribeEvent(priority=net.minecraftforge.eventbus.api.EventPriority.HIGH) public static void editCharacter(ScreenEvent.CharacterTyped.Pre event){DraftMentions.endEdit();if(event.getScreen() instanceof ChatScreen screen&&input(screen).isFocused())DraftMentions.beforeEdit(input(screen));}
+    @SubscribeEvent(priority=net.minecraftforge.eventbus.api.EventPriority.HIGH) public static void editCharacter(ScreenEvent.CharacterTyped.Pre event){DraftMentions.endEdit();if(event.getScreen() instanceof ChatScreen screen&&screen.getFocused()==input(screen)&&input(screen).isFocused())DraftMentions.beforeEdit(input(screen));}
     @SubscribeEvent public static void editsFinished(net.minecraftforge.event.TickEvent.ClientTickEvent event){if(event.phase==net.minecraftforge.event.TickEvent.Phase.END)DraftMentions.endEdit();}
     @SubscribeEvent public static void keys(ScreenEvent.KeyPressed.Pre event){
         if(!(event.getScreen() instanceof ChatScreen screen)||(event.getKeyCode()!=GLFW.GLFW_KEY_ENTER&&event.getKeyCode()!=GLFW.GLFW_KEY_KP_ENTER))return;
