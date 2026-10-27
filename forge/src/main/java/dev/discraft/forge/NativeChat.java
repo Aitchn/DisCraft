@@ -97,18 +97,21 @@ public final class NativeChat {
     private static boolean collectNative(Component component,Map<String,TwemojiCatalog.Entry> wanted,int[] budget,int depth,IdentityHashMap<Component,Boolean> path){
         if(depth>32||--budget[0]<0||path.put(component,true)!=null)throw new IllegalArgumentException("Native emoji component bounds");
         boolean selector=false;if(component.getContents() instanceof net.minecraft.network.chat.contents.LiteralContents literal){selector=literal.text().indexOf('\ufe0e')>=0;if((budget[1]-=literal.text().length())<0)throw new IllegalArgumentException("Native emoji text bounds");for(var part:TwemojiCatalog.parts(literal.text()))if(part.emoji()!=null)wanted.putIfAbsent(part.emoji().asset(),part.emoji());}
-        else if(component.getContents() instanceof net.minecraft.network.chat.contents.TranslatableContents tr){if(tr.getArgs().length>32)throw new IllegalArgumentException("Native emoji argument bounds");for(Object arg:tr.getArgs())if(arg instanceof Component nested)selector|=collectNative(nested,wanted,budget,depth+1,path);}
+        else if(component.getContents() instanceof net.minecraft.network.chat.contents.TranslatableContents tr){if(tr.getArgs().length>32)throw new IllegalArgumentException("Native emoji argument bounds");for(Object arg:tr.getArgs())if(arg instanceof Component nested)selector|=collectNative(nested,wanted,budget,depth+1,path);else if(arg instanceof String text)selector|=collectNative(Component.literal(text),wanted,budget,depth+1,path);}
         for(var sibling:component.getSiblings())selector|=collectNative(sibling,wanted,budget,depth+1,path);path.remove(component);return selector;
     }
     private static Component nativeEmoji(Component source,UUID owner,Set<Integer> owned){return nativeEmoji(source,owner,owned,true);}
     private static Component nativeEmoji(Component source,UUID owner,Set<Integer> owned,boolean images){
         MutableComponent result;
         if(source.getContents() instanceof net.minecraft.network.chat.contents.LiteralContents literal){if(!images)result=Component.literal(literal.text());else{result=Component.empty();for(var part:TwemojiCatalog.parts(literal.text())){var image=!images||part.emoji()==null?null:unicodeMedia.get(part.emoji().asset());if(image==null)result.append(emojiLiteral(part.text()));else row(result,image,Math.min(8,layout.emojiCell()),8,0,layout.emojiCell(),8,"\u3000",owned,owner,false);}}}
-        else if(source.getContents() instanceof net.minecraft.network.chat.contents.TranslatableContents tr){Object[] args=tr.getArgs().clone();for(int i=0;i<args.length;i++)if(args[i] instanceof Component nested)args[i]=nativeEmoji(nested,owner,owned,images);result=Component.translatableWithFallback(tr.getKey(),tr.getFallback(),args);}
+        else if(source.getContents() instanceof net.minecraft.network.chat.contents.TranslatableContents tr){Object[] args=tr.getArgs().clone();for(int i=0;i<args.length;i++)if(args[i] instanceof Component nested)args[i]=nativeEmoji(nested,owner,owned,images);else if(images&&args[i] instanceof String text)args[i]=nativeEmoji(Component.literal(text),owner,owned,true);result=Component.translatableWithFallback(tr.getKey(),tr.getFallback(),args);}
         else result=MutableComponent.create(source.getContents());
         result.setStyle(source.getStyle());for(var sibling:source.getSiblings())result.append(nativeEmoji(sibling,owner,owned,images));return result;
     }
-    @SubscribeEvent(priority=EventPriority.LOWEST) public static void nativeMessage(ClientChatReceivedEvent.Player event){
+    @SubscribeEvent(priority=EventPriority.LOWEST) public static void nativeMessage(ClientChatReceivedEvent event){
+        // Disguised/server chat can legitimately use System while preserving the vanilla chat UI.
+        // Action-bar overlays are a separate surface and never own chat sprite rows.
+        if(event instanceof ClientChatReceivedEvent.System system&&system.isOverlay())return;
         var wanted=new LinkedHashMap<String,TwemojiCatalog.Entry>();boolean selector;try{selector=collectNative(event.getMessage(),wanted,new int[]{512,8192},0,new IdentityHashMap<>());}catch(IllegalArgumentException oversized){return;}if(wanted.isEmpty()&&!selector)return;
         reflow();UUID id=UUID.randomUUID();nativeOriginals.put(id,nativeEmoji(event.getMessage(),id,new HashSet<>(),false));while(nativeOriginals.size()>12){UUID first=nativeOriginals.keySet().iterator().next();nativeOriginals.remove(first);nativeComponents.remove(first);var old=markers.remove(first);if(old!=null)old.forEach(tiles::remove);}
         // Rebuild only a bounded union of our retained relay/native assets; no packet or signature is changed.
