@@ -25,10 +25,8 @@ public final class ClientSettingsScreen extends Screen {
         addRenderableWidget(Button.builder(Component.translatable("gui.cancel"),b->onClose()).bounds(x+(w+8)/2,y+124,(w-8)/2,20).build());
     }
     private void save(){
-        boolean oldScreenshot=ClientPreferences.SCREENSHOT_CLIPBOARD.get(),oldMention=ClientPreferences.MENTION_SOUND.get();
-        int oldWidth=ClientPreferences.PICKER_WIDTH.get(),oldHeight=ClientPreferences.PICKER_HEIGHT.get();
-        try{ClientPreferences.PICKER_WIDTH.set(pickerWidth);ClientPreferences.PICKER_HEIGHT.set(pickerHeight);ClientPreferences.SCREENSHOT_CLIPBOARD.set(screenshot);ClientPreferences.MENTION_SOUND.set(mention);ClientPreferences.SPEC.save();onClose();}
-        catch(RuntimeException failed){ClientPreferences.PICKER_WIDTH.set(oldWidth);ClientPreferences.PICKER_HEIGHT.set(oldHeight);ClientPreferences.SCREENSHOT_CLIPBOARD.set(oldScreenshot);ClientPreferences.MENTION_SOUND.set(oldMention);error=Component.translatable("discraft.settings.save_failed");}
+        try{ClientPreferences.save(screenshot,mention,pickerWidth,pickerHeight);onClose();}
+        catch(RuntimeException failed){error=Component.translatable("discraft.settings.save_failed");}
     }
     private final class SizeSlider extends AbstractSliderButton {
         private final boolean horizontal;
