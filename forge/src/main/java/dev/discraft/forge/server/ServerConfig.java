@@ -3,6 +3,8 @@ package dev.discraft.forge.server;
 import java.io.*;
 import java.nio.file.*;
 import java.util.*;
+import java.util.function.Consumer;
+import dev.discraft.forge.DisCraftPaths;
 
 /** Server-local configuration only. Never serialized, logged, or synchronized to clients. */
 final class ServerConfig {
@@ -33,6 +35,42 @@ final class ServerConfig {
         if(!Boolean.getBoolean("discraft.multiplayerSmoke")||!Boolean.getBoolean("discraft.optionalClientSmoke"))throw new IllegalStateException("TEST optional client requires isolated smoke mode");
         return new ServerConfig(false,"","",Set.of("*"),"en_us",List.of(),Set.of("join","quit","death","advancement"),true);
     }
+    /** Publish only a complete disabled template; never replace existing operator data. */
+    static Path initialize(Path directory,Consumer<String> notice)throws IOException{
+        Path temporary=null;
+        try{
+            Path selected=DisCraftPaths.serverConfig(directory,notice);
+            if(present(selected)){regular(selected);return selected;}
+            Files.createDirectories(selected.getParent());
+            // Recheck after directory creation: another initializer or a legacy file may now exist.
+            selected=DisCraftPaths.serverConfig(directory,notice);
+            if(present(selected)){regular(selected);return selected;}
+            byte[] template;
+            try(var in=ServerConfig.class.getResourceAsStream("/defaults/discraft/server.properties.example")){
+                if(in==null)throw new IOException();template=in.readNBytes(MAX_BYTES+1);
+            }
+            if(template.length>MAX_BYTES)throw new IOException();
+            var defaults=new Properties();defaults.load(new StringReader(new String(template,java.nio.charset.StandardCharsets.UTF_8)));
+            if(!"false".equals(defaults.getProperty("enabled"))||!"".equals(defaults.getProperty("botToken"))||!"".equals(defaults.getProperty("channel")))throw new IOException();
+            var attributes=selected.getFileSystem().supportedFileAttributeViews().contains("posix")?new java.nio.file.attribute.FileAttribute<?>[]{java.nio.file.attribute.PosixFilePermissions.asFileAttribute(java.nio.file.attribute.PosixFilePermissions.fromString("rw-------"))}:new java.nio.file.attribute.FileAttribute<?>[0];
+            temporary=Files.createTempFile(selected.getParent(),".server-template-",".tmp",attributes);
+            try(var out=Files.newOutputStream(temporary,StandardOpenOption.WRITE,StandardOpenOption.TRUNCATE_EXISTING,LinkOption.NOFOLLOW_LINKS)){out.write(template);}
+            Path current=DisCraftPaths.serverConfig(directory,notice);
+            if(present(current)){regular(current);return current;}
+            // A hard-link publish is atomic and fails if the target exists. ATOMIC_MOVE may replace it.
+            try{Files.createLink(current,temporary);notice.accept("DisCraft: created disabled config/discraft/server.properties. Fill it locally and restart to enable Discord.");}
+            catch(FileAlreadyExistsException concurrent){current=DisCraftPaths.serverConfig(directory,notice);regular(current);}
+            return current;
+        }catch(Exception rejected){
+            notice.accept("DisCraft: server config initialization failed; bridge disabled. Check config directory permissions and filesystem support, or install the empty example manually. Existing files were not overwritten.");
+            throw new IOException("Unable to initialize DisCraft server configuration");
+        }finally{if(temporary!=null)try{Files.deleteIfExists(temporary);}catch(IOException ignored){notice.accept("DisCraft: could not remove an empty-credential config template temporary file; check the DisCraft config directory.");}}
+    }
+    private static boolean present(Path file)throws IOException{
+        try{Files.readAttributes(file,java.nio.file.attribute.BasicFileAttributes.class,LinkOption.NOFOLLOW_LINKS);return true;}catch(NoSuchFileException missing){return false;}
+    }
+    private static void regular(Path file)throws IOException{if(!Files.isRegularFile(file,LinkOption.NOFOLLOW_LINKS))throw new IOException();}
+    boolean canConnect(boolean dedicated,boolean authenticated){return dedicated&&authenticated&&enabled;}
     static ServerConfig load(Path file)throws IOException{
         try {
             if(!Files.exists(file,LinkOption.NOFOLLOW_LINKS))return disabled();

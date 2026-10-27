@@ -49,6 +49,7 @@ final class ServerConfigTest {
         }finally{try(var entries=Files.walk(game)){for(Path p:entries.sorted(Comparator.reverseOrder()).toList())Files.deleteIfExists(p);}}
     }
     static void run()throws Exception{
+        ServerConfigInitTest.run();
         pathCompatibility();
         Path directory=Files.createTempDirectory("discraft-config-test"),file=directory.resolve("server.properties");
         try{

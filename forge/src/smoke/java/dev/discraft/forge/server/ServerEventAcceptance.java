@@ -40,7 +40,9 @@ public final class ServerEventAcceptance {
         MinecraftForge.EVENT_BUS.post(new AdvancementEvent.AdvancementEarnEvent(player,advancement));return advancement;
     }
     @SubscribeEvent(priority=EventPriority.LOWEST) public static void about(ServerAboutToStartEvent event)throws Exception{
-        if(!enabled())return;server=event.getServer();var field=ServerBridge.class.getDeclaredField("adapter");field.setAccessible(true);adapter=(TestDiscordAdapter)field.get(null);
+        if(!enabled())return;server=event.getServer();
+        check(Files.isRegularFile(dev.discraft.forge.DisCraftPaths.serverConfig(net.minecraftforge.fml.loading.FMLPaths.CONFIGDIR.get(),dev.discraft.forge.DisCraftPaths::warn)),"Actual dedicated startup provides server config before TEST transport, without a Discord JVM gate");
+        var field=ServerBridge.class.getDeclaredField("adapter");field.setAccessible(true);adapter=(TestDiscordAdapter)field.get(null);
     }
     @SubscribeEvent(priority=EventPriority.LOWEST) public static void starting(ServerStartingEvent event){
         if(enabled()&&Boolean.getBoolean("discraft.serverEventsFailureSmoke"))throw new IllegalStateException("Expected isolated fixture startup failure");

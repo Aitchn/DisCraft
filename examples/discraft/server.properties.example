@@ -1,4 +1,7 @@
-# Copy to <dedicated-server>/config/discraft/server.properties; keep that file private.
+# DisCraft server-only configuration: config/discraft/server.properties.
+# 專用伺服器首次啟動自動建立停用範本；既有新檔或舊設定絕不覆寫。
+# Stop the server before editing; keep real credentials private.
+# enabled is the only Discord enable switch; no extra JVM flag or environment fallback.
 # UTF-8 Java properties. Restart server after editing. No environment fallback.
 enabled=false
 channel=

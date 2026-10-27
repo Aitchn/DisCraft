@@ -3,7 +3,7 @@ plugins {
     id 'java'
     id 'net.minecraftforge.gradle' version '6.0.54'
 }
-base { archivesName = 'discraft' }
+base { archivesName = 'DisCraft' }
 java.toolchain.languageVersion = JavaLanguageVersion.of(17)
 // Client acceptance driver is opt-in and never shipped in the mod JAR.
 if (providers.gradleProperty('smoke').isPresent() || providers.gradleProperty('multiplayerSmoke').isPresent()) {
@@ -110,4 +110,5 @@ tasks.register('exportBridgeLaunch') {
 tasks.named('processResources') {
     inputs.property('modVersion', project.version)
     filesMatching('META-INF/mods.toml') { expand(mod_version: project.version) }
+    from(rootProject.file('examples/discraft/server.properties.example')) { into 'defaults/discraft' }
 }

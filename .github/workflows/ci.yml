@@ -76,7 +76,7 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: forge-1.20.1-mod-${{ github.sha }}
-          path: forge/build/libs/discraft-0.2.0-preview.1.jar
+          path: forge/build/libs/DisCraft-0.2.0-preview.2.jar
           if-no-files-found: error
           retention-days: 14
 

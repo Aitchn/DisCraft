@@ -65,10 +65,11 @@ public final class ServerBridge {
         running=false;stopping=false;text=new ComponentText(ResourcePackIndex.empty(),"en_us");itemRenderer=null;
         worker=new ThreadPoolExecutor(1,1,0,TimeUnit.SECONDS,new ArrayBlockingQueue<>(16),r->{var t=new Thread(r,"DisCraft server bridge");t.setDaemon(true);return t;});
         try {
+            java.nio.file.Path configFile=server.isDedicatedServer()?ServerConfig.initialize(net.minecraftforge.fml.loading.FMLPaths.CONFIGDIR.get(),DisCraftPaths::warn):null;
             if(Boolean.getBoolean("discraft.multiplayerSmoke")){mode="test";adapter=new TestDiscordAdapter();if(Boolean.getBoolean("discraft.serverEventsSmoke"))config=ServerConfig.testEvents();if(Boolean.getBoolean("discraft.optionalClientSmoke")){config=ServerConfig.testOptional();itemRenderer=new HeadlessItemRenderer(ResourcePackIndex.empty());}if(Boolean.getBoolean("discraft.nativeHoverSmoke")){config=ServerConfig.testNativeHover();itemRenderer=new HeadlessItemRenderer(ResourcePackIndex.empty());}}
             else if(server.isDedicatedServer()&&server.usesAuthentication()){
-                config=ServerConfig.load(DisCraftPaths.serverConfig(net.minecraftforge.fml.loading.FMLPaths.CONFIGDIR.get(),DisCraftPaths::warn));
-                if(config.enabled()&&Boolean.getBoolean("discraft.discord.enabled")){
+                config=ServerConfig.load(configFile);
+                if(config.canConnect(server.isDedicatedServer(),server.usesAuthentication())){
                     var resources=ResourcePackIndex.load(DisCraftPaths.resourcePacks(net.minecraftforge.fml.loading.FMLPaths.CONFIGDIR.get(),DisCraftPaths::warn),config.resourcePacks()).withBase(InstalledModLanguages.load(config.locale()));
                     text=new ComponentText(resources,config.locale());if(config.itemDisplay())itemRenderer=new HeadlessItemRenderer(resources);adapter=DiscordBotAdapter.fromConfig(config);mode="discord";
                 }
@@ -76,6 +77,7 @@ public final class ServerBridge {
             }else adapter=null;
         } catch(Exception failure){
             if(mode.equals("test")&&Boolean.getBoolean("discraft.multiplayerSmoke"))throw new IllegalStateException("DisCraft TEST adapter initialization failed",failure);
+            DisCraftPaths.warn("DisCraft: server configuration or Discord bridge setup failed; bridge disabled. Check the server config and local resource packs. Secret values and exception details are not logged.");
             mode="disabled";adapter=null;config=ServerConfig.disabled();
         }
         nextPoll=0;nextCatalogBroadcast=0;nextThumbnail=0;guildCatalog=GuildEmojiCatalog.empty(0);polling.set(false);thumbnailBusy.set(false);

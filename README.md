@@ -9,9 +9,13 @@ versions are rejected, absent endpoints are supported.
 See the [繁體中文安裝／使用指南](docs/使用指南.md) for actual config, installation,
 `%i` / `%item`, event switches and resource-pack placement. Discord credentials
 and channel are read only from server-local `config/discraft/server.properties`,
-with no environment fallback. Missing config is disabled; create it manually from
-[the empty example](examples/discraft/server.properties.example). Production also
-requires an authenticated dedicated server and the nonsecret JVM opt-in.
+with no environment fallback. A dedicated-server startup creates a commented,
+disabled empty-credential template only when neither the new nor legacy config
+exists. Existing operator data is never overwritten. See
+[the empty example](examples/discraft/server.properties.example) for manual setup.
+Production requires an authenticated dedicated server and `enabled=true`; there
+is no extra JVM enable switch. Clients and integrated servers do not initialize
+this server config or connect to Discord.
 
 Ordinary native chat and configured join/quit/death/advancement/lifecycle notices
 are server-side. `%item` and `%i` use one authoritative main-hand snapshot with
@@ -31,7 +35,7 @@ explicit local TEST/demo fixtures are never a real provider.
 python3 scripts/check-mod-jar.py
 ```
 
-The distributable is `forge/build/libs/discraft-0.2.0-preview.1.jar`; no
+The distributable is `forge/build/libs/DisCraft-0.2.0-preview.2.jar`; no
 separate core JAR is needed. Smoke/test drivers and local credentials are excluded.
 [CI](docs/CI.md) retains JAR and test evidence. Full client/native tests require a
 display or Xvfb; production headless servers do not.

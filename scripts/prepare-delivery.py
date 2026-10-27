@@ -19,7 +19,7 @@ with zipfile.ZipFile(source) as jar:
    assert not re.search(r'(?<![A-Za-z0-9_-])[A-Za-z0-9_-]{24,28}\.[A-Za-z0-9_-]{6}\.[A-Za-z0-9_-]{25,}(?![A-Za-z0-9_-])',text),'Credential-pattern scan failed; values suppressed'
  version=re.search(r'\nversion="([^"]+)"',jar.read('META-INF/mods.toml').decode()).group(1)
 out=ROOT/'build/delivery';out.mkdir(parents=True,exist_ok=True)
-data=source.read_bytes();digest=hashlib.sha256(data).hexdigest();name=f'discraft-{version}.jar';target=out/name
+data=source.read_bytes();digest=hashlib.sha256(data).hexdigest();name=f'DisCraft-{version}.jar';target=out/name
 if source!=target:shutil.copyfile(source,target)
 assert hashlib.sha256(target.read_bytes()).hexdigest()==digest
 metadata={'status':args.status,'version':version,'commit':args.revision,'jar':name,'size_bytes':len(data),'sha256':digest,'minecraft':'1.20.1','forge':'47.4.0','java':17,'protocol':4,'reobfuscated_srg_check':True,'artifact_origin':'local_reobfuscated_build','ci_binary_comparison':'not_performed','push_ci':f'https://github.com/Aitchn/DisCraft/actions/runs/{args.push_run}','pr_ci':f'https://github.com/Aitchn/DisCraft/actions/runs/{args.pr_run}','prepared_utc':datetime.datetime.now(datetime.timezone.utc).isoformat()}

@@ -6,13 +6,14 @@ import re
 import zipfile
 
 version=re.search(r"version = '([^']+)'",Path('build.gradle').read_text()).group(1)
-jar = Path(sys.argv[1]) if len(sys.argv)>1 else Path(f'forge/build/libs/discraft-{version}.jar')
+jar = Path(sys.argv[1]) if len(sys.argv)>1 else Path(f'forge/build/libs/DisCraft-{version}.jar')
 with zipfile.ZipFile(jar) as archive:
     names = set(archive.namelist())
     metadata=archive.read('META-INF/mods.toml').decode()
     assert 'displayName="DisCraft"' in metadata and 'modId="discraft"' in metadata and f'version="{version}"' in metadata, 'Mod naming/version mismatch'
     required = {
         'META-INF/mods.toml',
+        'defaults/discraft/server.properties.example',
         'dev/discraft/forge/DisCraft.class',
         'dev/discraft/forge/DisCraftPaths.class',
         'dev/discraft/core/ChatSession.class',
@@ -64,10 +65,12 @@ with zipfile.ZipFile(jar) as archive:
         'fixtures/landscape.png',
         'fixtures/emoji.png',
     }
+    assert b'discraft.discord.enabled' not in archive.read('dev/discraft/forge/server/ServerBridge.class'), 'Obsolete production JVM gate remains'
+    assert archive.getinfo('defaults/discraft/server.properties.example').file_size<=8192, 'Template config exceeded runtime bounds'
     assert archive.getinfo('assets/discraft/font/ui.otf').file_size<10*1024*1024, 'UI font exceeded packaged resource budget'
     assert len([n for n in names if n.startswith('twemoji/') and n.endswith('.png')])==3953, 'Pinned emoji inventory missing'
     assert required <= names, f'Missing mod contents: {required - names}'
-    assert not any(name.endswith('.properties') or 'ServerConfigTest' in name for name in names), 'Private config/test leaked into mod JAR'
+    assert not any(name.endswith('.properties') or 'ServerConfigTest' in name or 'ServerConfigInitTest' in name for name in names), 'Private config/test leaked into mod JAR'
     assert 'assets/discraft/textures/gui/smiley.png' not in names, 'Reference screenshot icon leaked into mod JAR'
     assert not any('/smoke/' in name or 'BridgeProtocolTest' in name or 'GuildEmojiTest' in name or 'LiveCatalog' in name or 'ServerEventAcceptance' in name or 'NativeHoverServerAcceptance' in name or 'DiscordAuthor' in name or 'NativeItemDataTest' in name or 'ItemFixtures' in name or 'ItemTooltipAcceptance' in name or 'InstalledLanguageAcceptance' in name or 'OptionalServerAcceptance' in name or '/optionaltest/' in name or 'NativeFallbackTest' in name or 'ItemRenderTest' in name for name in names), 'Test driver leaked into mod JAR'
 print(f'PASS packaged mod: {jar.name} SHA256={hashlib.sha256(jar.read_bytes()).hexdigest()}')
