@@ -14,7 +14,7 @@ import java.util.concurrent.atomic.AtomicLong;
 public final class CoreTest {
     private static int checks;
     public static void main(String[] args) throws Exception {
-        unicode(); media(); pipeline(); uploads();
+        gifLoops();ItemMarkersTest.run();TwemojiTest.run();unicode(); media(); pipeline(); uploads();
         System.out.println("PASS: " + checks + " behavioral checks (Unicode, media, GIF disposal, policy, pipeline, upload confinement)");
     }
     private static void check(boolean condition, String message) {
@@ -130,7 +130,13 @@ public final class CoreTest {
             Files.delete(root); Files.delete(outside);
         }
     }
-    private static byte[] makeGif(int count, int width, int height, boolean disposal) throws Exception {
+    private static void gifLoops()throws Exception {
+        var once=MediaDecoder.decode(makeGif(2,4,4,false));check(once.plays()==1&&once.frameIndex(200)==1&&once.frameIndex(Long.MAX_VALUE)==1,"Absent GIF loop metadata plays once and holds final frame");
+        for(int repeat:new int[]{0,1,2,65535}){var media=MediaDecoder.decode(makeGif(2,4,4,false,repeat));check(media.plays()==(repeat==0?0:repeat+1)&&media.frameIndex(200)==0,"NETSCAPE encoded repeat count is preserved: "+repeat);if(repeat>0)check(media.frameIndex(200L*(repeat+1)-1)==1&&media.frameIndex(200L*(repeat+1))==1,"Finite GIF stops after the requested complete plays");}
+        var finite=MediaDecoder.decode(makeGif(2,4,4,false,2));check(finite.frameIndex(400)==0&&finite.frameIndex(600)==1,"Positive GIF repeat count includes first play before repetitions");
+    }
+    private static byte[] makeGif(int count,int width,int height,boolean disposal)throws Exception{return makeGif(count,width,height,disposal,null);}
+    private static byte[] makeGif(int count, int width, int height, boolean disposal,Integer repeats) throws Exception {
         var writer = ImageIO.getImageWritersByFormatName("gif").next();
         var out = new ByteArrayOutputStream();
         byte[] red = {(byte)255,(byte)255,0,0}, green = {(byte)255,0,0,(byte)255}, blue = {0,0,(byte)255,0};
@@ -161,6 +167,7 @@ public final class CoreTest {
                 descriptor.setAttribute("imageTopPosition", "0");
                 var control = (IIOMetadataNode) imageRoot.getElementsByTagName("GraphicControlExtension").item(0);
                 control.setAttribute("delayTime", "10"); control.setAttribute("disposalMethod", disposal && i==1 ? "restoreToPrevious" : "doNotDispose");
+                if(i==0&&repeats!=null){var extensions=new IIOMetadataNode("ApplicationExtensions");var application=new IIOMetadataNode("ApplicationExtension");application.setAttribute("applicationID","NETSCAPE");application.setAttribute("authenticationCode","2.0");application.setUserObject(new byte[]{1,(byte)(repeats&255),(byte)(repeats>>8)});extensions.appendChild(application);imageRoot.appendChild(extensions);}
                 metadata.setFromTree(imageRoot.getNodeName(),imageRoot);
                 writer.writeToSequence(new IIOImage(image,null,metadata),null);
             }

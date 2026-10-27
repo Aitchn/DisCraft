@@ -55,15 +55,29 @@ jobs:
           distribution: temurin
           java-version: '17'
           cache: gradle
-      - name: Build and reobfuscate Forge 1.20.1 mod
+      - name: Build, REST/wire checks and reobfuscation
         run: ./gradlew -Pforge :forge:build :forge:reobfJar --console=plain
       - name: Check packaged mod contents
-        run: python3 scripts/check-mod-jar.py
+        id: checked-mod
+        run: python3 scripts/check-mod-jar.py --github-output "$GITHUB_OUTPUT"
+      - name: Headless lifecycle and synthetic Forge event acceptance
+        run: |
+          python3 scripts/verify-server-events.py
+          python3 scripts/verify-server-events.py --startup-failure
+          python3 scripts/verify-server-events.py --items
+      - name: Upload headless event evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: server-events-${{ github.sha }}
+          path: build/evidence/server-events/
+          if-no-files-found: warn
+          retention-days: 14
       - name: Upload mod JAR
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: forge-1.20.1-mod-${{ github.sha }}
-          path: forge/build/libs/discraft-forge-1.20.1-0.1.0-dev.jar
+          path: ${{ steps.checked-mod.outputs.jar }}
           if-no-files-found: error
           retention-days: 14
 
@@ -89,11 +103,110 @@ jobs:
           sudo apt-get install -y xvfb xauth libgl1-mesa-dri libglx-mesa0 libopenal1
       - name: Run real Minecraft acceptance
         run: xvfb-run -a -s '-screen 0 1280x900x24 -nolisten tcp' ./scripts/verify-forge.sh --client
+      - name: Verify Mods/Config preferences and persistence in two actual clients
+        run: timeout --kill-after=30s 600 xvfb-run -a -s '-screen 0 1280x900x24 -nolisten tcp' python3 scripts/verify-client-settings.py
+      - name: Verify preferences with controlled frame/input lag
+        run: timeout --kill-after=30s 600 xvfb-run -a -s '-screen 0 1280x900x24 -nolisten tcp' python3 scripts/verify-client-settings.py --stress-input
       - name: Upload client evidence
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: minecraft-client-evidence-${{ github.sha }}
-          path: build/evidence/minecraft/
+          path: |
+            build/evidence/minecraft/
+            build/evidence/client-settings/
+            build/evidence/client-settings-stress/
+          if-no-files-found: warn
+          retention-days: 14
+
+  multiplayer:
+    name: Dedicated server and two clients (JDK 17)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      LIBGL_ALWAYS_SOFTWARE: 'true'
+      ALSOFT_DRIVERS: 'null'
+      LP_NUM_THREADS: '2'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+      - name: Install virtual display and software renderer
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb xauth libgl1-mesa-dri libglx-mesa0 libopenal1
+      - name: Check isolated client startup gates
+        run: python3 scripts/test-multiplayer-startup.py
+      - name: Run isolated server and two real clients
+        run: timeout --kill-after=45s 1500 xvfb-run -a -s '-screen 0 1280x900x24 -nolisten tcp' python3 scripts/verify-multiplayer.py
+      - name: Run native UI text, glyph metrics and resource reload checks
+        run: timeout --kill-after=45s 600 xvfb-run -a -s '-screen 0 1800x1200x24 -nolisten tcp' python3 scripts/verify-ui-text.py --tag after
+      - name: Run pinned Twemoji native/picker/Unicode/reload acceptance
+        run: timeout --kill-after=45s 600 xvfb-run -a -s '-screen 0 1280x900x24 -nolisten tcp' python3 scripts/verify-twemoji.py
+      - name: Run native item and advancement component hover acceptance
+        run: timeout --kill-after=45s 600 xvfb-run -a -s '-screen 0 1280x900x24 -nolisten tcp' python3 scripts/verify-native-hover.py
+      - name: Run native Discord member display and author click acceptance
+        run: timeout --kill-after=45s 600 xvfb-run -a -s '-screen 0 1280x900x24 -nolisten tcp' python3 scripts/verify-discord-author.py
+      - name: Run real optional-client, absent-server and incompatible-protocol matrix
+        run: timeout --kill-after=45s 900 xvfb-run -a -s '-screen 0 1280x900x24 -nolisten tcp' python3 scripts/verify-optional-client.py
+      - name: Upload multiplayer evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: multiplayer-evidence-${{ github.sha }}
+          path: |
+            build/evidence/multiplayer/
+            build/evidence/ui-text/
+            build/evidence/twemoji/
+            build/evidence/native-hover/
+            build/evidence/discord-author/
+            build/evidence/optional-client/
+          if-no-files-found: warn
+          retention-days: 14
+
+  chat-compatibility:
+    name: Third-party chat compatibility (JDK 17)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      LIBGL_ALWAYS_SOFTWARE: 'true'
+      ALSOFT_DRIVERS: 'null'
+      LP_NUM_THREADS: '2'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+      - name: Install isolated virtual display
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb xauth libgl1-mesa-dri libglx-mesa0 libopenal1
+      - name: Verify pinned NoChatReports with real mixed clients and loopback Discord
+        run: timeout --kill-after=45s 900 xvfb-run -a -s '-screen 0 1280x900x24 -nolisten tcp' python3 scripts/verify-optional-client.py --ncr
+      - name: Verify pinned ChatPlus relocated input, Unicode, media and native routing
+        run: timeout --kill-after=45s 600 xvfb-run -a -s '-screen 0 1280x900x24 -nolisten tcp' python3 scripts/verify-twemoji.py --chatplus
+      - name: Verify right-side pending cards in vanilla defaults and narrow layouts
+        run: timeout --kill-after=45s 600 xvfb-run -a -s '-screen 0 1280x900x24 -nolisten tcp' python3 scripts/verify-twemoji.py --pending-card
+      - name: Verify right-side pending cards with ChatPlus defaults and moved layout
+        run: timeout --kill-after=45s 600 xvfb-run -a -s '-screen 0 1280x900x24 -nolisten tcp' python3 scripts/verify-twemoji.py --pending-card --chatplus
+      - name: Upload compatibility evidence only
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: chat-compatibility-evidence-${{ github.sha }}
+          path: |
+            build/evidence/optional-client-ncr/
+            build/evidence/chatplus/
+            build/evidence/pending-card/
+            build/evidence/pending-card-chatplus/
           if-no-files-found: warn
           retention-days: 14

@@ -3,22 +3,41 @@ plugins {
     id 'java'
     id 'net.minecraftforge.gradle' version '6.0.54'
 }
-base { archivesName = 'discraft-forge-1.20.1' }
+base { archivesName = 'DisCraft' }
 java.toolchain.languageVersion = JavaLanguageVersion.of(17)
 // Client acceptance driver is opt-in and never shipped in the mod JAR.
-if (providers.gradleProperty('smoke').isPresent()) {
+if (providers.gradleProperty('smoke').isPresent() || providers.gradleProperty('multiplayerSmoke').isPresent()) {
     sourceSets.main.java.srcDir 'src/smoke/java'
+    sourceSets.main.java.srcDir 'src/testFixtures/java'
+    sourceSets.main.resources.srcDir 'src/smoke/resources'
+}
+sourceSets.test.java.srcDir 'src/testFixtures/java'
+sourceSets {
+    optionalClient {
+        compileClasspath = sourceSets.main.compileClasspath
+        runtimeClasspath = output + compileClasspath
+    }
 }
 minecraft {
     mappings channel: 'official', version: '1.20.1'
     copyIdeResources = true
     runs {
         configureEach {
+            args '--mixin.config', 'discraft.mixins.json'
             workingDirectory rootProject.file('run')
+            if (providers.gradleProperty('multiplayerSmoke').isPresent()) {
+                workingDirectory rootProject.file('run-mp/' + providers.gradleProperty('bridgeRole').getOrElse('server'))
+                property 'discraft.multiplayerSmoke', 'true'
+                property 'discraft.bridgeRole', providers.gradleProperty('bridgeRole').getOrElse('server')
+                property 'discraft.bridgePort', providers.gradleProperty('bridgePort').getOrElse('25579')
+            }
             property 'forge.logging.console.level', 'info'
             mods { discraft { source sourceSets.main; source project(':core').sourceSets.main } }
         }
         client {
+            if (providers.gradleProperty('multiplayerSmoke').isPresent()) {
+                args '--width', '1100', '--height', '800', '--username', providers.gradleProperty('bridgeRole').getOrElse('Alice')
+            }
             if (providers.gradleProperty('smoke').isPresent()) {
                 property 'discraft.smoke', 'true'
                 args '--width', '1100', '--height', '800'
@@ -30,9 +49,84 @@ minecraft {
 dependencies {
     minecraft 'net.minecraftforge:forge:1.20.1-47.4.0'
     implementation project(':core')
+    // Isolated compatibility acceptance only. Never part of normal builds or the distributable.
+    if (providers.gradleProperty('compatNcr').isPresent()) {
+        repositories { maven { url = 'https://api.modrinth.com/maven'; content { includeModule 'maven.modrinth', 'no-chat-reports' } } }
+        runtimeOnly fg.deobf('maven.modrinth:no-chat-reports:2XUIKIAa')
+    }
+    if (providers.gradleProperty('compatChatPlus').isPresent()) {
+        repositories { maven { url = 'https://api.modrinth.com/maven'; content { includeGroup 'maven.modrinth' } } }
+        runtimeOnly fg.deobf('maven.modrinth:chat-plus:T77CVU4z')
+        runtimeOnly fg.deobf('maven.modrinth:cloth-config:nr1znv5v')
+        runtimeOnly fg.deobf('maven.modrinth:architectury-api:1MKTLiiG')
+        runtimeOnly 'maven.modrinth:kotlin-for-forge:9j6YaPp2' // Language provider, not a remapped Minecraft library.
+    }
 }
 tasks.named('jar', Jar) {
+    manifest.attributes('MixinConfigs': 'discraft.mixins.json')
     exclude 'dev/discraft/forge/smoke/**'
+    exclude 'discraft.ncr-test.mixins.json'
+    exclude 'dev/discraft/forge/server/ServerEventAcceptance*'
+    exclude 'dev/discraft/forge/server/NativeHoverServerAcceptance*'
+    exclude 'dev/discraft/forge/server/DiscordAuthorServerAcceptance*'
+    exclude 'dev/discraft/forge/server/ItemFixtures*'
+    exclude 'dev/discraft/forge/server/ItemPipelineTiming*'
+    exclude 'dev/discraft/forge/server/ItemTooltipAcceptance*'
+    exclude 'dev/discraft/forge/server/InstalledLanguageAcceptance*'
+    exclude 'dev/discraft/forge/server/OptionalServerAcceptance*'
+    exclude 'dev/discraft/forge/server/ChatPlusServerAcceptance*'
+    exclude 'dev/discraft/forge/server/DiscordAuthorFixtures*'
     from project(':core').sourceSets.main.output
     finalizedBy 'reobfJar'
+}
+
+tasks.register('bridgeProtocolTest', JavaExec) {
+    dependsOn testClasses
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'dev.discraft.forge.server.BridgeProtocolTest'
+    // Deliberate fake environment values prove that missing config cannot fall back.
+    environment 'discord_token', 'fake-environment-token-never-live'
+    environment 'discord_channel', '9234567890123456'
+    environment 'DISCRAFT_DISCORD_BOT_TOKEN', 'fake-legacy-token-never-live'
+    environment 'DISCRAFT_DISCORD_CHANNEL', '8234567890123456'
+    environment 'DISCRAFT_MODE', 'discord'
+    environment 'DISCRAFT_ALLOWED_PLAYERS', '*'
+    jvmArgs '-ea', '-Djava.awt.headless=true'
+}
+tasks.named('check') { dependsOn bridgeProtocolTest }
+
+// Forge 6.0.54 initializes JavaExec inside exec(), not during preparation.
+// Resolve its pinned RunConfig with the same token helpers, without launching a JVM.
+abstract class BridgeRunExport extends net.minecraftforge.gradle.common.util.runs.RunConfigGenerator {
+    static Map resolve(org.gradle.api.Project project, def run) {
+        def config = run.runConfig.get()
+        def tokens = configureTokensLazy(project, config, mapModClassesToGradle(project, config), run.minecraftArtifacts, run.runtimeClasspathArtifacts)
+        def jvm = config.jvmArgs.collect { config.replace(tokens, it) }
+        if (config.client) jvm.addAll(run.additionalClientArgs.get().collect { config.replace(tokens, it) })
+        config.properties.each { k,v -> jvm.add('-D' + k + '=' + config.replace(tokens, v)) }
+        def args = getArgsStream(config, tokens, false).collect(java.util.stream.Collectors.toList())
+        def classpath = project.files(config.allSources.collect { it.runtimeClasspath }).asPath
+        def command = [run.javaLauncher.get().executablePath.asFile.absolutePath] + jvm.findAll { !it.startsWith('-Xmx') } + ['-Xmx1G', '-XX:ActiveProcessorCount=2', '-cp', classpath, run.mainClass.get()] + args
+        def environment = config.environment.findAll { k,v -> k == 'MOD_CLASSES' }.collectEntries { k,v -> [(k): config.replace(tokens, v)] }
+        return [command: command, directory: config.workingDirectory, environment: environment]
+    }
+}
+tasks.register('exportBridgeLaunch') {
+    // Exported launch classpaths need dependency resources/JARs, not just Java compilation.
+    dependsOn ':core:jar'
+    def serverRole = providers.gradleProperty('bridgeRole').getOrElse('server') == 'server'
+    dependsOn serverRole ? ['prepareRunServer', 'prepareRunServerCompile'] : ['prepareRunClient', 'prepareRunClientCompile']
+    doLast {
+        def run = tasks.named(serverRole ? 'runServer' : 'runClient', JavaExec).get()
+        def target = rootProject.file('build/mp-launch-' + providers.gradleProperty('bridgeRole').getOrElse('server') + '.json')
+        target.parentFile.mkdirs()
+        target.text = groovy.json.JsonOutput.toJson(BridgeRunExport.resolve(project, run))
+    }
+}
+
+// One version source for both the artifact and Forge metadata.
+tasks.named('processResources') {
+    inputs.property('modVersion', project.version)
+    filesMatching('META-INF/mods.toml') { expand(mod_version: project.version) }
+    from(rootProject.file('examples/discraft/server.properties.example')) { into 'defaults/discraft' }
 }

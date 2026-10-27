@@ -1,31 +1,127 @@
 # CI and validation
 
-The pull request workflow uses Ubuntu 24.04, Temurin JDK 17 and the checked-in Gradle 8.8 Wrapper. Action dependencies are pinned to full commit SHAs. The workflow has read-only repository permissions, no Discord secrets and no deployment/release/merge steps. It runs on pull requests and pushes to main or feat branches. Review the checks on the latest PR head before merging; workflow checks are not a substitute for branch-protection settings.
+The workflow uses Ubuntu 24.04, Temurin JDK17, Gradle 8.8 and SHA-pinned Actions, with read-only repository permissions. It runs on pull requests and pushes to main/feat branches. No Discord secrets, deployment, merge or Release steps are configured. Check the latest PR head; pending, skipped, failed or cancelled jobs are not passes. Branch-protection enforcement is configured separately by a maintainer, not by this workflow.
 
-| Job | Actual command/check | Artifact |
+| Job | Checks | Artifact |
 | --- | --- | --- |
-| Core tests (JDK 17) | `./gradlew :core:build`; the executable `coreTest` task must complete its behavior assertions | Core test output and Gradle reports |
-| Forge build and reobfuscation (JDK 17) | `./gradlew -Pforge :forge:build :forge:reobfJar`; validate packaged core, fixtures, mod metadata and exclusion of smoke classes | Reobfuscated Forge 1.20.1 mod JAR |
-| Minecraft client acceptance (JDK 17) | Xvfb/Mesa runs `./scripts/verify-forge.sh --client`; checks a freshly generated acceptance result rather than Minecraft's exit code alone | Actual framebuffer PNGs and check summary, including failure captures when available |
+| Core tests | `:core:build`, including 49 executable behavior assertions | Core output/reports |
+| Forge build/reobfuscation | `:forge:build :forge:reobfJar`, including 30 fake server-config/redaction checks, 33 headless resource/localization checks, 32 headless item/model/font checks, 17 native item wire/safety checks, nine bounded notice-delivery checks, 32 synthetic guild catalog/thumbnail checks and 67 local REST/wire protocol checks; validate packaged client/server/core/media classes and exclude test drivers | Installable mod JAR |
+| Minecraft client acceptance | Real Xvfb/Mesa client, 36 original mock-preview checks including latch-controlled Clear/send-edit races | Native screenshots and result summary |
+| Dedicated server and two clients | Real server and Alice/Bob clients, native input and protocol checks through actual game packets, including native chat media, vanilla Enter, ordinary chat, a real slash command, independent fixture catalog/thumbnail synchronization, picker selection and rename/delete/permission/reset invalidation | Server/client logs, screenshots and separate result summaries |
 
-The client job downloads Minecraft's official assets and launches real Forge 47.4.0 / Minecraft 1.20.1 with the test-only `-Psmoke` driver. It uses actual screens, button handlers, EditBoxes, Enter handling and the registered F8 key mapping. It checks mock send/peer reply/echo suppression; PNG and GIF filename uploads and replies; custom emoji; empty text/corrupt file/path traversal errors; duplicate Send/Clear; closing, texture cleanup and a fresh reopened session. It does not simulate physical OS input. The driver is excluded from the distributed JAR.
+The multiplayer controller reserves a loopback port and creates a separate ignored offline test profile. It strips live Discord credentials/config from child environments and selects only the server-owned TEST adapter. This is genuine game networking with a fixture service peer, not live Discord. It does not alter production server/security or runtime network settings. A pure vanilla binary is not part of this test.
 
-The client acceptance also gates the existing worker with latches to deterministically clear an attachment before decode completes and edit a draft before send completes. It checks that cancelled decode success/error callbacks cannot restore media or overwrite the Clear status, that new draft text and emoji survive send completion, and that editing away and back to the submitted text still counts as a new draft. These interactions occur while busy, rather than waiting for completion. The opt-in driver introduces no delay hooks into production code.
+Bounds: 30-minute multiplayer job; 25-minute outer process timeout; 300 seconds for each Gradle preparation, 120 seconds for server startup, 250 seconds for client completion, and 40 seconds for clean server shutdown. Each game JVM has a 1 GiB heap and two active processors; software-renderer threads are limited. The controller checks fresh per-client PASS summaries and process exit codes, stops the server normally on success, and terminates owned processes on failures/cancellation. An old summary or a normal Minecraft exit alone cannot establish a pass.
 
-Artifacts expire after 14 days. A skipped, pending, cancelled or failed job is not a pass. GitHub Actions results must be read for the latest PR head; historical local passes do not establish that CI passed. No branch protection is configured by this workflow. Suggested review gates are all three named jobs above; a maintainer must configure enforcement separately if desired.
+Fresh-client acceptance waits for vanilla terrain/loading presentation to close before opening DisCraft, including after reconnect. The bridge may already have received packets during `ReceivingLevelScreen`; opening early can let vanilla replace the test screen. Five-second phase/screen/bridge diagnostics and the controller's last-state output make interrupted startup distinguishable from a stalled assertion. The join gate was rechecked with both client directories absent. Launch export explicitly builds `:core:jar` so a clean job has core resources and runtime dependencies; compile-only preparation omits fixture resources and leaves the TEST adapter disabled. Smoke-only adapter initialization errors fail immediately rather than degrading into a client timeout.
 
-## Local provenance
+The server configuration checks use fake legacy/lowercase environment values to verify that missing config stays disabled, validate allowlists and empty placeholders, reject malformed/oversized/symlink config files, and check that diagnostics, object representations and packets omit secret values. The HTTP contract tests never use a real bot token or Discord endpoint. They verify bot-account/permission handling, JSON and multipart sends, received Unicode/emoji/media, cursor/backoff/reconnect/dedup, 429 suppression, bounded bodies, SSRF rejection and no redirects. Forge and the original client job both retain the normal build/protocol checks; no previous gate was removed.
 
-This PR continues local full HEAD `c5af7464fa5f78fd60d4ff19a75465cca77aeb27`, whose original history is preserved in a local backup bundle. That work passed 49 core checks, 25 real-client checks and a normal Forge build/reobfuscation. Two actual framebuffer screenshots differed by 2,068 pixels within animated media. It corrected three extra closing parentheses in the Forge button builders and pinned the resolved ForgeGradle 6.0.54 version.
+Artifacts expire after 14 days. Only test evidence and the mod JAR are uploaded; generated launch environment/configuration, worlds, caches and credentials are excluded. Historical local checks are useful provenance, not evidence that a newly pushed SHA passed CI. See [server scope and limits](SERVER-BRIDGE.md) and [architecture](ARCHITECTURE.md).
 
-The previously empty remote required an empty initial main commit solely as a PR comparison base. The implementation commits were replayed onto it for the feature branch, omitting raw environment logs, policy snapshots and old screenshots from every published tree. Commit hashes differ from the original local history. The Gradle wrapper JAR and three tiny bundled image/GIF fixtures are intentional source inputs; generated mod JARs and new evidence belong in workflow artifacts. No original git configuration or credentials are published.
+Native regressions use actual game keyboard events and latch-controlled local decoder/worker work. They cover immediate Enter, active decode Clear/replacement, current/stale decode errors, Escape, delayed send success/rejection, captionless GIF, disconnect and actual T/F8 keys. Framebuffer palette checks cover PNG/GIF at (chat width, chat scale, line spacing): (320,1,1), (40,1,1), (40,0.5,0.5). Native reflow preserves ordinary message identity/order/signatures/timestamps. TEST rejection is an explicit server test-adapter fixture, not a live Discord failure.
 
-## Limits
+Linux x64 multiplayer launches pre-extract the LWJGL native binaries from the already-resolved runtime native JARs into per-role directories, and pass explicit LWJGL library/extraction paths. This fixes the observed early-display resource-load failure for `liblwjgl_opengl.so` without retrying a failed run or disabling gameplay/render checks. Missing runtime native JARs fail before launch. Other operating-system native paths remain untested.
 
-This is an in-process local mock, not a Discord bridge. Real Discord/relay delivery, in-world use, dedicated-server classloading, a separately installed production-launcher mod JAR, exhaustive glyph coverage, and JPEG through the Minecraft UI remain unverified. JPEG decoding is covered by core behavior tests. Fabric and NeoForge are deferred. Minecraft may log stock background authentication or audio-device failures in a headless environment; none is evidence of Discord connectivity. No world creation or real credentials are needed for this acceptance.
+The extended multiplayer suite also starts a separate X11 clipboard owner and uses physical Robot mouse/key events for text/image paste, F2 original file saving, card actions, picker search and author-name selections. The test bootstrap initializes desktop AWT before Minecraft’s forced headless property; production clipboard access is instead isolated in its own bounded desktop service. No OS clipboard support is inferred from the earlier injected-media fixtures. Windows/macOS are not covered. Captionless delivery waits for a matching decoded authoritative record rather than treating its independent ACK as decoded-history completion; a subsequent delivered message provides an ordering barrier for the exact-once check.
 
-## Async editing fixes
+The current local native-UX run passes79 Alice checks and4 Bob checks, including exact RGB equality between the physical-F2 clipboard image and vanilla screenshot file. It waits for both send completion and the fixture peer’s decoded reply before author-click positioning so asynchronous chat insertion cannot move the target between selection and input. A native hit-test assertion and UX phase diagnostics identify coordinate/gating failures. Ten separate X11 helper checks exercise exact pixels, no eager startup, process reuse, a deliberately paused owned helper with deadline termination, and temporary-class cleanup. A separate headless caller verifies image transfer without changing its own AWT state. After game exit the controller checks the recorded helper PID is no longer running. Controller evidence access is protected by a nonblocking lock; overlapping invocations fail before changing outputs.
 
-Independent review of `2951524b7b45a495940c3f6797a1410b85e34535` reported two P2 UI races: Clear could be undone by a late attachment decode callback, and a successful send could erase a draft edited after submission. The screen now invalidates attachment results using a request revision and clears sent text only if its draft revision is unchanged. Stale decode errors are ignored too. Revisions are maintained on the Minecraft UI thread, including edits that return to the original text value.
+Independent review regressions add identical-byte spoiler/plain messages in both arrival orders, a spoiler attachment sharing bytes with inline emoji, and a physical reveal that must leave the identical peer message concealed. These use real server packets and native framebuffer samples. Framebuffer assertions wait for an actual CHAT_PANEL render after scroll/state changes rather than assuming a number of client ticks implies a fresh frame. Mention range checks cover distinct same-display actors, insertion before/after, identical prefix paste, deletion, replacement, and conservative invalidation of unknown edits; real EditBox checks exercise the adapter as well. Robot keyboard chords run off the game/render thread so key holds can actually be processed before release.
 
-The added real-client regression cases were first run against the unfixed source and failed on both races (five observable conditions). After the fix the same gated sequence passed, with 36 total client checks; core checks remained 49 and Forge build/reobfuscation plus packaged-mod validation passed locally. CI for each new head must still be checked independently. These fixes require reviewer reinspection of the new SHA; this local validation is not independent review approval.
+Normal-T mention acceptance explicitly verifies bridge mode is false and no file is staged, physically clicks an author, presses Enter without any extra caption, and checks authoritative text/target ID plus absence of a vanilla-chat duplicate. A second physical normal-T path checks leading/doubled spaces before the selected mention. Pure protocol checks cover trailing whitespace, two same-display IDs, unbound lookalikes, unexpected transforms and vanilla truncation.
+
+An explicit local live-catalog harness separately verified the configured guild's actual metadata/CDN assets through real server/client catalog packets and native picker rendering (55 metadata entries, 52 loaded previews, three disabled entries, static-name search and distinct animated texture frames). It refused all Discord sends and never polled channel history. CI remains synthetic/offline and does not receive live credentials or retain that local guild data.
+
+The game catalog fixture includes a malformed 481×545 PNG (262,145 pixels: exactly one above the per-preview limit while below the total cache budget). It traverses actual server thumbnail packets; the client must retain only a negative-cache result, create no texture for its digest, and release the pending request and assembly. The decoded image is assigned only after all preview validation succeeds.
+
+Native UI text acceptance additionally runs `scripts/verify-ui-text.py --tag after` in the multiplayer job. It captures original-resolution frames at four viewport/GUI-scale combinations and verifies the scoped vector provider, glyph sampling/line bounds, search caret metrics, tab/filter hit areas and resource reload. See [UI text rendering](UI-TEXT.md) for the measured bitmap root cause, font licensing/size tradeoff and before/after comparison conditions. No Discord credentials are used.
+
+The Forge job also boots an isolated dedicated server without DISPLAY for `scripts/verify-server-events.py`: actual starting/ready/normal-stop hooks plus synthetic login/logout callbacks, death/advancement events, cancellation/rescue, duplicate suppression and announcement rules. Its recording TEST adapter has no credentials or HTTP transport; the test driver is excluded from the mod JAR. Normal configurations keep automatic notifications disabled until explicit config opt-in.
+
+The `--items` variant adds six real-ItemStack checks plus eighteen attribute-override
+semantics/tooltip regressions to those twelve event checks (36 total):
+game-thread main-hand capture, mutation/offhand isolation, appearance whitelist,
+imported Traditional Chinese/custom bitmap glyphs, retained CMD model utilities and adaptive tooltip PNGs, actual official
+adapter multipart to a loopback-only mock, and empty hand. The item HTTP mock uses
+the existing fixed fake test token; no host credential or Discord endpoint is used.
+The attribute cases use actual pinned 1.20.1 methods on original and reconstructed
+stacks: explicit empty, filtered empty, absent key, wrong field/element types and
+over-budget fallback. Empty overrides stay empty and absent keys keep defaults;
+no book/container data or arbitrary NBT/actions are permitted.
+
+An optional local-only original-resource comparison uses already-cached Minecraft
+1.20.1 diamond sword/stone assets and native `zh_tw` labels; see
+[item evidence commands and limits](ITEM-DISPLAY.md#optional-original-assetnative-client-comparison).
+It is separate from default synthetic CI and never redistributes its selected source
+ZIP or downloads additional game assets. Animation size regressions run in ordinary
+CI and compare horizontal/single-axis cases directly with pinned 1.20.1 metadata code.
+
+The headless item acceptance also checks real native tooltip semantics and bounded adaptive Discord PNGs via the production loopback adapter. Tooltip PNGs, semantic-line metadata and their result summary are included in server-events evidence. It never uses live Discord credentials or emits real notifications.
+
+Headless event acceptance also verifies actual installed Forge CN/TW resources, native DisCraft English reuse and partial operator overrides without a client or DISPLAY. The optional --language-pack argument is local-only evidence; user packs remain outside uploaded artifact roots. Synthetic tests cover deterministic source/namespace order and bounded language growth.
+
+The real multiplayer controller waits for Alice's successful Forge GL-context marker
+before launching Bob, then waits for Bob's context. It keeps both game clients running
+for all existing multiplayer assertions; the game-side deadlines and check counts are
+unchanged. This avoids overlapping cold software-GL initialization observed in failed
+CI artifacts. Explicit Forge early-display/main-thread failures and premature exits
+fail immediately instead of waiting at a console dialog until the integration deadline.
+The controller never automatically restarts a failed client. Startup gates have bounded
+process/log IPC regressions and a 120-second readiness deadline per client.
+
+Optional installation is checked by `scripts/verify-optional-client.py` under
+Xvfb at 1280×900. Its standalone instrumentation source set does not depend on
+DisCraft, and its launcher removes both DisCraft/core main outputs from the
+unenhanced process classpaths and MOD_CLASSES. Actual ModList assertions prove
+absence. The matrix covers: enhanced/unenhanced peers together with localhost
+Discord REST and media ingress, regular chat, late cancellation, authoritative
+item PNG/native hover, configured join/quit/death/advancement, respawn and
+reconnect cleanup; a synthetic protocol-3 channel rejected before play; and an
+enhanced client on a Forge server without DisCraft. The mixed-server counter
+asserts zero DisCraft custom play payloads to the absent client. Test drivers
+are excluded from the distributable and checked by `check-mod-jar.py`.
+Evidence is retained in `build/evidence/optional-client/`. These worlds use only
+Forge and the appropriate bridge/instrumentation mod, offline identities and a
+loopback fake credential. They do not exercise arbitrary content-mod requirements,
+a pure vanilla executable, or Mojang online-session signature authentication.
+The optional-peer matrix also installs a late Forge listener that redacts text
+without cancelling and changes styling only, plus a controlled partial-filter
+packet fixture. Actual native display is checked while redacted/filtered originals
+must never reach the local REST receiver. Commands Only is sent to the real server;
+a second player confirms native receipt while the sender receives no self player
+chat, and the bridge must emit exactly one Discord-side record.
+The mixed optional world uses three real clients for native recipient identity
+regression: a SYSTEM sender, an enhanced recipient and an unenhanced recipient.
+It holds the first message's second recipient packet until a second identical
+message has completed bridge admission but is blocked in a late cancellation
+listener. Only one REST send and one native message per recipient may result.
+This regression fails against the earlier text-matching implementation. The
+fixture also proves a reconnect changes the sender generation despite both old
+and new unsigned native indices being zero, and retains the sender-filter test
+while other recipients receive an unfiltered view.
+
+Pinned Unicode artwork is checked by the core suite (all 3,953 PNG checksums and
+actual production-loader decoding), then `scripts/verify-twemoji.py` exercises
+native ordinary/bridge chat, picker search/selection, guild coexistence, GUI
+scales, reload and cleanup in a real isolated server/client. Evidence is saved
+under `build/evidence/twemoji/`; it contacts no live Discord or external provider.
+
+Preview.8 adds deterministic fake-manifest tests for official URI/size/digest checks, selected-locale-only acquisition, verified offline cache, loaded-mod/admin priority, symlinks and directory-payload ZIP limits. These fixtures require no Mojang or Discord network access. Optional `verify-server-events.py --items --vanilla-auto` explicitly validates official asset acquisition and actual headless ItemStack/model/tooltip/adapter-loopback behavior; it is not a production Discord test and does not redistribute the downloaded resources. `--items --timing` records capture/render/cache/queue/encode/loopback timings. UI-text acceptance also checks real render-thread finite GIF playback, independent message clocks and GPU cleanup.
+
+Client preference saving uses the pinned NightConfig observed-map `putAll` API so all four fields are published before one autosave callback; individual `ConfigValue.set` calls previously published partial files to Forge's reload watcher. A controlled 80 ms client-tick stall reproduced a false draft becoming true on disk. A regression models watcher replay of a partial publication, checks one complete batch, rollback, comments/unknown-field preservation and a real TOML round trip. The original unsynchronized fixture also passed the same stress after the production fix.
+
+Client settings acceptance additionally waits for the physical Robot task and two actual rendered frames before advancing. Every toggle and slider must visibly reach its intended draft state before Save; the final false/410×315 state, on-disk TOML and second-JVM restart remain required. Normal and `--stress-input` runs keep separate evidence. No original assertion or timeout was weakened.
+
+ChatPlus scroll/spoiler acceptance waits for two completed render frames after scroll/reset, then checks the real positive scrollbar and completed-frame sprite count. Failure diagnostics include requested/current scroll, completed/current sprites, frame count and fixture-record counts; a full original-resolution failure capture is retained. The older phase-96 failure did not identify which side of its combined assertion failed, so its exact historical cause cannot be inferred from a later passing run.
+
+The delayed-TEST-peer regression reproduces the later phase-96 race without changing
+production rendering: the local adapter holds the final attachment echo for four
+seconds. Before the fix, the actual pinned ChatPlus history had 16 displayed rows
+and a 19-row viewport, so `scrollChat(3)` correctly clamped to zero. Waiting a
+fixed number of ticks after the sender's own record did not imply receipt of the
+peer's echo. The fixture now waits for that exact TEST attachment echo and two
+completed frames, asserts that displayed history exceeds the real viewport, and
+then requires positive scroll and completed-frame sprites as before. The delay
+wrapper is TEST-only and excluded from the distributable JAR. This identifies
+the reproduced race, without assigning an unobserved cause to older failures.

@@ -31,7 +31,7 @@ public final class Attachment {
         Path base = root.toRealPath();
         Path target = base.resolve(relativeName).normalize();
         if (!target.startsWith(base) || !target.toRealPath().startsWith(base) || !Files.isRegularFile(target, LinkOption.NOFOLLOW_LINKS))
-            throw new IOException("Choose a regular file inside discraft-uploads");
+            throw new IOException("Choose a regular file inside the DisCraft upload directory");
         try (var in = Files.newInputStream(target, LinkOption.NOFOLLOW_LINKS)) {
             return new Attachment(target.getFileName().toString(), readBounded(in));
         }

@@ -1,0 +1,14 @@
+{
+  "discraft.settings.title": "DisCraft 客戶端設定",
+  "discraft.settings.f2": "截圖複製到剪貼簿",
+  "discraft.settings.f2.help": "實際按下 F2 時額外複製圖片到剪貼簿。關閉仍依原版儲存一份截圖，不會自動傳送。",
+  "discraft.settings.mention": "被提及通知音效",
+  "discraft.settings.mention.help": "新訊息以結構化提及指向你的 Minecraft 帳號時播放一次；普通名字文字不會觸發。",
+  "discraft.settings.local": "僅此客戶端 · config/discraft/client.toml",
+  "discraft.settings.save_failed": "無法儲存設定，請檢查客戶端設定檔權限。",
+  "key.discraft.open": "開啟 DisCraft 聊天",
+  "key.categories.discraft": "DisCraft",
+  "discraft.settings.picker.width": "選擇面板寬度：%s GUI px",
+  "discraft.settings.picker.height": "選擇面板高度：%s GUI px",
+  "discraft.settings.picker.help": "只改面板尺寸，文字大小不變。面板會依輸入框與視窗邊界縮小；空間不足時不開啟。"
+}

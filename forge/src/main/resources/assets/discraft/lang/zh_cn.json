@@ -1,0 +1,14 @@
+{
+  "discraft.settings.title": "DisCraft 客户端设置",
+  "discraft.settings.f2": "截图复制到剪贴板",
+  "discraft.settings.f2.help": "实际按下 F2 时额外复制图片到剪贴板。关闭仍按原版保存一份截图，不会自动发送。",
+  "discraft.settings.mention": "被提及通知音效",
+  "discraft.settings.mention.help": "新消息以结构化提及指向你的 Minecraft 账号时播放一次；普通名字文字不会触发。",
+  "discraft.settings.local": "仅此客户端 · config/discraft/client.toml",
+  "discraft.settings.save_failed": "无法保存设置，请检查客户端配置文件权限。",
+  "key.discraft.open": "打开 DisCraft 聊天",
+  "key.categories.discraft": "DisCraft",
+  "discraft.settings.picker.width": "选择面板宽度：%s GUI px",
+  "discraft.settings.picker.height": "选择面板高度：%s GUI px",
+  "discraft.settings.picker.help": "只改面板尺寸，文字大小不变。面板按输入框和窗口边界缩小；空间不足时不开启。"
+}

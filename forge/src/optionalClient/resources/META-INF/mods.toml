@@ -1,0 +1,8 @@
+modLoader="javafml"
+loaderVersion="[47,)"
+license="All Rights Reserved"
+[[mods]]
+modId="discraft_optional_test"
+version="1"
+displayName="Isolated optional-peer acceptance instrumentation"
+displayTest="IGNORE_ALL_VERSION"

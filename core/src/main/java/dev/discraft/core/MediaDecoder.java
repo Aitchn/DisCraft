@@ -47,10 +47,12 @@ public final class MediaDecoder {
                 try { initial.setComposite(AlphaComposite.Src); initial.setColor(new Color(background, true)); initial.fillRect(0, 0, width, height); }
                 finally { initial.dispose(); }
                 var frames = new ArrayList<MediaAsset.Frame>();
+                int plays=-1;
                 for (int i = 0; i < count; i++) {
                     int fw = reader.getWidth(i), fh = reader.getHeight(i);
                     dimensions(fw, fh);
                     Node metadata = format.equals("gif") ? tree(reader.getImageMetadata(i)) : null;
+                    if(format.equals("gif")){int declared=loopPlays(metadata);if(declared>=0){if(plays>=0&&plays!=declared)throw new IOException("Conflicting GIF loop metadata");plays=declared;}}
                     Node descriptor = find(metadata, "ImageDescriptor");
                     int x = number(descriptor, "imageLeftPosition", 0), y = number(descriptor, "imageTopPosition", 0);
                     if (x < 0 || y < 0 || (long)x + fw > width || (long)y + fh > height) throw new IOException("Frame outside canvas");
@@ -61,15 +63,26 @@ public final class MediaDecoder {
                     BufferedImage decoded = reader.read(i); // Dimensions checked before decoder allocates pixels.
                     Graphics2D graphics = canvas.createGraphics();
                     try { graphics.drawImage(decoded, x, y, null); } finally { graphics.dispose(); }
+                    decoded.flush();
                     frames.add(new MediaAsset.Frame(copy(canvas), delay));
                     if (disposal.equals("restoreToBackgroundColor")) {
                         graphics = canvas.createGraphics();
                         try { graphics.setComposite(AlphaComposite.Src); graphics.setColor(new Color(background, true)); graphics.fillRect(x, y, fw, fh); } finally { graphics.dispose(); }
-                    } else if (previous != null) canvas = previous;
+                    } else if (previous != null) {canvas.flush();canvas = previous;}
                 }
-                return new MediaAsset(format, width, height, frames);
+                canvas.flush();
+                return new MediaAsset(format, width, height, frames,plays<0?1:plays);
             } finally { reader.dispose(); }
         } catch (IllegalArgumentException | IndexOutOfBoundsException e) { throw new IOException("Invalid media", e); }
+    }
+    private static int loopPlays(Node metadata)throws IOException {
+        var applications=find(metadata,"ApplicationExtensions");int result=-1;
+        for(Node entry=applications==null?null:applications.getFirstChild();entry!=null;entry=entry.getNextSibling()){
+            String id=attr(entry,"applicationID","")+attr(entry,"authenticationCode","");if(!id.equals("NETSCAPE2.0")&&!id.equals("ANIMEXTS1.0"))continue;
+            if(!(entry instanceof javax.imageio.metadata.IIOMetadataNode node)||!(node.getUserObject() instanceof byte[] data)||data.length!=3||data[0]!=1)throw new IOException("Invalid GIF loop metadata");
+            int repeat=(data[1]&255)|((data[2]&255)<<8),value=repeat==0?0:repeat+1;
+            if(result>=0&&result!=value)throw new IOException("Conflicting GIF loop metadata");result=value;
+        }return result;
     }
     private static void dimensions(int w, int h) throws IOException {
         if (w < 1 || h < 1 || w > Limits.MEDIA_DIMENSION || h > Limits.MEDIA_DIMENSION) throw new IOException("Media dimension limit: 1024 x 1024");

@@ -2,7 +2,21 @@
 **/build/
 run/
 run-data/
+run-mp/
 .idea/
 *.iml
 *.log
 .env
+# Real server credentials: only the empty .example belongs in source control.
+**/discraft-server.properties
+**/discraft-resourcepacks/
+
+# Local Python acceptance helpers
+__pycache__/
+
+# Unified private configuration, imported packs and local staged media.
+**/config/discraft/
+**/discraft-uploads/
+
+# Generated Minecraft/diagnostic log trees may contain private runtime data.
+**/logs/

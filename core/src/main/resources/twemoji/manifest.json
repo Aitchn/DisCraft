@@ -1,0 +1,19 @@
+{
+  "version": "17.0.3",
+  "commit": "b6b55fef1e8636b540a6d016a4729ca8cdf2e60b",
+  "source": "https://github.com/jdecked/twemoji/tree/v17.0.3",
+  "unicode": "https://unicode.org/Public/17.0.0/emoji/emoji-test.txt",
+  "input_sha256": {
+    "GraphemeBreakProperty.txt": "d6b51d1d2ae5c33b451b7ed994b48f1f4dc62b2272a5831e7fd418514a6bae89",
+    "twemoji.zip": "d91bdab1e9ac66f2935425e539f5ac1cd83a491fa27b2021c77630a0ba8e09ff",
+    "emoji-test.txt": "1d8a944f88d7952f7ef7c5167fef3c67995bcae24543949710231b03a201acda",
+    "unicode-license.txt": "e7a93b009565cfce55919a381437ac4db883e9da2126fa28b91d12732bc53d96"
+  },
+  "images": 3953,
+  "image_bytes": 4206786,
+  "sequences": 5018,
+  "picker_entries": 3953,
+  "grapheme_source": "https://unicode.org/Public/17.0.0/ucd/auxiliary/GraphemeBreakProperty.txt",
+  "grapheme_sha256": "454299868eb61cdf50ce4258e29211c0042b45469cc332ce323b219ad81e974a",
+  "index_sha256": "75689f795e2a0b752d827989ef6bb1faa5ccdf2d5007dfbf363721c8089f54ff"
+}

@@ -1,1 +1,14 @@
-{"key.discraft.open":"Open DisCraft mock chat","key.categories.discraft":"DisCraft"}
+{
+  "key.discraft.open": "Open DisCraft chat",
+  "key.categories.discraft": "DisCraft",
+  "discraft.settings.title": "DisCraft Client Settings",
+  "discraft.settings.f2": "Copy screenshots to clipboard",
+  "discraft.settings.f2.help": "Copy physical F2 screenshots to the image clipboard. Minecraft still saves exactly one original screenshot when this is off. Never automatically sends.",
+  "discraft.settings.mention": "Mention notification sound",
+  "discraft.settings.mention.help": "Play once when a new structured mention targets your Minecraft account. Plain names do not trigger it.",
+  "discraft.settings.local": "Client only · config/discraft/client.toml",
+  "discraft.settings.save_failed": "Could not save settings. Check client config permissions.",
+  "discraft.settings.picker.width": "Picker width: %s GUI px",
+  "discraft.settings.picker.height": "Picker height: %s GUI px",
+  "discraft.settings.picker.help": "Resize the panel without scaling text. The actual panel fits above or below your chat input; very small space keeps it closed."
+}

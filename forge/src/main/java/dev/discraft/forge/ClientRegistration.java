@@ -12,5 +12,8 @@ import org.lwjgl.glfw.GLFW;
 public final class ClientRegistration {
     public static final KeyMapping OPEN = new KeyMapping("key.discraft.open", InputConstants.Type.KEYSYM,
             GLFW.GLFW_KEY_F8, "key.categories.discraft");
+    @SubscribeEvent public static void setup(net.minecraftforge.fml.event.lifecycle.FMLClientSetupEvent event) {
+        net.minecraftforge.fml.ModLoadingContext.get().registerExtensionPoint(net.minecraftforge.client.ConfigScreenHandler.ConfigScreenFactory.class,()->new net.minecraftforge.client.ConfigScreenHandler.ConfigScreenFactory(ClientSettingsScreen::new));
+    }
     @SubscribeEvent public static void register(RegisterKeyMappingsEvent event) { event.register(OPEN); }
 }
