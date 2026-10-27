@@ -8,9 +8,9 @@ versions are rejected, absent endpoints are supported.
 
 See the [繁體中文安裝／使用指南](docs/使用指南.md) for actual config, installation,
 `%i` / `%item`, event switches and resource-pack placement. Discord credentials
-and channel are read only from server-local `config/discraft-server.properties`,
+and channel are read only from server-local `config/discraft/server.properties`,
 with no environment fallback. Missing config is disabled; create it manually from
-[the empty example](examples/discraft-server.properties.example). Production also
+[the empty example](examples/discraft/server.properties.example). Production also
 requires an authenticated dedicated server and the nonsecret JVM opt-in.
 
 Ordinary native chat and configured join/quit/death/advancement/lifecycle notices
@@ -31,7 +31,7 @@ explicit local TEST/demo fixtures are never a real provider.
 python3 scripts/check-mod-jar.py
 ```
 
-The distributable is `forge/build/libs/discraft-forge-1.20.1-0.1.0-dev.jar`; no
+The distributable is `forge/build/libs/discraft-0.2.0-preview.1.jar`; no
 separate core JAR is needed. Smoke/test drivers and local credentials are excluded.
 [CI](docs/CI.md) retains JAR and test evidence. Full client/native tests require a
 display or Xvfb; production headless servers do not.
@@ -42,3 +42,5 @@ human ingress or production online-session cryptography coverage. Pure vanilla,
 arbitrary modpacks and Windows/macOS/Wayland clipboard are not verified. See
 [server limits](docs/SERVER-BRIDGE.md), [resource packs](docs/RESOURCE-PACKS.md),
 [item display](docs/ITEM-DISPLAY.md) and [Twemoji provenance](docs/TWEMOJI.md).
+
+Configuration and local imports are grouped under `config/discraft/`: `server.properties`, `resourcepacks/`, and client `uploads/`. New paths win independently; absent new paths use the old server/config pack/upload locations with a redacted warning. Nothing is automatically moved or overwritten; invalid new paths never silently fall back. See the migration table in the Chinese guide.

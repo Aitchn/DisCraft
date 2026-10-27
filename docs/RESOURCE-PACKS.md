@@ -1,9 +1,9 @@
 # Headless resource-pack foundation
 
-The server-only index reads local ZIP files from `config/discraft-resourcepacks`.
+The server-only index reads local ZIP files from `config/discraft/resourcepacks`.
 `resourcePacks=base.zip,custom.zip` lists low to high priority; `locale=zh_tw`
 selects Discord text independently of connected clients. Both settings live in
-`discraft-server.properties`; there is no environment source or remote download.
+`config/discraft/server.properties`; there is no environment source or remote download.
 Restart is required. Automatic event notifications consume this index; it does not
 change ordinary Minecraft chat or load client rendering code.
 

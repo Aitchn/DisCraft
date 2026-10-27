@@ -13,3 +13,7 @@ run-mp/
 
 # Local Python acceptance helpers
 __pycache__/
+
+# Unified private configuration, imported packs and local staged media.
+**/config/discraft/
+**/discraft-uploads/

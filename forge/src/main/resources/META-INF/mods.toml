@@ -3,8 +3,8 @@ loaderVersion="[47,)"
 license="All Rights Reserved"
 [[mods]]
 modId="discraft"
-version="0.1.0-dev"
-displayName="DisCraft (Server Bridge Preview)"
+version="${mod_version}"
+displayName="DisCraft"
 displayTest="IGNORE_SERVER_VERSION"
 description="Server-authoritative multiplayer chat/media with opt-in server-only Discord Bot REST adapter. Local fixtures are explicitly labelled tests."
 [[dependencies.discraft]]

@@ -39,7 +39,7 @@ public final class NativeComposer {
     private static void notice(String text){MC.gui.getChat().addMessage(Component.literal("[DisCraft] "+text));}
     private static EditBox input(ChatScreen screen){return screen.children().stream().filter(w->w instanceof EditBox).map(w->(EditBox)w).findFirst().orElseThrow();}
     private static Attachment decodeUpload(String name){
-        try{var root=MC.gameDirectory.toPath().resolve("discraft-uploads");java.nio.file.Files.createDirectories(root);return Attachment.fromUpload(root,name);}
+        try{var root=DisCraftPaths.uploads(net.minecraftforge.fml.loading.FMLPaths.CONFIGDIR.get(),MC.gameDirectory.toPath(),DisCraftPaths::warn);java.nio.file.Files.createDirectories(root);return Attachment.fromUpload(root,name);}
         catch(Exception invalid){throw new CompletionException(invalid);}
     }
     private static void clear(){

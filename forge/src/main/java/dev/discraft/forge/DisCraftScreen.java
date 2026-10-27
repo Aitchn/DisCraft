@@ -31,13 +31,13 @@ public final class DisCraftScreen extends Screen {
     private boolean busy = true, closed;
     private int scroll, contentHeight;
     private boolean scrollToBottom;
-    private final Path uploadRoot;
+    private Path uploadRoot;
     public DisCraftScreen(Screen parent) {
         super(Component.literal(Minecraft.getInstance().getConnection()==null?"DisCraft • LOCAL MOCK":"DisCraft • SERVER BRIDGE")); this.parent = parent;
         networked=Minecraft.getInstance().getConnection()!=null;
-        uploadRoot = Minecraft.getInstance().gameDirectory.toPath().resolve("discraft-uploads");
         worker.submit(() -> {
             try {
+                uploadRoot=DisCraftPaths.uploads(net.minecraftforge.fml.loading.FMLPaths.CONFIGDIR.get(),Minecraft.getInstance().gameDirectory.toPath(),DisCraftPaths::warn);
                 Files.createDirectories(uploadRoot);
                 if(networked){Minecraft.getInstance().execute(()->{if(!closed){busy=false;status=ClientBridge.status();}});return;}
                 var loadedEmoji = new HashMap<String, Attachment>();
@@ -49,7 +49,7 @@ public final class DisCraftScreen extends Screen {
                 Minecraft.getInstance().execute(() -> {
                     if (closed) { loaded.close(); return; }
                     session = loaded; emoji.putAll(loadedEmoji); busy = false;
-                    status = "Local fixture peer ready. Files: discraft-uploads/ (PNG/JPEG/GIF, ≤4 MiB).";
+                    status = "Local fixture peer ready. Files: config/discraft/uploads/ (PNG/JPEG/GIF, ≤4 MiB).";
                 });
             } catch (Exception failure) { finish("Fixture load failed: " + failure.getMessage()); }
         });
@@ -62,7 +62,7 @@ public final class DisCraftScreen extends Screen {
         text.setResponder(value -> draftRevision++);
         addRenderableWidget(Button.builder(Component.literal("Send"), button -> send()).bounds(width - 82, height - 76, 70, 20).build());
         path = addRenderableWidget(new EditBox(font, 12, height - 50, Math.max(80, width - 230), 20, Component.literal("Upload filename")));
-        path.setMaxLength(240); path.setValue(file); path.setHint(Component.literal("File inside discraft-uploads/"));
+        path.setMaxLength(240); path.setValue(file); path.setHint(Component.literal("File inside config/discraft/uploads/"));
         addRenderableWidget(Button.builder(Component.literal("Attach file"), button -> attach(null)).bounds(width - 212, height - 50, 96, 20).build());
         addRenderableWidget(Button.builder(Component.literal("Demo GIF"), button -> attach("dance.gif")).bounds(width - 110, height - 50, 98, 20).build());
         addRenderableWidget(Button.builder(Component.literal(networked?"Emoji 1":":discraft:"), button -> text.insertText(networked?ClientBridge.emojiShortcut(0):":discraft:")).bounds(12, 28, 85, 20).build());

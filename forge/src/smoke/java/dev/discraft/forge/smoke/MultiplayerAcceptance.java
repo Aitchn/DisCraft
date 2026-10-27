@@ -47,6 +47,7 @@ public final class MultiplayerAcceptance {
                 Files.createDirectories(OUT);
                 if(MC.screen!=null&&MC.screen.getClass().getSimpleName().equals("AccessibilityOnboardingScreen")){MC.screen.children().stream().filter(w->w instanceof Button b&&b.getMessage().getString().equals("Continue")).map(w->(Button)w).findFirst().ifPresent(Button::onPress);return;}
                 if(!(MC.screen instanceof TitleScreen)||MC.getOverlay()!=null)return;
+                Files.createDirectories(net.minecraftforge.fml.loading.FMLPaths.CONFIGDIR.get().resolve("discraft/uploads"));
                 MC.options.guiScale().set(1);MC.options.renderDistance().set(2);MC.resizeDisplay();connect();stage=1;return;
             }
             if(stage==1||stage==12){
@@ -138,7 +139,7 @@ public final class MultiplayerAcceptance {
                 if(messages.stream().noneMatch(m->m.author().equals("Alice")&&Content.plain(m.content()).startsWith("alice-one")))return;
                 check(true,"Bob received Alice server-authoritative message");
                 check(messages.stream().filter(m->m.author().equals("Alice")).anyMatch(m->!m.attachments().isEmpty()&&m.attachments().get(0).media().animated()),"Bob decoded GIF received over actual game networking");
-                var uploads=MC.gameDirectory.toPath().resolve("discraft-uploads");try(var in=Attachment.class.getResourceAsStream("/fixtures/landscape.png")){Files.copy(in,uploads.resolve("landscape.png"),StandardCopyOption.REPLACE_EXISTING);}
+                var uploads=MC.gameDirectory.toPath().resolve("config/discraft/uploads");try(var in=Attachment.class.getResourceAsStream("/fixtures/landscape.png")){Files.copy(in,uploads.resolve("landscape.png"),StandardCopyOption.REPLACE_EXISTING);}
                 edit(screen,"path").setValue("landscape.png");edit(screen,"text").setValue("bob-two 世界 👋");click("Attach file");stage=3;
             }
             case 3 -> {click("Send");stage=4;}
@@ -157,7 +158,7 @@ public final class MultiplayerAcceptance {
         }
         if(stage==21){
             if(++nativeTicks<4||nativeFrame()==nativeFirstFrame)return;check(true,"Native chat GIF uploaded a different real animation frame");capture("Native-chat-GIF-emoji-frame1.png");
-            var uploads=MC.gameDirectory.toPath().resolve("discraft-uploads");Files.createDirectories(uploads);
+            var uploads=MC.gameDirectory.toPath().resolve("config/discraft/uploads");Files.createDirectories(uploads);
             try(var in=Attachment.class.getResourceAsStream("/fixtures/landscape.png")){Files.copy(in,uploads.resolve("landscape.png"),StandardCopyOption.REPLACE_EXISTING);}
             var attach=NativeComposer.class.getDeclaredMethod("attach",String.class);attach.setAccessible(true);attach.invoke(null,"landscape.png");stage=22;return;
         }

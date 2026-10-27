@@ -3,7 +3,7 @@ plugins {
     id 'java'
     id 'net.minecraftforge.gradle' version '6.0.54'
 }
-base { archivesName = 'discraft-forge-1.20.1' }
+base { archivesName = 'discraft' }
 java.toolchain.languageVersion = JavaLanguageVersion.of(17)
 // Client acceptance driver is opt-in and never shipped in the mod JAR.
 if (providers.gradleProperty('smoke').isPresent() || providers.gradleProperty('multiplayerSmoke').isPresent()) {
@@ -104,4 +104,10 @@ tasks.register('exportBridgeLaunch') {
         target.parentFile.mkdirs()
         target.text = groovy.json.JsonOutput.toJson(BridgeRunExport.resolve(project, run))
     }
+}
+
+// One version source for both the artifact and Forge metadata.
+tasks.named('processResources') {
+    inputs.property('modVersion', project.version)
+    filesMatching('META-INF/mods.toml') { expand(mod_version: project.version) }
 }

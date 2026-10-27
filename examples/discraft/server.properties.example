@@ -1,4 +1,4 @@
-# Copy to <dedicated-server>/config/discraft-server.properties; keep that file private.
+# Copy to <dedicated-server>/config/discraft/server.properties; keep that file private.
 # UTF-8 Java properties. Restart server after editing. No environment fallback.
 enabled=false
 channel=
@@ -8,7 +8,7 @@ allowedPlayers=
 # Discord-side locale: installed mod locale is the base; local packs override per key.
 # Missing selected key -> merged en_us -> Forge server en_us / explicit fallback / key.
 locale=en_us
-# Local ZIP basenames under config/discraft-resourcepacks, low to high priority.
+# Local ZIP basenames under config/discraft/resourcepacks, low to high priority.
 # Resource format 15 (Minecraft 1.20.1), up to 8 packs. Never a URL or absolute path.
 resourcePacks=
 # Explicit opt-in only; blank sends no automatic event notifications.

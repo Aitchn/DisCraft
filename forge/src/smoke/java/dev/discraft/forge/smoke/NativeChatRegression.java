@@ -32,7 +32,7 @@ final class NativeChatRegression {
     private static final Path OUT=Path.of("../../build/evidence/multiplayer").toAbsolutePath().normalize();
     static void start(Consumer<String> check)throws Exception {
         pass=check;original=get(NativeComposer.class,"decoder");worker=get(NativeComposer.class,"worker");
-        var root=MC.gameDirectory.toPath().resolve("discraft-uploads");Files.createDirectories(root);
+        var root=MC.gameDirectory.toPath().resolve("config/discraft/uploads");Files.createDirectories(root);
         for(String name:List.of("landscape.png","dance.gif"))try(var in=Attachment.class.getResourceAsStream("/fixtures/"+name)){Files.copy(in,root.resolve(name),StandardCopyOption.REPLACE_EXISTING);}
         phase=0;ticks=0;captionlessId=null;
     }

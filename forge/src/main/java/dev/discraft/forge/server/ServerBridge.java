@@ -2,6 +2,7 @@ package dev.discraft.forge.server;
 
 import dev.discraft.core.*;
 import dev.discraft.forge.DisCraft;
+import dev.discraft.forge.DisCraftPaths;
 import dev.discraft.forge.bridge.*;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
@@ -66,9 +67,9 @@ public final class ServerBridge {
         try {
             if(Boolean.getBoolean("discraft.multiplayerSmoke")){mode="test";adapter=new TestDiscordAdapter();if(Boolean.getBoolean("discraft.serverEventsSmoke"))config=ServerConfig.testEvents();if(Boolean.getBoolean("discraft.optionalClientSmoke")){config=ServerConfig.testOptional();itemRenderer=new HeadlessItemRenderer(ResourcePackIndex.empty());}if(Boolean.getBoolean("discraft.nativeHoverSmoke")){config=ServerConfig.testNativeHover();itemRenderer=new HeadlessItemRenderer(ResourcePackIndex.empty());}}
             else if(server.isDedicatedServer()&&server.usesAuthentication()){
-                config=ServerConfig.load(net.minecraftforge.fml.loading.FMLPaths.CONFIGDIR.get().resolve("discraft-server.properties"));
+                config=ServerConfig.load(DisCraftPaths.serverConfig(net.minecraftforge.fml.loading.FMLPaths.CONFIGDIR.get(),DisCraftPaths::warn));
                 if(config.enabled()&&Boolean.getBoolean("discraft.discord.enabled")){
-                    var resources=ResourcePackIndex.load(net.minecraftforge.fml.loading.FMLPaths.CONFIGDIR.get().resolve("discraft-resourcepacks"),config.resourcePacks()).withBase(InstalledModLanguages.load(config.locale()));
+                    var resources=ResourcePackIndex.load(DisCraftPaths.resourcePacks(net.minecraftforge.fml.loading.FMLPaths.CONFIGDIR.get(),DisCraftPaths::warn),config.resourcePacks()).withBase(InstalledModLanguages.load(config.locale()));
                     text=new ComponentText(resources,config.locale());if(config.itemDisplay())itemRenderer=new HeadlessItemRenderer(resources);adapter=DiscordBotAdapter.fromConfig(config);mode="discord";
                 }
                 else adapter=null;

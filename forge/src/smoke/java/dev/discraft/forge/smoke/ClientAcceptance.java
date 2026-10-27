@@ -46,6 +46,7 @@ public final class ClientAcceptance {
                 }
                 if (!(MC.screen instanceof TitleScreen) || MC.getOverlay() != null) return;
                 Files.createDirectories(OUT);
+                Files.createDirectories(net.minecraftforge.fml.loading.FMLPaths.CONFIGDIR.get().resolve("discraft/uploads"));
                 MC.options.guiScale().set(1); MC.resizeDisplay();
                 click("DisCraft mock");
                 check(MC.screen instanceof DisCraftScreen, "Title-screen chat entry opens real DisCraft screen");
@@ -66,6 +67,8 @@ public final class ClientAcceptance {
             var messages = session(screen).snapshot();
             switch (stage) {
                 case 1 -> {
+                    check(((Path)field(screen,"uploadRoot")).equals(net.minecraftforge.fml.loading.FMLPaths.CONFIGDIR.get().resolve("discraft/uploads")), "Real client selects unified DisCraft upload directory over existing legacy data");
+                    check(net.minecraftforge.fml.ModList.get().getModContainerById("discraft").orElseThrow().getModInfo().getDisplayName().equals("DisCraft"), "Forge displays the canonical DisCraft mod name");
                     check(messages.size() == 2 && messages.stream().allMatch(m -> m.origin() == Message.Origin.RELAY), "Initial inbound mock text and PNG/GIF attachments");
                     check(messages.get(0).attachments().get(0).media().frames().size() == 1, "Inbound PNG decoded");
                     check(messages.get(1).attachments().get(0).media().frames().size() > 1, "Inbound GIF decoded as animation");
@@ -102,7 +105,7 @@ public final class ClientAcceptance {
                 }
                 case 5 -> {
                     check(status(screen).startsWith("Attachment rejected:"), "Path traversal rejected through upload UI");
-                    Path uploads = MC.gameDirectory.toPath().resolve("discraft-uploads");
+                    Path uploads = (Path)field(screen,"uploadRoot");
                     Files.writeString(uploads.resolve("broken.png"), "invalid image");
                     for (String name : List.of("landscape.png", "dance.gif")) {
                         try (var in = Attachment.class.getResourceAsStream("/fixtures/" + name)) {

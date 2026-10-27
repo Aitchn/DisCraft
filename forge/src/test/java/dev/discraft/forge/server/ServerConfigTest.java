@@ -1,6 +1,7 @@
 package dev.discraft.forge.server;
 
 import dev.discraft.forge.bridge.RelayRecord;
+import dev.discraft.forge.DisCraftPaths;
 import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
@@ -19,8 +20,34 @@ final class ServerConfigTest {
             check(expected.getCause()==null&&!log.toString().contains(TOKEN)&&!log.toString().contains(CHANNEL)&&!log.toString().contains(file.toString()),"Invalid config diagnostics redact values, paths and nested causes");
         }
     }
+    private static void pathCompatibility()throws Exception{
+        Path game=Files.createTempDirectory("discraft-path-test"),root=game.resolve("config"),fresh=root.resolve("discraft/server.properties"),legacy=root.resolve("discraft-server.properties");
+        var warnings=new ArrayList<String>();
+        try{
+            check(DisCraftPaths.serverConfig(root,warnings::add).equals(fresh)&&!Files.exists(root),"Missing paths select unified location without creating or migrating data");
+            Files.createDirectories(root);String old="enabled=true\nchannel="+CHANNEL+"\nbotToken="+TOKEN+"\nallowedPlayers=*\n";Files.writeString(legacy,old);
+            check(ServerConfig.load(DisCraftPaths.serverConfig(root,warnings::add)).token().equals(TOKEN)&&!Files.exists(fresh),"Legacy credentials remain readable without copy or overwrite");
+            check(warnings.size()==1&&warnings.get(0).contains("legacy")&&!warnings.get(0).contains(TOKEN)&&!warnings.get(0).contains(game.toString()),"Legacy warning identifies static relative paths without secrets or host paths");
+            Files.createDirectories(fresh.getParent());Files.writeString(fresh,"enabled=false\n");
+            check(!ServerConfig.load(DisCraftPaths.serverConfig(root,warnings::add)).enabled()&&Files.readString(legacy).equals(old),"Existing new disabled config wins and leaves legacy token untouched");
+            Files.writeString(fresh,"enabled=invalid\n");try{ServerConfig.load(DisCraftPaths.serverConfig(root,warnings::add));throw new AssertionError("Invalid new config fell back");}catch(IOException expected){check(true,"Invalid new config fails closed instead of reading legacy credentials");}
+            Path oldPacks=root.resolve("discraft-resourcepacks"),newPacks=root.resolve("discraft/resourcepacks");Files.createDirectories(oldPacks);Files.writeString(oldPacks.resolve("marker"),"old");
+            check(DisCraftPaths.resourcePacks(root,warnings::add).equals(oldPacks),"Legacy resource directory fallback is explicit and independent of config selection");
+            Files.createDirectories(newPacks);check(DisCraftPaths.resourcePacks(root,warnings::add).equals(newPacks)&&Files.exists(oldPacks.resolve("marker")),"Empty unified resource directory wins without merging old resources");
+            Path oldUploads=game.resolve("discraft-uploads"),newUploads=root.resolve("discraft/uploads");Files.createDirectories(oldUploads);
+            check(DisCraftPaths.uploads(root,game,warnings::add).equals(oldUploads),"Client legacy uploads remain usable without relocation");
+            Files.createDirectories(newUploads);check(DisCraftPaths.uploads(root,game,warnings::add).equals(newUploads),"Unified client uploads take priority");
+            Files.delete(fresh);Files.createSymbolicLink(fresh,legacy);
+            try{DisCraftPaths.serverConfig(root,warnings::add);throw new AssertionError("Preferred symlink accepted");}catch(IOException expected){check(true,"Preferred symlink cannot redirect credentials or trigger legacy fallback");}Files.delete(fresh);
+            Files.delete(newUploads);Files.delete(newPacks);Files.delete(fresh.getParent());Files.createSymbolicLink(fresh.getParent(),root);
+            try{DisCraftPaths.serverConfig(root,warnings::add);throw new AssertionError("Parent symlink accepted");}catch(IOException expected){check(true,"Unified parent symlink fails closed before any config read");}Files.delete(fresh.getParent());
+            Files.createDirectory(legacy.resolveSibling("target-dir"));Files.delete(legacy);Files.createSymbolicLink(legacy,root.resolve("target-dir"));
+            try{DisCraftPaths.serverConfig(root,warnings::add);throw new AssertionError("Legacy symlink accepted");}catch(IOException expected){check(true,"Legacy config symlink rejected without migration");}
+        }finally{try(var entries=Files.walk(game)){for(Path p:entries.sorted(Comparator.reverseOrder()).toList())Files.deleteIfExists(p);}}
+    }
     static void run()throws Exception{
-        Path directory=Files.createTempDirectory("discraft-config-test"),file=directory.resolve("discraft-server.properties");
+        pathCompatibility();
+        Path directory=Files.createTempDirectory("discraft-config-test"),file=directory.resolve("server.properties");
         try{
             UUID player=UUID.randomUUID(),other=UUID.randomUUID();
             check(!ServerConfig.load(file).enabled(),"Missing server config stays disabled without fallback");
