@@ -64,20 +64,24 @@ public final class ServerBridge {
         server=event.getServer();mode="disabled";config=ServerConfig.disabled();
         running=false;stopping=false;text=new ComponentText(ResourcePackIndex.empty(),"en_us");itemRenderer=null;
         worker=new ThreadPoolExecutor(1,1,0,TimeUnit.SECONDS,new ArrayBlockingQueue<>(16),r->{var t=new Thread(r,"DisCraft server bridge");t.setDaemon(true);return t;});
+        var startupStage=BridgeDiagnostics.Startup.CONFIG_INIT_FAILED;var configSource=BridgeDiagnostics.Source.UNRESOLVED;
+        BridgeDiagnostics.startup(BridgeDiagnostics.Startup.INITIALIZING,configSource);
         try {
             java.nio.file.Path configFile=server.isDedicatedServer()?ServerConfig.initialize(net.minecraftforge.fml.loading.FMLPaths.CONFIGDIR.get(),DisCraftPaths::warn):null;
-            if(Boolean.getBoolean("discraft.multiplayerSmoke")){mode="test";adapter=new TestDiscordAdapter();if(Boolean.getBoolean("discraft.serverEventsSmoke"))config=ServerConfig.testEvents();if(Boolean.getBoolean("discraft.optionalClientSmoke")){config=ServerConfig.testOptional();itemRenderer=new HeadlessItemRenderer(ResourcePackIndex.empty());}if(Boolean.getBoolean("discraft.nativeHoverSmoke")){config=ServerConfig.testNativeHover();itemRenderer=new HeadlessItemRenderer(ResourcePackIndex.empty());}}
+            configSource=BridgeDiagnostics.Source.of(net.minecraftforge.fml.loading.FMLPaths.CONFIGDIR.get(),configFile);
+            if(Boolean.getBoolean("discraft.multiplayerSmoke")){BridgeDiagnostics.startup(BridgeDiagnostics.Startup.TEST_MODE,configSource);mode="test";adapter=new TestDiscordAdapter();if(Boolean.getBoolean("discraft.serverEventsSmoke"))config=ServerConfig.testEvents();if(Boolean.getBoolean("discraft.optionalClientSmoke")){config=ServerConfig.testOptional();itemRenderer=new HeadlessItemRenderer(ResourcePackIndex.empty());}if(Boolean.getBoolean("discraft.nativeHoverSmoke")){config=ServerConfig.testNativeHover();itemRenderer=new HeadlessItemRenderer(ResourcePackIndex.empty());}}
             else if(server.isDedicatedServer()&&server.usesAuthentication()){
-                config=ServerConfig.load(configFile);
+                startupStage=BridgeDiagnostics.Startup.CONFIG_LOAD_FAILED;config=ServerConfig.load(configFile);BridgeDiagnostics.policy(config.playerAccess(),config.notifies("lifecycle"));
                 if(config.canConnect(server.isDedicatedServer(),server.usesAuthentication())){
+                    startupStage=BridgeDiagnostics.Startup.RESOURCES_FAILED;
                     var resources=ResourcePackIndex.load(DisCraftPaths.resourcePacks(net.minecraftforge.fml.loading.FMLPaths.CONFIGDIR.get(),DisCraftPaths::warn),config.resourcePacks()).withBase(InstalledModLanguages.load(config.locale()));
-                    text=new ComponentText(resources,config.locale());if(config.itemDisplay())itemRenderer=new HeadlessItemRenderer(resources);adapter=DiscordBotAdapter.fromConfig(config);mode="discord";
+                    text=new ComponentText(resources,config.locale());if(config.itemDisplay())itemRenderer=new HeadlessItemRenderer(resources);startupStage=BridgeDiagnostics.Startup.ADAPTER_FAILED;adapter=DiscordBotAdapter.fromConfig(config);mode="discord";BridgeDiagnostics.startup(BridgeDiagnostics.Startup.CONNECTING_UNVERIFIED,configSource);
                 }
-                else adapter=null;
-            }else adapter=null;
+                else {adapter=null;BridgeDiagnostics.startup(BridgeDiagnostics.Startup.DISABLED_CONFIG,configSource);}
+            }else {adapter=null;BridgeDiagnostics.startup(server.isDedicatedServer()?BridgeDiagnostics.Startup.DISABLED_OFFLINE:BridgeDiagnostics.Startup.DISABLED_INTEGRATED,configSource);}
         } catch(Exception failure){
             if(mode.equals("test")&&Boolean.getBoolean("discraft.multiplayerSmoke"))throw new IllegalStateException("DisCraft TEST adapter initialization failed",failure);
-            DisCraftPaths.warn("DisCraft: server configuration or Discord bridge setup failed; bridge disabled. Check the server config and local resource packs. Secret values and exception details are not logged.");
+            BridgeDiagnostics.startup(startupStage,configSource);
             mode="disabled";adapter=null;config=ServerConfig.disabled();
         }
         nextPoll=0;nextCatalogBroadcast=0;nextThumbnail=0;guildCatalog=GuildEmojiCatalog.empty(0);polling.set(false);thumbnailBusy.set(false);
@@ -144,8 +148,8 @@ public final class ServerBridge {
         nextPoll=System.nanoTime()+2_000_000_000L;
         var active=server;var transport=adapter;
         try {worker.execute(()->{try{var snapshot=transport.catalog();active.execute(()->{if(server==active)applyCatalog(snapshot);});for(var record:transport.poll())active.execute(()->{if(server==active)publish(record);});}
-            catch(Exception unavailable){/* No token, response body, URL, or user content is logged. */}
-            finally{polling.set(false);}});}catch(RejectedExecutionException full){polling.set(false);}
+            catch(Exception unavailable){transport.failed(BridgeDiagnostics.Operation.BACKGROUND);}
+            finally{polling.set(false);}});}catch(RejectedExecutionException full){polling.set(false);BridgeDiagnostics.queueFull(BridgeDiagnostics.Operation.BACKGROUND);}
     }
     private static void applyCatalog(GuildEmojiCatalog snapshot){
         if(snapshot.equals(guildCatalog)&&System.nanoTime()<nextCatalogBroadcast)return;
@@ -202,7 +206,7 @@ public final class ServerBridge {
                 if(!peer.alive.get())return;
                 transport.send(expanded.discord());
                 active.execute(()->{if(server!=active)return;publish(record);if(peer.alive.get())BridgeNetwork.notice(p,packet.id(),true,"Accepted by SERVER "+mode.toUpperCase(Locale.ROOT));});
-            }catch(Exception rejected){active.execute(()->{if(server==active&&peer.alive.get())BridgeNetwork.notice(p,packet.id(),false,"Rejected or delivery uncertain; no automatic retry");});}
+            }catch(Exception rejected){transport.failed(BridgeDiagnostics.Operation.SEND);active.execute(()->{if(server==active&&peer.alive.get())BridgeNetwork.notice(p,packet.id(),false,"Rejected or delivery uncertain; no automatic retry");});}
         });}catch(RejectedExecutionException full){BridgeNetwork.notice(p,packet.id(),false,"Bridge queue full");}
     }
     private static void reject(ServerPlayer p,UUID id,String why){transfers.remove(p.getUUID());BridgeNetwork.notice(p,id,false,why);}
@@ -214,7 +218,7 @@ public final class ServerBridge {
     static void relayVanilla(ServerPlayer player,String body,ItemSnapshot item){
         var peer=peers.get(player.getUUID());if(!vanillaChatEnabled(player)||peer==null||!peer.alive.get())return;var active=server;var transport=adapter;var renderer=itemRenderer;String author=player.getGameProfile().getName();var actor=new ActorRef(ActorRef.Kind.MINECRAFT,player.getUUID().toString(),author);
         try{worker.execute(()->{try{if(!peer.alive.get())return;var prepared=transport.prepare(new RelayRecord(UUID.randomUUID(),author,body,List.of(),Map.of(),Map.of(),actor,List.of()));var discord=ItemExpansion.expand(prepared,item,renderer).discord();discord.encode();transport.send(discord);}
-            catch(Exception rejected){active.execute(()->{if(server==active&&peer.alive.get())player.sendSystemMessage(Component.literal("DisCraft relay rejected or delivery uncertain; no automatic retry"));});}});}catch(RejectedExecutionException full){player.sendSystemMessage(Component.literal("DisCraft relay queue full"));}
+            catch(Exception rejected){transport.failed(BridgeDiagnostics.Operation.SEND);active.execute(()->{if(server==active&&peer.alive.get())player.sendSystemMessage(Component.literal("DisCraft relay rejected or delivery uncertain; no automatic retry"));});}});}catch(RejectedExecutionException full){player.sendSystemMessage(Component.literal("DisCraft relay queue full"));}
     }
     private static void publish(RelayRecord record){
         remember(record.actor());for(var mention:record.mentions())remember(mention.target());

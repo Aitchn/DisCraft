@@ -184,3 +184,7 @@ The identity map shares the existing 128-admission/10-second limits and is clear
 on consume, expiry, disconnect and shutdown. A replacement root from another
 listener fails closed even if its text is identical; in-place non-obfuscated
 style changes remain supported. No textual fallback correlates a later event.
+
+## Safe operational diagnostics
+
+Startup reports a closed state code, selected new/legacy relative config source, allowlist policy (never UUIDs) and lifecycle-notice switch. Adapter creation is explicitly unverified. Only actual validated responses report target/read/send acceptance, and localhost fixtures are tagged TEST. HTTP 401/403 remain terminal; 404 preserves existing read-backoff semantics; 429 preserves the shared gate; no send is automatically retried. Network/timeout/response-limit/validation/queue failures use fixed categories. No exception message, request URL/query, header, response body, token, channel/member/message ID or player text enters diagnostics. Repeated events are deduplicated for a minute with at most eight ordinary events per minute, bounded to 64 keys; the first terminal cause bypasses an exhausted ordinary budget.

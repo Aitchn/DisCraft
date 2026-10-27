@@ -16,9 +16,9 @@ final class NoticeDelivery {
         }
         return new RelayRecord(UUID.randomUUID(),"Server",out.toString(),List.of(),Map.of(),Map.of());
     }
-    static Runnable task(DiscordAdapter adapter,RelayRecord record){return ()->{try{adapter.send(record);}catch(Exception uncertain){/* Never retry or log body, player content or credentials. */}};}
+    static Runnable task(DiscordAdapter adapter,RelayRecord record){return ()->{try{adapter.send(record);}catch(Exception uncertain){adapter.failed(BridgeDiagnostics.Operation.NOTICE);/* Never retry or log body, player content or credentials. */}};}
     static boolean submit(ThreadPoolExecutor worker,Runnable notice){
-        if(worker==null)return false;try{worker.execute(notice);return true;}catch(RejectedExecutionException full){return false;}
+        if(worker==null)return false;try{worker.execute(notice);return true;}catch(RejectedExecutionException full){BridgeDiagnostics.queueFull(BridgeDiagnostics.Operation.NOTICE);return false;}
     }
     /** One total deadline includes queue admission, final notice and all pending jobs. */
     static void drain(ThreadPoolExecutor worker,Runnable finalNotice,long timeoutNanos){

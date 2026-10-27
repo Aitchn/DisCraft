@@ -109,6 +109,8 @@ final class ServerConfig {
     static void validateCredentials(String channel,String token){
         if(channel==null||!channel.matches("[0-9]{15,22}")||token==null||token.length()<20||token.length()>200||token.chars().anyMatch(c->Character.isWhitespace(c)||Character.isISOControl(c)))throw new IllegalArgumentException("Invalid server Discord configuration");
     }
+    enum PlayerAccess { DENY_ALL, EXPLICIT_AUTHENTICATED_LIST, ALL_AUTHENTICATED }
+    PlayerAccess playerAccess(){return players.isEmpty()?PlayerAccess.DENY_ALL:players.contains("*")?PlayerAccess.ALL_AUTHENTICATED:PlayerAccess.EXPLICIT_AUTHENTICATED_LIST;}
     boolean enabled(){return enabled;}
     boolean allows(UUID player){return players.contains("*")||players.contains(player.toString());}
     String channel(){return channel;}

@@ -19,6 +19,8 @@ public final class DiscordBotAdapter implements DiscordAdapter {
     private final String token,channel;
     private final URI api;
     private final boolean localTest;
+    private final BridgeDiagnostics diagnostics;
+    private boolean readReady;
     private final ExecutorService io=Executors.newFixedThreadPool(2,r->{var t=new Thread(r,"DisCraft HTTP");t.setDaemon(true);return t;});
     private final HttpClient http;
     // One bounded media worker also bounds DNS and decoding time seen by the server bridge.
@@ -59,10 +61,10 @@ public final class DiscordBotAdapter implements DiscordAdapter {
         nextCatalog=System.nanoTime()+60_000_000_000L;
         try{
             ready();
-            var member=json(request("GET","guilds/"+guild+"/members/"+botId,null,null));var roles=new HashSet<String>();
+            var member=object(request("GET","guilds/"+guild+"/members/"+botId,null,null),BridgeDiagnostics.Operation.CATALOG);var roles=new HashSet<String>();
             if(!member.has("roles")||member.getAsJsonArray("roles").size()>256)throw new IOException("Invalid bot roles");
             member.getAsJsonArray("roles").forEach(r->roles.add(r.getAsString()));
-            var response=JsonParser.parseString(new String(request("GET","guilds/"+guild+"/emojis",null,null),StandardCharsets.UTF_8)).getAsJsonArray();
+            var response=array(request("GET","guilds/"+guild+"/emojis",null,null),BridgeDiagnostics.Operation.CATALOG);
             if(response.size()>2000)throw new IOException("Guild catalog response budget");
             var entries=new ArrayList<GuildEmojiCatalog.Entry>();var ids=new HashSet<String>();
             for(var value:response){
@@ -79,7 +81,7 @@ public final class DiscordBotAdapter implements DiscordAdapter {
                 guildCatalog=new GuildEmojiCatalog(guildCatalog.version()+1,"Discord guild emoji",false,true,complete,entries);
             var retained=new HashSet<String>();for(var e:entries)if(e.usable())retained.add(thumbnailKey(e));thumbnails.retain(retained);
             return guildCatalog;
-        }catch(Exception unavailable){return unavailableCatalog();}
+        }catch(Exception unavailable){failed(BridgeDiagnostics.Operation.CATALOG);return unavailableCatalog();}
     }
     @Override public Map<String,Attachment> thumbnails(List<String> ids){
         if(ids.size()>GuildEmojiCatalog.THUMB_BATCH)return Map.of();var snapshot=catalog();if(!snapshot.ready())return Map.of();
@@ -102,24 +104,25 @@ public final class DiscordBotAdapter implements DiscordAdapter {
         return new DiscordBotAdapter(URI.create("https://discord.com/api/v10/"),config.channel(),config.token(),false);
     }
     // Only package-local tests may substitute an endpoint, and only a non-secret fixed test token is accepted.
-    DiscordBotAdapter(URI api,String channel,String token,boolean localTest){
+    DiscordBotAdapter(URI api,String channel,String token,boolean localTest){this(api,channel,token,localTest,BridgeDiagnostics.production(localTest));}
+    DiscordBotAdapter(URI api,String channel,String token,boolean localTest,BridgeDiagnostics diagnostics){
         ServerConfig.validateCredentials(channel,token);
         if(localTest&&(!api.getHost().equals("127.0.0.1")||!token.equals("discraft-local-test-token")))throw new IllegalArgumentException("Invalid test endpoint");
         if(!localTest&&!api.toString().equals("https://discord.com/api/v10/"))throw new IllegalArgumentException("Invalid Discord endpoint");
-        this.api=api;this.channel=channel;this.token=token;this.localTest=localTest;
+        this.api=api;this.channel=channel;this.token=token;this.localTest=localTest;this.diagnostics=diagnostics;
         http=HttpClient.newBuilder().executor(io).followRedirects(HttpClient.Redirect.NEVER).connectTimeout(Duration.ofSeconds(5)).build();
     }
     private void ready()throws Exception{
         if(closed||terminal)throw new IOException("Discord adapter unavailable");
         if(System.nanoTime()<blockedUntil)throw new IOException("Discord rate limited");
         if(initialized)return;
-        var me=json(request("GET","users/@me",null,null));
-        if(!me.has("bot")||!me.get("bot").getAsBoolean()){terminal=true;throw new IOException("Bot account required");}
-        var room=json(request("GET","channels/"+channel,null,null));
-        if(!room.get("id").getAsString().equals(channel)||room.get("type").getAsInt()!=0){terminal=true;throw new IOException("Only designated guild text channels are supported");}
+        var me=object(request("GET","users/@me",null,null),BridgeDiagnostics.Operation.IDENTITY);
+        if(!me.has("bot")||!me.get("bot").getAsBoolean()){terminal=true;diagnostics.report(BridgeDiagnostics.Code.NOT_BOT,BridgeDiagnostics.Operation.IDENTITY,0,BridgeDiagnostics.Terminal.YES);throw new IOException("Bot account required");}
+        var room=object(request("GET","channels/"+channel,null,null),BridgeDiagnostics.Operation.CHANNEL);
+        if(!room.get("id").getAsString().equals(channel)||room.get("type").getAsInt()!=0){terminal=true;diagnostics.report(BridgeDiagnostics.Code.UNSUPPORTED_TARGET,BridgeDiagnostics.Operation.CHANNEL,0,BridgeDiagnostics.Terminal.YES);throw new IOException("Only designated guild text channels are supported");}
         guild=room.has("guild_id")?room.get("guild_id").getAsString():"";botId=me.get("id").getAsString();
-        if(!guild.matches("[0-9]{15,22}")||!botId.matches("[0-9]{15,22}")){terminal=true;throw new IOException("Invalid guild bot identity");}
-        initialized=true;
+        if(!guild.matches("[0-9]{15,22}")||!botId.matches("[0-9]{15,22}")){terminal=true;diagnostics.report(BridgeDiagnostics.Code.INVALID_RESPONSE,BridgeDiagnostics.Operation.CHANNEL,0,BridgeDiagnostics.Terminal.YES);throw new IOException("Invalid guild bot identity");}
+        initialized=true;diagnostics.report(BridgeDiagnostics.Code.TARGET_VERIFIED,BridgeDiagnostics.Operation.CHANNEL,0,BridgeDiagnostics.Terminal.NO);
     }
     @Override public RelayRecord prepare(RelayRecord record)throws Exception{
         ready();var current=catalog();
@@ -129,6 +132,8 @@ public final class DiscordBotAdapter implements DiscordAdapter {
         var parsed=convert(message,record.mentions(),true);
         var prepared=new RelayRecord(record.id(),record.author(),record.text().isBlank()&&!record.attachments().isEmpty()?"":parsed.text(),record.attachments(),parsed.catalog(),parsed.emoji(),record.actor(),parsed.mentions());prepared.encode();return prepared;
     }
+    @Override public void failed(BridgeDiagnostics.Operation operation){diagnostics.report(BridgeDiagnostics.Code.OPERATION_FAILED,operation,0,terminal?BridgeDiagnostics.Terminal.YES:BridgeDiagnostics.Terminal.NO);}
+    private void readSucceeded(){if(!readReady){readReady=true;diagnostics.report(BridgeDiagnostics.Code.READ_READY,BridgeDiagnostics.Operation.POLL,0,BridgeDiagnostics.Terminal.NO);}}
     @Override public void send(RelayRecord message)throws Exception{sendWithReceipt(message);}
     // Receipt lets an explicit test harness read back only its own posts, without scanning history.
     String sendWithReceipt(RelayRecord message)throws Exception{
@@ -142,15 +147,21 @@ public final class DiscordBotAdapter implements DiscordAdapter {
         payload.addProperty("content","<"+message.author()+"> "+text);
         payload.addProperty("tts",false);payload.addProperty("nonce",message.id().toString().replace("-","").substring(0,24));payload.addProperty("enforce_nonce",true);
         var mentions=new JsonObject();mentions.add("parse",new JsonArray());mentions.add("users",users);payload.add("allowed_mentions",mentions);
-        if(message.attachments().isEmpty())return receipt(request("POST","channels/"+channel+"/messages",payload.toString().getBytes(StandardCharsets.UTF_8),"application/json"));
+        if(message.attachments().isEmpty())return accepted(request("POST","channels/"+channel+"/messages",payload.toString().getBytes(StandardCharsets.UTF_8),"application/json"));
         var file=message.attachments().get(0);if(file.bytes().length>RelayRecord.FILE_BYTES)throw new IOException("Bridge file budget exceeded");
         String name=file.name().replaceAll("[^A-Za-z0-9_.-]","_");if(name.length()>80)name=name.substring(0,80);
         var files=new JsonArray();var description=new JsonObject();description.addProperty("id",0);description.addProperty("filename",name);description.addProperty("is_spoiler",file.name().startsWith("SPOILER_"));files.add(description);payload.add("attachments",files);
         String boundary="DisCraft"+UUID.randomUUID().toString().replace("-","");var bytes=new ByteArrayOutputStream();
         bytes.write(("--"+boundary+"\r\nContent-Disposition: form-data; name=\"payload_json\"\r\nContent-Type: application/json\r\n\r\n"+payload+"\r\n--"+boundary+"\r\nContent-Disposition: form-data; name=\"files[0]\"; filename=\""+name+"\"\r\nContent-Type: application/octet-stream\r\n\r\n").getBytes(StandardCharsets.UTF_8));
         bytes.write(file.bytes());bytes.write(("\r\n--"+boundary+"--\r\n").getBytes(StandardCharsets.UTF_8));
-        return receipt(request("POST","channels/"+channel+"/messages",bytes.toByteArray(),"multipart/form-data; boundary="+boundary));
+        return accepted(request("POST","channels/"+channel+"/messages",bytes.toByteArray(),"multipart/form-data; boundary="+boundary));
     }
+    private String accepted(byte[] body)throws IOException{
+        try{var id=receipt(body);diagnostics.report(BridgeDiagnostics.Code.SEND_ACCEPTED,BridgeDiagnostics.Operation.SEND,0,BridgeDiagnostics.Terminal.NO);return id;}
+        catch(IOException invalid){diagnostics.report(BridgeDiagnostics.Code.INVALID_RESPONSE,BridgeDiagnostics.Operation.SEND,0,BridgeDiagnostics.Terminal.NO);throw invalid;}
+    }
+    private JsonObject object(byte[] bytes,BridgeDiagnostics.Operation operation)throws IOException{try{return json(bytes);}catch(RuntimeException invalid){diagnostics.report(BridgeDiagnostics.Code.INVALID_RESPONSE,operation,0,BridgeDiagnostics.Terminal.NO);throw new IOException("Discord metadata validation failed");}}
+    private JsonArray array(byte[] bytes,BridgeDiagnostics.Operation operation)throws IOException{try{return JsonParser.parseString(new String(bytes,StandardCharsets.UTF_8)).getAsJsonArray();}catch(RuntimeException invalid){diagnostics.report(BridgeDiagnostics.Code.INVALID_RESPONSE,operation,0,BridgeDiagnostics.Terminal.NO);throw new IOException("Discord page validation failed");}}
     private static String receipt(byte[] body)throws IOException{
         try{String id=json(body).get("id").getAsString();if(id.matches("[0-9]{15,22}"))return id;}catch(Exception ignored){}
         throw new IOException("Discord send receipt invalid; delivery uncertain, do not retry automatically");
@@ -160,10 +171,10 @@ public final class DiscordBotAdapter implements DiscordAdapter {
         if(closed||terminal||System.nanoTime()<nextPoll||System.nanoTime()<blockedUntil)return List.of();
         try{
             ready();
-            var response=JsonParser.parseString(new String(request("GET","channels/"+channel+"/messages?limit="+(cursor==null?1:4)+(cursor==null?"":"&after="+cursor),null,null),StandardCharsets.UTF_8)).getAsJsonArray();
+            var response=array(request("GET","channels/"+channel+"/messages?limit="+(cursor==null?1:4)+(cursor==null?"":"&after="+cursor),null,null),BridgeDiagnostics.Operation.POLL);
             var records=new ArrayList<RelayRecord>();
             if(response.size()>4)throw new IOException("Discord page budget exceeded");
-            if(cursor==null){cursor=response.isEmpty()?"0":response.get(0).getAsJsonObject().get("id").getAsString();if(!cursor.matches("[0-9]{1,22}"))throw new IOException("Invalid cursor");return records;}
+            if(cursor==null){cursor=response.isEmpty()?"0":response.get(0).getAsJsonObject().get("id").getAsString();if(!cursor.matches("[0-9]{1,22}"))throw new IOException("Invalid cursor");readSucceeded();return records;}
             memberAttempts=0;memberNanosRemaining=TimeUnit.SECONDS.toNanos(2);
             var sorted=new ArrayList<JsonObject>();response.forEach(e->sorted.add(e.getAsJsonObject()));sorted.sort(Comparator.comparing(o->new java.math.BigInteger(o.get("id").getAsString())));
             for(var m:sorted){
@@ -176,8 +187,8 @@ public final class DiscordBotAdapter implements DiscordAdapter {
                 }catch(Exception malformed){/* Skip one malformed/unsupported event; never poison the polling cursor. */}
                 finally{cursor=id;}
             }
-            failures=0;nextPoll=0;return records;
-        }catch(Exception unavailable){failures=Math.min(6,failures+1);nextPoll=System.nanoTime()+Math.min(60,1L<<failures)*1_000_000_000L;throw new IOException("Discord polling temporarily unavailable");}
+            failures=0;nextPoll=0;readSucceeded();return records;
+        }catch(Exception unavailable){readReady=false;failed(BridgeDiagnostics.Operation.POLL);failures=Math.min(6,failures+1);nextPoll=System.nanoTime()+Math.min(60,1L<<failures)*1_000_000_000L;throw new IOException("Discord polling temporarily unavailable");}
     }
     private RelayRecord convert(JsonObject m)throws Exception{return convert(m,List.of());}
     private record Edit(int end,int delta) {}
@@ -258,26 +269,48 @@ public final class DiscordBotAdapter implements DiscordAdapter {
     }
     private byte[] request(String method,String path,byte[] body,String type,long deadline,int maxBytes)throws Exception{
         if(closed||terminal||System.nanoTime()<blockedUntil)throw new IOException("Discord adapter unavailable or rate limited");
+        var operation=operation(method,path);
         long remaining=deadline==Long.MAX_VALUE?TimeUnit.SECONDS.toNanos(10):deadline-System.nanoTime();if(remaining<=0)throw new IOException("Discord metadata deadline exceeded");
         var builder=HttpRequest.newBuilder(api.resolve(path)).timeout(Duration.ofNanos(Math.min(remaining,TimeUnit.SECONDS.toNanos(10)))).header("Authorization","Bot "+token).header("User-Agent","DisCraft/0.2 (server bridge)");
         if(type!=null)builder.header("Content-Type",type);
         builder.method(method,body==null?HttpRequest.BodyPublishers.noBody():HttpRequest.BodyPublishers.ofByteArray(body));
-        var r=execute(builder.build(),maxBytes,deadline);
+        var r=execute(builder.build(),maxBytes,deadline,operation);
         if(r.statusCode()==429){
             double seconds=60;try{seconds=json(r.body()).get("retry_after").getAsDouble();}catch(Exception ignored){}
             if(!Double.isFinite(seconds)||seconds<0||seconds>3600)seconds=3600;
-            blockedUntil=System.nanoTime()+(long)Math.ceil(Math.max(1,seconds)*1e9);throw new IOException("Discord rate limited");
+            blockedUntil=System.nanoTime()+(long)Math.ceil(Math.max(1,seconds)*1e9);diagnostics.report(BridgeDiagnostics.Code.RATE_LIMITED,operation,429,BridgeDiagnostics.Terminal.NO);throw new IOException("Discord rate limited");
         }
-        if(r.statusCode()==401||r.statusCode()==403){terminal=true;unavailableCatalog();throw new IOException("Discord credentials/permissions rejected; restart after operator correction");}
-        if(r.statusCode()<200||r.statusCode()>=300)throw new IOException("Discord request failed or uncertain; not automatically retried");
+        if(r.statusCode()==401||r.statusCode()==403){terminal=true;unavailableCatalog();diagnostics.report(r.statusCode()==401?BridgeDiagnostics.Code.AUTH_REJECTED:BridgeDiagnostics.Code.PERMISSION_REJECTED,operation,r.statusCode(),BridgeDiagnostics.Terminal.YES);throw new IOException("Discord credentials/permissions rejected; restart after operator correction");}
+        if(r.statusCode()<200||r.statusCode()>=300){diagnostics.report(r.statusCode()==404?BridgeDiagnostics.Code.NOT_FOUND:BridgeDiagnostics.Code.HTTP_FAILED,operation,r.statusCode(),BridgeDiagnostics.Terminal.NO);throw new IOException("Discord request failed or uncertain; not automatically retried");}
         return r.body();
     }
     private HttpResponse<byte[]> execute(HttpRequest request,int max)throws Exception{
         return execute(request,max,Long.MAX_VALUE);
     }
     private HttpResponse<byte[]> execute(HttpRequest request,int max,long deadline)throws Exception{
-        var future=http.sendAsync(request,info->new LimitedBody(max));
-        try{return future.get(deadline==Long.MAX_VALUE?TimeUnit.SECONDS.toNanos(12):Math.max(1,deadline-System.nanoTime()),TimeUnit.NANOSECONDS);}catch(Exception failure){future.cancel(true);throw new IOException("Bounded HTTP request failed");}
+        return execute(request,max,deadline,BridgeDiagnostics.Operation.MEDIA);
+    }
+    private HttpResponse<byte[]> execute(HttpRequest request,int max,long deadline,BridgeDiagnostics.Operation operation)throws Exception{
+        CompletableFuture<HttpResponse<byte[]>> future=null;
+        try{future=http.sendAsync(request,info->new LimitedBody(max));return future.get(deadline==Long.MAX_VALUE?TimeUnit.SECONDS.toNanos(12):Math.max(1,deadline-System.nanoTime()),TimeUnit.NANOSECONDS);}
+        catch(Exception failure){if(future!=null)future.cancel(true);var code=transportFailure(failure);if(code==BridgeDiagnostics.Code.INTERRUPTED)Thread.currentThread().interrupt();diagnostics.report(code,operation,0,terminal?BridgeDiagnostics.Terminal.YES:BridgeDiagnostics.Terminal.NO);throw new IOException("Bounded HTTP request failed");}
+    }
+    private static BridgeDiagnostics.Operation operation(String method,String path){
+        if(path.equals("users/@me"))return BridgeDiagnostics.Operation.IDENTITY;
+        if(path.contains("/members/"))return BridgeDiagnostics.Operation.MEMBER;
+        if(path.endsWith("/emojis"))return BridgeDiagnostics.Operation.CATALOG;
+        if(path.contains("/messages"))return method.equals("POST")?BridgeDiagnostics.Operation.SEND:BridgeDiagnostics.Operation.POLL;
+        return BridgeDiagnostics.Operation.CHANNEL;
+    }
+    private static BridgeDiagnostics.Code transportFailure(Throwable failure){
+        for(int depth=0;failure!=null&&depth<8;depth++,failure=failure.getCause()){
+            if(failure instanceof SafeHttpFailure safe)return safe.code;
+            if(failure instanceof TimeoutException||failure instanceof HttpTimeoutException||failure instanceof SocketTimeoutException)return BridgeDiagnostics.Code.TIMEOUT;
+            if(failure instanceof InterruptedException||failure instanceof CancellationException)return BridgeDiagnostics.Code.INTERRUPTED;
+        }return BridgeDiagnostics.Code.NETWORK_FAILED;
+    }
+    private static final class SafeHttpFailure extends IOException {
+        final BridgeDiagnostics.Code code;SafeHttpFailure(BridgeDiagnostics.Code code){super("Bounded HTTP stream failed");this.code=code;}
     }
     private static JsonObject json(byte[] b){return JsonParser.parseString(new String(b,StandardCharsets.UTF_8)).getAsJsonObject();}
     @Override public void close(){closed=true;unavailableCatalog();memberNames.clear();mediaWorker.shutdownNow();io.shutdownNow();}
@@ -286,8 +319,8 @@ public final class DiscordBotAdapter implements DiscordAdapter {
         LimitedBody(int max){this.max=max;}
         public CompletionStage<byte[]> getBody(){return result;}
         public void onSubscribe(Flow.Subscription s){subscription=s;s.request(1);}
-        public void onNext(List<ByteBuffer> buffers){try{for(var b:buffers){if(b.remaining()>max-out.size())throw new IOException("HTTP body limit");byte[] bytes=new byte[b.remaining()];b.get(bytes);out.write(bytes);}subscription.request(1);}catch(Exception e){subscription.cancel();result.completeExceptionally(new IOException("HTTP body limit"));}}
-        public void onError(Throwable error){result.completeExceptionally(new IOException("HTTP stream failed"));}
+        public void onNext(List<ByteBuffer> buffers){try{for(var b:buffers){if(b.remaining()>max-out.size())throw new IOException("HTTP body limit");byte[] bytes=new byte[b.remaining()];b.get(bytes);out.write(bytes);}subscription.request(1);}catch(Exception e){subscription.cancel();result.completeExceptionally(new SafeHttpFailure(BridgeDiagnostics.Code.RESPONSE_LIMIT));}}
+        public void onError(Throwable error){result.completeExceptionally(new SafeHttpFailure(transportFailure(error)));}
         public void onComplete(){result.complete(out.toByteArray());}
     }
 }
