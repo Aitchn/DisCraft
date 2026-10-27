@@ -7,5 +7,8 @@
   "discraft.settings.mention": "Mention notification sound",
   "discraft.settings.mention.help": "Play once when a new structured mention targets your Minecraft account. Plain names do not trigger it.",
   "discraft.settings.local": "Client only · config/discraft/client.toml",
-  "discraft.settings.save_failed": "Could not save settings. Check client config permissions."
+  "discraft.settings.save_failed": "Could not save settings. Check client config permissions.",
+  "discraft.settings.picker.width": "Picker width: %s GUI px",
+  "discraft.settings.picker.height": "Picker height: %s GUI px",
+  "discraft.settings.picker.help": "Resize the panel without scaling text. The actual panel fits above or below your chat input; very small space keeps it closed."
 }

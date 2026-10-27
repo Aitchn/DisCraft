@@ -21,6 +21,8 @@ with zipfile.ZipFile(jar) as archive:
         'defaults/discraft/server.properties.example',
         'discraft-banner.png',
         'dev/discraft/forge/ClientPreferences.class',
+        'dev/discraft/forge/PickerLayout.class',
+        'dev/discraft/forge/bridge/NativeMentions.class',
         'dev/discraft/forge/ClientSettingsScreen.class',
         'dev/discraft/forge/MentionNotifications.class',
         'dev/discraft/forge/DisCraft.class',

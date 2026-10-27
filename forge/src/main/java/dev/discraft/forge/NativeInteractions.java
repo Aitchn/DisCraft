@@ -18,7 +18,6 @@ public final class NativeInteractions {
     private static final Minecraft MC=Minecraft.getInstance();
     private static final TextureCache textures=new TextureCache();
     private static final long started=System.nanoTime();
-    private static Attachment demoGif;
     private static boolean open;private static int tab=2,category,scroll,guildFilter;private static String query="";
     private static EditBox search,input;private static ChatScreen screen;
     private static Smiley smiley;private static int inputWidth,appliedInputWidth;
@@ -43,20 +42,19 @@ public final class NativeInteractions {
     }
     static void reset(){ClientGuildEmoji.visible(List.of());open=false;query="";hits.clear();textures.close();screen=null;search=null;displayedCard=null;displayedAttachment=null;cardScreen=null;displayedLoading=false;displayedOpen=false;}
     static void closePicker(){ClientGuildEmoji.visible(List.of());open=false;if(search!=null){search.visible=false;search.active=false;}if(screen!=null&&MC.screen==screen&&input!=null){input=NativeComposer.input(screen);screen.setFocused(input);input.setFocused(true);}}
-    public static void openPicker(){if(MC.screen instanceof ChatScreen){open=true;if(search!=null){search.visible=true;search.active=true;screen.setFocused(search);search.setFocused(true);}}}
+    public static void openPicker(){if(MC.screen instanceof ChatScreen&&ph()>=144&&pw()>=196){open=true;if(search!=null){search.visible=true;search.active=true;screen.setFocused(search);search.setFocused(true);}}}
     private static int clamp(int value,int low,int high){return Math.max(low,Math.min(Math.max(low,high),value));}
     private static void syncInput(){if(input==null||screen==null||smiley==null)return;if(input.getWidth()!=appliedInputWidth)inputWidth=input.getWidth();appliedInputWidth=Math.max(40,inputWidth-26);input.setWidth(appliedInputWidth);smiley.setX(clamp(input.getX()+inputWidth-23,0,screen.width-18));smiley.setY(clamp(input.getY()-5,0,screen.height-16));}
-    private static int px(){return clamp(input.getX()+inputWidth-pw()-5,4,screen.width-pw()-4);}private static int pw(){return Math.min(350,screen.width-8);}
-    private static int ph(){int available=Math.max(input.getY()-14,screen.height-input.getY()-input.getHeight()-8);return Math.min(Math.min(260,screen.height-28),Math.max(160,available));}
+    private static PendingCardLayout.Rect picker(){return PickerLayout.solve(screen.width,screen.height,input.getX(),input.getY(),inputWidth,input.getHeight(),ClientPreferences.PICKER_WIDTH.get(),ClientPreferences.PICKER_HEIGHT.get());}
+    private static int px(){return picker().x();}private static int pw(){return picker().width();}private static int ph(){return picker().height();}private static int py(){return picker().y();}
     private static int categoryStep(){return Math.max(9,Math.min(28,(ph()-92)/6));}
-    private static int py(){int above=input.getY()-10-ph();return clamp(above>=4?above:input.getY()+input.getHeight()+8,4,screen.height-ph()-4);}
+    private static int filterStep(){return Math.max(1,(pw()-42)/3);}
     private static int cardX(){return layoutCard().bounds().x();}
     private static int cardY(){return layoutCard().bounds().y();}
     private static boolean inside(double x,double y,int a,int b,int w,int h){return x>=a&&x<a+w&&y>=b&&y<b+h;}
     private static List<Item> items(){
         var list=new ArrayList<Item>();
         if(tab==1)return list;
-        if(tab==0){if(!ClientGuildEmoji.snapshot().fixture())return list;try{if(demoGif==null)demoGif=Attachment.fromResource("dance.gif");list.add(new Item("","dance.gif","本機示範 GIF（非遠端搜尋）","",demoGif,false,true,"",true));}catch(Exception ignored){}return list;}
         if(category==5){
             var snapshot=ClientGuildEmoji.snapshot();
             for(var entry:snapshot.entries()){
@@ -84,8 +82,8 @@ public final class NativeInteractions {
                 event.setCanceled(true);
                 if(pending()&&currentCard()&&displayedCard.mode()==PendingCardLayout.Mode.HIDDEN&&manageClick(footer(),x,y))return;
                 if(inside(x,y,px()+10,py()+35,pw()-20,20)){search.mouseClicked(x,y,0);screen.setFocused(search);return;}
-                if(tab==2&&category==5&&inside(x,y,px()+38,py()+64,pw()-42,16)){guildFilter=Math.max(0,Math.min(2,(int)((x-px()-38)/65)));scroll=0;return;}
-                if(y<py()+29){int t=(int)((x-px()-10)/64);if(t>=0&&t<3){tab=t;scroll=0;query="";search.setValue("");}return;}
+                if(tab==2&&category==5&&inside(x,y,px()+38,py()+64,pw()-42,16)){guildFilter=Math.max(0,Math.min(2,(int)((x-px()-38)/filterStep())));scroll=0;return;}
+                if(y<py()+29){int t=(int)((x-px()-10)/64);if(t>=0&&t<2){tab=t+1;scroll=0;query="";search.setValue("");}return;}
                 if(x<px()+34&&y>=py()+64&&y<py()+ph()-28){category=Math.max(0,Math.min(5,(int)((y-py()-64)/categoryStep())));scroll=0;return;}
                 for(var h:hits)if(inside(x,y,h.x(),h.y(),h.w(),h.h())){pick(h.item());return;}return;
             }
@@ -108,18 +106,19 @@ public final class NativeInteractions {
     @SubscribeEvent public static void render(ScreenEvent.Render.Post event){
         if(!(event.getScreen() instanceof ChatScreen owner))return;screen=owner;syncInput();var g=event.getGuiGraphics();textures.begin();
         try{
+            if(open&&(ph()<144||pw()<196))closePicker();
             card(g,event.getMouseX(),event.getMouseY());if(!open){ClientGuildEmoji.visible(List.of());return;}
             int x=px(),y=py(),w=pw(),h=ph();g.fill(x,y,x+w,y+h,0xff2b2d31);g.fill(x,y,x+w,y+30,0xff232428);
-            String[] tabs={"GIF","貼圖","表情符號"};for(int i=0;i<3;i++){if(i==tab)g.fill(x+8+i*64,y+5,x+66+i*64,y+26,0xff404249);UiText.draw(g,tabs[i],x+16+i*64,y+9,0xffeeeeee);}
+            String[] tabs={"貼圖","表情符號"};for(int i=0;i<2;i++){if(i+1==tab)g.fill(x+8+i*64,y+5,x+66+i*64,y+26,0xff404249);UiText.draw(g,tabs[i],x+16+i*64,y+9,0xffeeeeee);}
             search.setX(x+10);search.setY(y+35);search.setWidth(w-20);search.visible=true;search.active=true;search.render(g,event.getMouseX(),event.getMouseY(),event.getPartialTick());
             g.fill(x,y+61,x+32,y+h-27,0xff232428);String[] cats={"☺","♞","♨","♫","❤","D"};for(int i=0;i<6;i++){if(i==category)g.fill(x+3,y+64+i*categoryStep(),x+29,y+64+(i+1)*categoryStep()-3,0xff4e5058);g.drawString(MC.font,cats[i],x+11,y+64+i*categoryStep()+Math.max(0,(categoryStep()-9)/2),0xffb5bac1,false);}
             g.fill(x,y+h-27,x+w,y+h,0xff1e1f22);hits.clear();var all=filtered();Item hover=null;var visible=new ArrayList<String>();
             boolean guild=tab==2&&category==5;int header=guild?18:0;
-            if(guild){String[] filters={"全部","靜態","動畫"};for(int i=0;i<3;i++){if(guildFilter==i)g.fill(x+38+i*65,y+64,x+99+i*65,y+79,0xff4e5058);UiText.draw(g,filters[i],x+43+i*65,y+65,0xffdddddd);}
+            if(guild){String[] filters={"全部","靜態","動畫"};for(int i=0;i<3;i++){if(guildFilter==i)g.fill(x+38+i*filterStep(),y+64,x+38+(i+1)*filterStep()-4,y+79,0xff4e5058);UiText.draw(g,filters[i],x+43+i*filterStep(),y+65,0xffdddddd);}
                 if(!ClientGuildEmoji.snapshot().ready())UiText.draw(g,"伺服器表情目錄暫不可用",x+42,y+91,0xffb5bac1);
             }
-            if(tab==1){UiText.draw(g,"尚未連接貼圖來源",x+48,y+85,0xffb5bac1);}else if(tab==0&&!ClientGuildEmoji.snapshot().fixture()){UiText.draw(g,"GIF 服務未啟用",x+48,y+85,0xffb5bac1);}else{
-                int cell=tab==0?80:28,columns=Math.max(1,(w-42)/cell),rows=Math.max(1,(h-96-header)/cell),maxScroll=Math.max(0,(all.size()+columns-1)/columns-rows);scroll=Math.min(scroll,maxScroll);
+            if(h<144){UiText.draw(g,"面板空間不足，請調整尺寸",x+38,y+65,0xffb5bac1);}else if(tab==1){UiText.draw(g,"尚未連接貼圖來源",x+48,y+85,0xffb5bac1);}else{
+                int cell=28,columns=Math.max(1,(w-42)/cell),rows=Math.min(Math.max(0,(h-96-header)/cell),Math.max(1,96/columns)),maxScroll=Math.max(0,(all.size()+columns-1)/columns-rows);scroll=Math.min(scroll,maxScroll);
                 for(int row=0;row<rows;row++)for(int col=0;col<columns;col++){
                     int index=(row+scroll)*columns+col;if(index>=all.size())continue;var item=all.get(index);int ix=x+38+col*cell,iy=y+65+header+row*cell;var hit=new Hit(ix,iy,cell-2,cell-2,item);hits.add(hit);if(!item.id().isEmpty()&&item.enabled())visible.add(item.id());
                     if(inside(event.getMouseX(),event.getMouseY(),ix,iy,cell-2,cell-2)){g.fill(ix,iy,ix+cell-2,iy+cell-2,0xff4e5058);hover=item;}
@@ -127,7 +126,7 @@ public final class NativeInteractions {
                 }
             }
             ClientGuildEmoji.visible(visible);
-            if(pending()&&displayedCard!=null&&displayedCard.mode()==PendingCardLayout.Mode.HIDDEN){drawHeader(g,footer(),event.getMouseX(),event.getMouseY(),true);}else if(hover!=null)UiText.draw(g,UiText.fit(hover.name()+" · "+hover.source(),w-16),x+8,y+h-20,0xffdbdee1);else UiText.draw(g,UiText.fit(tab==0?(ClientGuildEmoji.snapshot().fixture()?"TEST 本機示範 · 非 GIF 服務":"GIF 服務未啟用"):tab==1?"貼圖來源不可用":(guild?ClientGuildEmoji.snapshot().label()+" · "+all.size()+(ClientGuildEmoji.snapshot().complete()?"":" · 目錄已達上限"):"Twemoji "+TwemojiCatalog.VERSION+" · "+all.size()),w-16),x+8,y+h-20,0xffb5bac1);
+            if(pending()&&displayedCard!=null&&displayedCard.mode()==PendingCardLayout.Mode.HIDDEN){drawHeader(g,footer(),event.getMouseX(),event.getMouseY(),true);}else if(hover!=null)UiText.draw(g,UiText.fit(hover.name()+" · "+hover.source(),w-16),x+8,y+h-20,0xffdbdee1);else UiText.draw(g,UiText.fit(tab==1?"貼圖來源不可用":(guild?ClientGuildEmoji.snapshot().label()+" · "+all.size()+(ClientGuildEmoji.snapshot().complete()?"":" · 目錄已達上限"):"Twemoji "+TwemojiCatalog.VERSION+" · "+all.size()),w-16),x+8,y+h-20,0xffb5bac1);
         }finally{textures.end();}
     }
     private static void card(GuiGraphics g,int mx,int my){
@@ -149,7 +148,7 @@ public final class NativeInteractions {
     }
     private static void draw(GuiGraphics g,Attachment a,int x,int y,int w,int h){double scale=Math.min(w/(double)a.media().width(),h/(double)a.media().height());int dw=Math.max(1,(int)Math.round(a.media().width()*scale)),dh=Math.max(1,(int)Math.round(a.media().height()*scale));var t=textures.frame(a.digest(),a.media(),(System.nanoTime()-started)/1_000_000);g.blit(t,x+(w-dw)/2,y+(h-dh)/2,dw,dh,0,0,a.media().width(),a.media().height(),a.media().width(),a.media().height());}
     private static final class Smiley extends AbstractButton {
-        Smiley(int x,int y){super(x,y,18,16,Component.literal("表情、GIF 與貼圖"));}
+        Smiley(int x,int y){super(x,y,18,16,Component.literal("表情與貼圖"));}
         protected void updateWidgetNarration(net.minecraft.client.gui.narration.NarrationElementOutput output){output.add(net.minecraft.client.gui.narration.NarratedElementType.TITLE,getMessage());}
         public void onPress(){if(open)closePicker();else openPicker();}
         protected void renderWidget(GuiGraphics g,int mx,int my,float partial){
@@ -160,7 +159,7 @@ public final class NativeInteractions {
             g.fill(cx-3,cy-2,cx-1,cy,color);g.fill(cx+2,cy-2,cx+4,cy,color);
             for(int x=-3;x<=3;x++){int y=Math.abs(x)==3?1:Math.abs(x)==2?2:3;g.fill(cx+x,cy+y,cx+x+1,cy+y+1,color);}
             if(pending())g.fill(getX()+13,getY(),getX()+18,getY()+5,0xffffcf55);
-            if(isHovered())UiText.tooltip(g,pending()&&layoutCard().mode()==PendingCardLayout.Mode.HIDDEN?"空間不足，按此管理待送圖片":getMessage().getString(),mx,my);
+            if(isHovered())UiText.tooltip(g,ph()<144||pw()<196?"空間不足以顯示選擇面板":pending()&&layoutCard().mode()==PendingCardLayout.Mode.HIDDEN?"空間不足，按此管理待送圖片":getMessage().getString(),mx,my);
         }
     }
 }

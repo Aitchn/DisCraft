@@ -7,5 +7,8 @@
   "discraft.settings.local": "僅此客戶端 · config/discraft/client.toml",
   "discraft.settings.save_failed": "無法儲存設定，請檢查客戶端設定檔權限。",
   "key.discraft.open": "開啟 DisCraft 聊天",
-  "key.categories.discraft": "DisCraft"
+  "key.categories.discraft": "DisCraft",
+  "discraft.settings.picker.width": "選擇面板寬度：%s GUI px",
+  "discraft.settings.picker.height": "選擇面板高度：%s GUI px",
+  "discraft.settings.picker.help": "只改面板尺寸，文字大小不變。面板會依輸入框與視窗邊界縮小；空間不足時不開啟。"
 }
