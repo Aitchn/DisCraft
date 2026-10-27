@@ -7,7 +7,7 @@ import java.util.concurrent.TimeUnit;
 
 /** Only closed enums/numeric HTTP status reach logs. No Throwable, URI, body, IDs or user text API. */
 public final class BridgeDiagnostics {
-    public enum Operation { IDENTITY, CHANNEL, CATALOG, MEMBER, POLL, SEND, NOTICE, MEDIA, BACKGROUND }
+    public enum Operation { IDENTITY, CHANNEL, CATALOG, MEMBER, POLL, SEND, NOTICE, MEDIA, BACKGROUND, GATEWAY }
     enum Terminal { YES, NO, UNKNOWN }
     enum Code {
         TARGET_VERIFIED(false,"Bot identity and configured guild text channel validated; read/send delivery not yet proven"),
@@ -26,6 +26,15 @@ public final class BridgeDiagnostics {
         INVALID_RESPONSE(true,"Response could not be safely validated; response data is not logged"),
         NOT_BOT(true,"Configured account is not an official bot; operator correction and restart required"),
         UNSUPPORTED_TARGET(true,"Configured target is not the designated ordinary guild text channel"),
+        GATEWAY_CONNECTING(false,"Gateway session connecting; REST remains the only message ingress"),
+        GATEWAY_READY(false,"Gateway READY/RESUMED received; online session established, no send receipt implied"),
+        GATEWAY_RECONNECT(true,"Gateway disconnected, unacknowledged or unavailable; bounded reconnect applies; REST ingress is independent"),
+        GATEWAY_LIMIT(true,"Gateway identify/session-start budget exhausted; no identify loop"),
+        GATEWAY_TERMINAL(true,"Gateway cannot continue; check configuration/status; REST ingress remains independently evaluated"),
+        GATEWAY_STOPPED(false,"Gateway stopped; no reconnection after shutdown"),
+        GATEWAY_ACK_TIMEOUT(true,"Gateway heartbeat ACK deadline expired; reconnect/resume with bounded backoff"),
+        GATEWAY_AUTH(true,"Gateway authentication rejected; Gateway stopped pending operator correction"),
+        GATEWAY_CONFIG(true,"Gateway API version, shard or intents rejected; Gateway stopped"),
         OPERATION_FAILED(true,"Operation rejected, unavailable or delivery uncertain; no automatic resend");
         final boolean warning;final String message;Code(boolean warning,String message){this.warning=warning;this.message=message;}
     }
@@ -50,6 +59,7 @@ public final class BridgeDiagnostics {
     private final LinkedHashMap<Key,Long> seen=new LinkedHashMap<>();private long window;private int count;private boolean terminalAnnounced;
     BridgeDiagnostics(BiConsumer<Boolean,String> sink,LongSupplier clock,boolean test){this.sink=sink;this.clock=clock;this.test=test;window=clock.getAsLong();}
     static BridgeDiagnostics production(boolean test){return new BridgeDiagnostics((warning,message)->{var logger=com.mojang.logging.LogUtils.getLogger();if(warning)logger.warn(message);else logger.info(message);},System::nanoTime,test);}
+    BridgeDiagnostics separate(){return new BridgeDiagnostics(sink,clock,test);}
     static void startup(Startup state,Source source){com.mojang.logging.LogUtils.getLogger().info("DisCraft bridge: state={} config={} — {}",state.name(),source.label,state.message);}
     static void policy(ServerConfig.PlayerAccess players,boolean lifecycle){com.mojang.logging.LogUtils.getLogger().info("DisCraft bridge policy: players={} lifecycle-notices={} (from config; no API verification implied)",players.name(),lifecycle);}
     static void queueFull(Operation operation){SYSTEM.report(Code.QUEUE_FULL,operation,0,Terminal.UNKNOWN);}

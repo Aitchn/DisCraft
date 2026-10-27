@@ -14,13 +14,16 @@ import java.util.concurrent.*;
 import java.util.concurrent.Flow;
 import java.util.regex.Pattern;
 
-/** Official Discord Bot REST v10 adapter. Polling is deliberate; no user-account or Gateway automation. */
+/** Official Bot REST v10 message ingress/egress with an independent minimal Gateway presence session. */
 public final class DiscordBotAdapter implements DiscordAdapter {
     private final String token,channel;
     private final URI api;
     private final boolean localTest;
     private final BridgeDiagnostics diagnostics;
+    private final BridgeDiagnostics gatewayDiagnostics;
+    private java.util.function.Function<DiscordGateway.Info,DiscordGateway> testGateway;
     private boolean readReady;
+    private boolean gatewayWanted,gatewayUnavailable;private long nextGatewayDiscovery;private DiscordGateway gateway;
     private final ExecutorService io=Executors.newFixedThreadPool(2,r->{var t=new Thread(r,"DisCraft HTTP");t.setDaemon(true);return t;});
     private final HttpClient http;
     // One bounded media worker also bounds DNS and decoding time seen by the server bridge.
@@ -101,7 +104,7 @@ public final class DiscordBotAdapter implements DiscordAdapter {
     private static final Pattern EMOJI=Pattern.compile("<(a?):([A-Za-z0-9_]{1,32}):([0-9]{15,22})>");
     static DiscordBotAdapter fromConfig(ServerConfig config){
         if(!config.enabled())throw new IllegalArgumentException("Discord configuration disabled");
-        return new DiscordBotAdapter(URI.create("https://discord.com/api/v10/"),config.channel(),config.token(),false);
+        var adapter=new DiscordBotAdapter(URI.create("https://discord.com/api/v10/"),config.channel(),config.token(),false);adapter.gatewayWanted=true;return adapter;
     }
     // Only package-local tests may substitute an endpoint, and only a non-secret fixed test token is accepted.
     DiscordBotAdapter(URI api,String channel,String token,boolean localTest){this(api,channel,token,localTest,BridgeDiagnostics.production(localTest));}
@@ -109,21 +112,36 @@ public final class DiscordBotAdapter implements DiscordAdapter {
         ServerConfig.validateCredentials(channel,token);
         if(localTest&&(!api.getHost().equals("127.0.0.1")||!token.equals("discraft-local-test-token")))throw new IllegalArgumentException("Invalid test endpoint");
         if(!localTest&&!api.toString().equals("https://discord.com/api/v10/"))throw new IllegalArgumentException("Invalid Discord endpoint");
-        this.api=api;this.channel=channel;this.token=token;this.localTest=localTest;this.diagnostics=diagnostics;
+        this.api=api;this.channel=channel;this.token=token;this.localTest=localTest;this.diagnostics=diagnostics;gatewayDiagnostics=diagnostics.separate();
         http=HttpClient.newBuilder().executor(io).followRedirects(HttpClient.Redirect.NEVER).connectTimeout(Duration.ofSeconds(5)).build();
     }
     private void ready()throws Exception{
         if(closed||terminal)throw new IOException("Discord adapter unavailable");
         if(System.nanoTime()<blockedUntil)throw new IOException("Discord rate limited");
-        if(initialized)return;
+        if(initialized){maintainGateway();return;}
         var me=object(request("GET","users/@me",null,null),BridgeDiagnostics.Operation.IDENTITY);
         if(!me.has("bot")||!me.get("bot").getAsBoolean()){terminal=true;diagnostics.report(BridgeDiagnostics.Code.NOT_BOT,BridgeDiagnostics.Operation.IDENTITY,0,BridgeDiagnostics.Terminal.YES);throw new IOException("Bot account required");}
         var room=object(request("GET","channels/"+channel,null,null),BridgeDiagnostics.Operation.CHANNEL);
         if(!room.get("id").getAsString().equals(channel)||room.get("type").getAsInt()!=0){terminal=true;diagnostics.report(BridgeDiagnostics.Code.UNSUPPORTED_TARGET,BridgeDiagnostics.Operation.CHANNEL,0,BridgeDiagnostics.Terminal.YES);throw new IOException("Only designated guild text channels are supported");}
         guild=room.has("guild_id")?room.get("guild_id").getAsString():"";botId=me.get("id").getAsString();
         if(!guild.matches("[0-9]{15,22}")||!botId.matches("[0-9]{15,22}")){terminal=true;diagnostics.report(BridgeDiagnostics.Code.INVALID_RESPONSE,BridgeDiagnostics.Operation.CHANNEL,0,BridgeDiagnostics.Terminal.YES);throw new IOException("Invalid guild bot identity");}
-        initialized=true;diagnostics.report(BridgeDiagnostics.Code.TARGET_VERIFIED,BridgeDiagnostics.Operation.CHANNEL,0,BridgeDiagnostics.Terminal.NO);
+        initialized=true;diagnostics.report(BridgeDiagnostics.Code.TARGET_VERIFIED,BridgeDiagnostics.Operation.CHANNEL,0,BridgeDiagnostics.Terminal.NO);maintainGateway();
     }
+    private void maintainGateway(){
+        if(!gatewayWanted||gatewayUnavailable||localTest&&testGateway==null||closed||terminal||gateway!=null&&!gateway.needsDiscovery()||System.nanoTime()<nextGatewayDiscovery)return;
+        nextGatewayDiscovery=System.nanoTime()+60_000_000_000L;
+        try{var value=object(request("GET","gateway/bot",null,null),BridgeDiagnostics.Operation.GATEWAY);if(value.get("shards").getAsInt()!=1){gatewayUnavailable=true;gatewayStatus(DiscordGateway.Status.TERMINAL);return;}
+            var limit=value.getAsJsonObject("session_start_limit");if(limit.get("max_concurrency").getAsInt()<1)throw new IOException("Gateway discovery unavailable");
+            var info=new DiscordGateway.Info(URI.create(value.get("url").getAsString()),limit.get("remaining").getAsInt(),limit.get("reset_after").getAsLong());
+            synchronized(this){if(closed||terminal)return;if(gateway==null){gateway=localTest?testGateway.apply(info):DiscordGateway.production(token,botId,http,this::gatewayStatus);gateway.start(info);}else gateway.discovery(info);}
+        }catch(Exception unavailable){gatewayStatus(DiscordGateway.Status.TRANSPORT);}
+    }
+    private void gatewayStatus(DiscordGateway.Status status){
+        var code=switch(status){case CONNECTING->BridgeDiagnostics.Code.GATEWAY_CONNECTING;case READY,RESUMED->BridgeDiagnostics.Code.GATEWAY_READY;case IDENTIFY_LIMIT->BridgeDiagnostics.Code.GATEWAY_LIMIT;case TERMINAL->BridgeDiagnostics.Code.GATEWAY_TERMINAL;case AUTH_FAILURE->BridgeDiagnostics.Code.GATEWAY_AUTH;case CONFIG_FAILURE->BridgeDiagnostics.Code.GATEWAY_CONFIG;case ACK_TIMEOUT->BridgeDiagnostics.Code.GATEWAY_ACK_TIMEOUT;case STOPPED->BridgeDiagnostics.Code.GATEWAY_STOPPED;default->BridgeDiagnostics.Code.GATEWAY_RECONNECT;};
+        gatewayDiagnostics.report(code,BridgeDiagnostics.Operation.GATEWAY,0,Set.of(DiscordGateway.Status.TERMINAL,DiscordGateway.Status.AUTH_FAILURE,DiscordGateway.Status.CONFIG_FAILURE).contains(status)?BridgeDiagnostics.Terminal.YES:BridgeDiagnostics.Terminal.NO);
+    }
+    // Explicit fake-credential/loopback construction only; production never accepts a transport override.
+    void gatewayForTest(java.util.function.Function<DiscordGateway.Info,DiscordGateway> factory){if(!localTest)throw new IllegalStateException("Not a test adapter");testGateway=Objects.requireNonNull(factory);gatewayWanted=true;}
     @Override public RelayRecord prepare(RelayRecord record)throws Exception{
         ready();var current=catalog();
         if(EMOJI.matcher(record.text()).find()&&!current.ready())throw new IOException("Guild emoji catalog unavailable");
@@ -280,7 +298,7 @@ public final class DiscordBotAdapter implements DiscordAdapter {
             if(!Double.isFinite(seconds)||seconds<0||seconds>3600)seconds=3600;
             blockedUntil=System.nanoTime()+(long)Math.ceil(Math.max(1,seconds)*1e9);diagnostics.report(BridgeDiagnostics.Code.RATE_LIMITED,operation,429,BridgeDiagnostics.Terminal.NO);throw new IOException("Discord rate limited");
         }
-        if(r.statusCode()==401||r.statusCode()==403){terminal=true;unavailableCatalog();diagnostics.report(r.statusCode()==401?BridgeDiagnostics.Code.AUTH_REJECTED:BridgeDiagnostics.Code.PERMISSION_REJECTED,operation,r.statusCode(),BridgeDiagnostics.Terminal.YES);throw new IOException("Discord credentials/permissions rejected; restart after operator correction");}
+        if(r.statusCode()==401||r.statusCode()==403){if(operation==BridgeDiagnostics.Operation.GATEWAY){gatewayUnavailable=true;gatewayDiagnostics.report(BridgeDiagnostics.Code.GATEWAY_TERMINAL,operation,r.statusCode(),BridgeDiagnostics.Terminal.YES);throw new IOException("Gateway discovery rejected");}terminal=true;if(gateway!=null)gateway.close();unavailableCatalog();diagnostics.report(r.statusCode()==401?BridgeDiagnostics.Code.AUTH_REJECTED:BridgeDiagnostics.Code.PERMISSION_REJECTED,operation,r.statusCode(),BridgeDiagnostics.Terminal.YES);throw new IOException("Discord credentials/permissions rejected; restart after operator correction");}
         if(r.statusCode()<200||r.statusCode()>=300){diagnostics.report(r.statusCode()==404?BridgeDiagnostics.Code.NOT_FOUND:BridgeDiagnostics.Code.HTTP_FAILED,operation,r.statusCode(),BridgeDiagnostics.Terminal.NO);throw new IOException("Discord request failed or uncertain; not automatically retried");}
         return r.body();
     }
@@ -296,6 +314,7 @@ public final class DiscordBotAdapter implements DiscordAdapter {
         catch(Exception failure){if(future!=null)future.cancel(true);var code=transportFailure(failure);if(code==BridgeDiagnostics.Code.INTERRUPTED)Thread.currentThread().interrupt();diagnostics.report(code,operation,0,terminal?BridgeDiagnostics.Terminal.YES:BridgeDiagnostics.Terminal.NO);throw new IOException("Bounded HTTP request failed");}
     }
     private static BridgeDiagnostics.Operation operation(String method,String path){
+        if(path.equals("gateway/bot"))return BridgeDiagnostics.Operation.GATEWAY;
         if(path.equals("users/@me"))return BridgeDiagnostics.Operation.IDENTITY;
         if(path.contains("/members/"))return BridgeDiagnostics.Operation.MEMBER;
         if(path.endsWith("/emojis"))return BridgeDiagnostics.Operation.CATALOG;
@@ -313,7 +332,7 @@ public final class DiscordBotAdapter implements DiscordAdapter {
         final BridgeDiagnostics.Code code;SafeHttpFailure(BridgeDiagnostics.Code code){super("Bounded HTTP stream failed");this.code=code;}
     }
     private static JsonObject json(byte[] b){return JsonParser.parseString(new String(b,StandardCharsets.UTF_8)).getAsJsonObject();}
-    @Override public void close(){closed=true;unavailableCatalog();memberNames.clear();mediaWorker.shutdownNow();io.shutdownNow();}
+    @Override public synchronized void close(){closed=true;if(gateway!=null)gateway.close();unavailableCatalog();memberNames.clear();mediaWorker.shutdownNow();io.shutdownNow();}
     private static final class LimitedBody implements HttpResponse.BodySubscriber<byte[]> {
         private final int max;private final ByteArrayOutputStream out=new ByteArrayOutputStream();private final CompletableFuture<byte[]> result=new CompletableFuture<>();private Flow.Subscription subscription;
         LimitedBody(int max){this.max=max;}
