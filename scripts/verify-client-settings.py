@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Two actual client JVMs in one fresh local profile: defaults, Mods/Config UI, then persisted restart."""
 from pathlib import Path
-import fcntl,json,os,signal,subprocess,time,zipfile
+import argparse,fcntl,json,os,signal,subprocess,time,zipfile
+parser=argparse.ArgumentParser();parser.add_argument("--stress-input",action="store_true");options=parser.parse_args()
 ROOT=Path(__file__).resolve().parents[1];os.chdir(ROOT)
-OUT=ROOT/'build/evidence/client-settings';OUT.mkdir(parents=True,exist_ok=True)
+OUT=ROOT/('build/evidence/client-settings-stress' if options.stress_input else 'build/evidence/client-settings');OUT.mkdir(parents=True,exist_ok=True)
 lock=(OUT/'.runner.lock').open('w');fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
 environment=os.environ.copy()
 for key in ('discord_token','discord_channel','DISCRAFT_DISCORD_BOT_TOKEN','DISCRAFT_DISCORD_CHANNEL','DISCRAFT_ALLOWED_PLAYERS','DISCRAFT_MODE'):environment.pop(key,None)
@@ -22,7 +23,7 @@ for library in cp.split(os.pathsep):
    if entry.filename.startswith('linux/x64/') and entry.filename.endswith('.so'):
     assert entry.file_size<64*1024*1024;(natives/Path(entry.filename).name).write_bytes(archive.read(entry))
 main=command.index('-cp')+2;command=command[:main]+['dev.discraft.forge.smoke.DesktopBootstrap']+command[main:]
-command=command[:1]+['-Dorg.lwjgl.librarypath='+str(natives),'-Ddiscraft.clientSettingsSmoke=true','-Ddiscraft.clientSettingsOutput='+str(OUT)]+command[1:]
+command=command[:1]+(['-Ddiscraft.settingsFrameStress=true'] if options.stress_input else [])+['-Dorg.lwjgl.librarypath='+str(natives),'-Ddiscraft.clientSettingsSmoke=true','-Ddiscraft.clientSettingsOutput='+str(OUT)]+command[1:]
 child=environment.copy();child.update(data['environment']);process=None
 def interrupted(signum,frame):raise KeyboardInterrupt('Client settings acceptance interrupted')
 signal.signal(signal.SIGTERM,interrupted)
