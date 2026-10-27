@@ -1,12 +1,17 @@
 """Validate the distributable, including accidental test-driver packaging."""
 from pathlib import Path
 import hashlib
-import sys
+import argparse
 import re
 import zipfile
 
+parser=argparse.ArgumentParser(description=__doc__)
+parser.add_argument('jar',type=Path,nargs='?')
+parser.add_argument('--github-output',type=Path,help='Write the validated exact JAR path to the CI step output file')
+args=parser.parse_args()
+
 version=re.search(r"version = '([^']+)'",Path('build.gradle').read_text()).group(1)
-jar = Path(sys.argv[1]) if len(sys.argv)>1 else Path(f'forge/build/libs/DisCraft-{version}.jar')
+jar = args.jar if args.jar is not None else Path(f'forge/build/libs/DisCraft-{version}.jar')
 with zipfile.ZipFile(jar) as archive:
     names = set(archive.namelist())
     metadata=archive.read('META-INF/mods.toml').decode()
@@ -84,3 +89,9 @@ with zipfile.ZipFile(jar) as archive:
     assert 'assets/discraft/textures/gui/smiley.png' not in names, 'Reference screenshot icon leaked into mod JAR'
     assert not any('/smoke/' in name or 'BridgeProtocolTest' in name or 'GuildEmojiTest' in name or 'LiveCatalog' in name or 'ServerEventAcceptance' in name or 'NativeHoverServerAcceptance' in name or 'DiscordAuthor' in name or 'NativeItemDataTest' in name or 'ItemFixtures' in name or 'ItemTooltipAcceptance' in name or 'InstalledLanguageAcceptance' in name or 'OptionalServerAcceptance' in name or 'ChatPlusServerAcceptance' in name or '/optionaltest/' in name or 'NativeFallbackTest' in name or 'ItemRenderTest' in name for name in names), 'Test driver leaked into mod JAR'
 print(f'PASS packaged mod: {jar.name} SHA256={hashlib.sha256(jar.read_bytes()).hexdigest()}')
+
+if args.github_output is not None:
+    exact=str(jar.resolve())
+    assert '\n' not in exact and '\r' not in exact, 'Invalid CI artifact path'
+    with args.github_output.open('a',encoding='utf-8') as output:
+        output.write('jar='+exact+'\n')

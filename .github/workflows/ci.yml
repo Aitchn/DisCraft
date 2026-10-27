@@ -58,7 +58,8 @@ jobs:
       - name: Build, REST/wire checks and reobfuscation
         run: ./gradlew -Pforge :forge:build :forge:reobfJar --console=plain
       - name: Check packaged mod contents
-        run: python3 scripts/check-mod-jar.py
+        id: checked-mod
+        run: python3 scripts/check-mod-jar.py --github-output "$GITHUB_OUTPUT"
       - name: Headless lifecycle and synthetic Forge event acceptance
         run: |
           python3 scripts/verify-server-events.py
@@ -76,7 +77,7 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: forge-1.20.1-mod-${{ github.sha }}
-          path: forge/build/libs/DisCraft-0.2.0-preview.4.jar
+          path: ${{ steps.checked-mod.outputs.jar }}
           if-no-files-found: error
           retention-days: 14
 
