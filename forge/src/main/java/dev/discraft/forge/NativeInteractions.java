@@ -21,28 +21,31 @@ public final class NativeInteractions {
     private static boolean open;private static int tab=2,category,scroll,guildFilter;private static String query="";
     private static EditBox search,input;private static ChatScreen screen;
     private static Smiley smiley;private static int inputWidth,appliedInputWidth;
+    private static PendingCardLayout.Rect displayedFooter;
     private static PendingCardLayout.Placement displayedCard;private static Attachment displayedAttachment;private static ChatScreen cardScreen;private static int cardScreenWidth,cardScreenHeight;private static boolean displayedLoading,displayedOpen;private static int displayedInputX,displayedInputY,displayedInputWidth,displayedInputHeight;
     private static PendingCardLayout.Placement layoutCard(){
         var blocked=new ArrayList<PendingCardLayout.Rect>();blocked.add(new PendingCardLayout.Rect(0,input.getY()-6,screen.width,input.getHeight()+12));
         if(ChatPlusCompat.custom())blocked.addAll(ChatPlusCompat.protectedChatAreas(screen.width,screen.height));else blocked.add(NativeChat.protectedChatArea(screen.width,screen.height));
-        if(open)blocked.add(new PendingCardLayout.Rect(px()-4,py()-4,pw()+8,ph()+8));
+        if(open){var popup=compact()?footer().bounds():picker();blocked.add(new PendingCardLayout.Rect(popup.x()-4,popup.y()-4,popup.width()+8,popup.height()+8));}
         return PendingCardLayout.solve(screen.width,screen.height,input.getY(),blocked);
     }
     private static boolean pending(){return NativeComposer.selected()!=null||NativeComposer.validating();}
     private static boolean currentCard(){return displayedCard!=null&&cardScreen==MC.screen&&screen==MC.screen&&cardScreenWidth==screen.width&&cardScreenHeight==screen.height&&displayedAttachment==NativeComposer.selected()&&displayedLoading==NativeComposer.validating()&&displayedOpen==open&&displayedInputX==input.getX()&&displayedInputY==input.getY()&&displayedInputWidth==input.getWidth()&&displayedInputHeight==input.getHeight()&&displayedCard.equals(layoutCard());}
+    private static boolean compact(){return ph()<144||pw()<196;}
     private static PendingCardLayout.Placement footer(){return new PendingCardLayout.Placement(PendingCardLayout.Mode.COMPACT,new PendingCardLayout.Rect(px()+4,py()+ph()-26,pw()-8,26));}
+    private static boolean currentFooter(){return currentCard()&&displayedFooter!=null&&displayedFooter.equals(footer().bounds());}
     private record Item(String glyph,String name,String source,String value,Attachment media,boolean custom,boolean file,String id,boolean enabled) {}
     private record Hit(int x,int y,int w,int h,Item item) {}
     private static final List<Hit> hits=new ArrayList<>();
     private static String builtinKey="";private static List<Item> builtinItems=List.of();
     static void attach(ChatScreen owner,ScreenEvent.Init.Post event,EditBox nativeInput){
-        screen=owner;input=nativeInput;hits.clear();inputWidth=input.getWidth();appliedInputWidth=inputWidth;
+        screen=owner;input=nativeInput;hits.clear();displayedFooter=null;inputWidth=input.getWidth();appliedInputWidth=inputWidth;
         smiley=new Smiley(0,0);syncInput();event.addListener(smiley);
         search=new EditBox(UiText.font(),px()+10,py()+35,pw()-20,20,Component.literal("搜尋表情"));search.setHint(Component.literal("搜尋"));search.setMaxLength(80);search.setValue(query);search.setResponder(s->{query=s;scroll=0;});search.visible=open;search.active=open;event.addListener(search);
     }
-    static void reset(){ClientGuildEmoji.visible(List.of());open=false;query="";hits.clear();textures.close();screen=null;search=null;displayedCard=null;displayedAttachment=null;cardScreen=null;displayedLoading=false;displayedOpen=false;}
-    static void closePicker(){ClientGuildEmoji.visible(List.of());open=false;if(search!=null){search.visible=false;search.active=false;}if(screen!=null&&MC.screen==screen&&input!=null){input=NativeComposer.input(screen);screen.setFocused(input);input.setFocused(true);}}
-    public static void openPicker(){if(MC.screen instanceof ChatScreen&&ph()>=144&&pw()>=196){open=true;if(search!=null){search.visible=true;search.active=true;screen.setFocused(search);search.setFocused(true);}}}
+    static void reset(){ClientGuildEmoji.visible(List.of());open=false;query="";hits.clear();textures.close();screen=null;search=null;displayedCard=null;displayedFooter=null;displayedAttachment=null;cardScreen=null;displayedLoading=false;displayedOpen=false;}
+    static void closePicker(){ClientGuildEmoji.visible(List.of());open=false;displayedFooter=null;if(search!=null){search.visible=false;search.active=false;}if(screen!=null&&MC.screen==screen&&input!=null){input=NativeComposer.input(screen);screen.setFocused(input);input.setFocused(true);}}
+    public static void openPicker(){if(MC.screen instanceof ChatScreen&&(!compact()||pending()&&ph()>=26&&pw()>=68)){open=true;if(search!=null){search.visible=!compact();search.active=!compact();screen.setFocused(compact()?input:search);if(compact())input.setFocused(true);else search.setFocused(true);}}}
     private static int clamp(int value,int low,int high){return Math.max(low,Math.min(Math.max(low,high),value));}
     private static void syncInput(){if(input==null||screen==null||smiley==null)return;if(input.getWidth()!=appliedInputWidth)inputWidth=input.getWidth();appliedInputWidth=Math.max(40,inputWidth-26);input.setWidth(appliedInputWidth);smiley.setX(clamp(input.getX()+inputWidth-23,0,screen.width-18));smiley.setY(clamp(input.getY()-5,0,screen.height-16));}
     private static PendingCardLayout.Rect picker(){return PickerLayout.solve(screen.width,screen.height,input.getX(),input.getY(),inputWidth,input.getHeight(),ClientPreferences.PICKER_WIDTH.get(),ClientPreferences.PICKER_HEIGHT.get());}
@@ -77,10 +80,14 @@ public final class NativeInteractions {
     @SubscribeEvent(priority=EventPriority.HIGH) public static void mouse(ScreenEvent.MouseButtonPressed.Pre event){
         if(!(event.getScreen() instanceof ChatScreen)||event.getButton()!=0)return;double x=event.getMouseX(),y=event.getMouseY();
         syncInput();
-        if(open){
+        if(open&&compact()){
+            if(footer().bounds().contains(x,y)){event.setCanceled(true);if(pending()&&currentFooter())manageClick(footer(),x,y);return;}
+            if(!inside(x,y,smiley.getX(),smiley.getY(),18,16))closePicker();
+        }
+        if(open&&!compact()){
             if(inside(x,y,px(),py(),pw(),ph())){
                 event.setCanceled(true);
-                if(pending()&&currentCard()&&displayedCard.mode()==PendingCardLayout.Mode.HIDDEN&&manageClick(footer(),x,y))return;
+                if(pending()&&currentFooter()&&displayedCard.mode()==PendingCardLayout.Mode.HIDDEN&&manageClick(footer(),x,y))return;
                 if(inside(x,y,px()+10,py()+35,pw()-20,20)){search.mouseClicked(x,y,0);screen.setFocused(search);return;}
                 if(tab==2&&category==5&&inside(x,y,px()+38,py()+64,pw()-42,16)){guildFilter=Math.max(0,Math.min(2,(int)((x-px()-38)/filterStep())));scroll=0;return;}
                 if(y<py()+29){int t=(int)((x-px()-10)/64);if(t>=0&&t<2){tab=t+1;scroll=0;query="";search.setValue("");}return;}
@@ -96,8 +103,8 @@ public final class NativeInteractions {
         var actor=NativeChat.actorAt(x,y);if(actor!=null){NativeComposer.insertMention(actor);event.setCanceled(true);return;}
         if(NativeChat.revealAt(x,y))event.setCanceled(true);
     }
-    @SubscribeEvent public static void scroll(ScreenEvent.MouseScrolled.Pre event){if(open&&MC.screen==screen&&inside(event.getMouseX(),event.getMouseY(),px(),py(),pw(),ph())){scroll=Math.max(0,scroll+(event.getScrollDelta()<0?1:-1));event.setCanceled(true);}}
-    @SubscribeEvent(priority=EventPriority.HIGH) public static void keys(ScreenEvent.KeyPressed.Pre event){if(!open||!(event.getScreen() instanceof ChatScreen))return;if(event.getKeyCode()==256){closePicker();screen.setFocused(input);event.setCanceled(true);}else if(event.getKeyCode()==257){var all=filtered();if(!all.isEmpty())pick(all.get(0));event.setCanceled(true);}}
+    @SubscribeEvent public static void scroll(ScreenEvent.MouseScrolled.Pre event){if(!open||MC.screen!=screen)return;var area=compact()?footer().bounds():picker();if(area.contains(event.getMouseX(),event.getMouseY())){if(!compact())scroll=Math.max(0,scroll+(event.getScrollDelta()<0?1:-1));event.setCanceled(true);}}
+    @SubscribeEvent(priority=EventPriority.HIGH) public static void keys(ScreenEvent.KeyPressed.Pre event){if(!open||!(event.getScreen() instanceof ChatScreen))return;if(event.getKeyCode()==256){closePicker();screen.setFocused(input);event.setCanceled(true);}else if(event.getKeyCode()==257){if(!compact()){var all=filtered();if(!all.isEmpty())pick(all.get(0));}event.setCanceled(true);}}
     private static boolean manageClick(PendingCardLayout.Placement layout,double x,double y){
         if(layout.remove().contains(x,y)){NativeComposer.removeStaged();return true;}if(layout.spoiler().contains(x,y)){NativeComposer.toggleSpoiler();return true;}
         if(layout.mode()==PendingCardLayout.Mode.FULL&&layout.image().contains(x,y)&&NativeComposer.isSpoiler()){NativeComposer.togglePreview();return true;}return false;
@@ -106,8 +113,12 @@ public final class NativeInteractions {
     @SubscribeEvent public static void render(ScreenEvent.Render.Post event){
         if(!(event.getScreen() instanceof ChatScreen owner))return;screen=owner;syncInput();var g=event.getGuiGraphics();textures.begin();
         try{
-            if(open&&(ph()<144||pw()<196))closePicker();
+            if(open&&compact()&&(!pending()||ph()<26||pw()<68))closePicker();
+            displayedFooter=null;
             card(g,event.getMouseX(),event.getMouseY());if(!open){ClientGuildEmoji.visible(List.of());return;}
+            if(compact()){
+                search.visible=false;search.active=false;if(search.isFocused()){screen.setFocused(input);input.setFocused(true);}hits.clear();ClientGuildEmoji.visible(List.of());var box=footer().bounds();g.fill(box.x(),box.y(),box.x()+box.width(),box.y()+box.height(),0xff1e1f22);displayedFooter=box;drawHeader(g,footer(),event.getMouseX(),event.getMouseY(),true);return;
+            }
             int x=px(),y=py(),w=pw(),h=ph();g.fill(x,y,x+w,y+h,0xff2b2d31);g.fill(x,y,x+w,y+30,0xff232428);
             String[] tabs={"貼圖","表情符號"};for(int i=0;i<2;i++){if(i+1==tab)g.fill(x+8+i*64,y+5,x+66+i*64,y+26,0xff404249);UiText.draw(g,tabs[i],x+16+i*64,y+9,0xffeeeeee);}
             search.setX(x+10);search.setY(y+35);search.setWidth(w-20);search.visible=true;search.active=true;search.render(g,event.getMouseX(),event.getMouseY(),event.getPartialTick());
@@ -126,7 +137,7 @@ public final class NativeInteractions {
                 }
             }
             ClientGuildEmoji.visible(visible);
-            if(pending()&&displayedCard!=null&&displayedCard.mode()==PendingCardLayout.Mode.HIDDEN){drawHeader(g,footer(),event.getMouseX(),event.getMouseY(),true);}else if(hover!=null)UiText.draw(g,UiText.fit(hover.name()+" · "+hover.source(),w-16),x+8,y+h-20,0xffdbdee1);else UiText.draw(g,UiText.fit(tab==1?"貼圖來源不可用":(guild?ClientGuildEmoji.snapshot().label()+" · "+all.size()+(ClientGuildEmoji.snapshot().complete()?"":" · 目錄已達上限"):"Twemoji "+TwemojiCatalog.VERSION+" · "+all.size()),w-16),x+8,y+h-20,0xffb5bac1);
+            if(pending()&&displayedCard!=null&&displayedCard.mode()==PendingCardLayout.Mode.HIDDEN){displayedFooter=footer().bounds();drawHeader(g,footer(),event.getMouseX(),event.getMouseY(),true);}else if(hover!=null)UiText.draw(g,UiText.fit(hover.name()+" · "+hover.source(),w-16),x+8,y+h-20,0xffdbdee1);else UiText.draw(g,UiText.fit(tab==1?"貼圖來源不可用":(guild?ClientGuildEmoji.snapshot().label()+" · "+all.size()+(ClientGuildEmoji.snapshot().complete()?"":" · 目錄已達上限"):"Twemoji "+TwemojiCatalog.VERSION+" · "+all.size()),w-16),x+8,y+h-20,0xffb5bac1);
         }finally{textures.end();}
     }
     private static void card(GuiGraphics g,int mx,int my){
@@ -159,7 +170,7 @@ public final class NativeInteractions {
             g.fill(cx-3,cy-2,cx-1,cy,color);g.fill(cx+2,cy-2,cx+4,cy,color);
             for(int x=-3;x<=3;x++){int y=Math.abs(x)==3?1:Math.abs(x)==2?2:3;g.fill(cx+x,cy+y,cx+x+1,cy+y+1,color);}
             if(pending())g.fill(getX()+13,getY(),getX()+18,getY()+5,0xffffcf55);
-            if(isHovered())UiText.tooltip(g,ph()<144||pw()<196?"空間不足以顯示選擇面板":pending()&&layoutCard().mode()==PendingCardLayout.Mode.HIDDEN?"空間不足，按此管理待送圖片":getMessage().getString(),mx,my);
+            if(isHovered())UiText.tooltip(g,pending()&&(compact()||layoutCard().mode()==PendingCardLayout.Mode.HIDDEN)?"空間不足，按此管理待送圖片":compact()?"空間不足以顯示選擇面板":getMessage().getString(),mx,my);
         }
     }
 }
