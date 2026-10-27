@@ -22,19 +22,32 @@ public final class SpoilerPrivacyAcceptance {
     private static final Minecraft MC=Minecraft.getInstance();
     private static final Path OUT=Path.of("../../build/evidence/multiplayer").toAbsolutePath().normalize();
     private static Consumer<String> pass;private static int phase,ticks;private static long frames,frameBefore;private static CompletableFuture<Void> send;
+    private static String pendingLabel;private static Attachment pendingFile;private static long queuedAt;private static int submissions;
     private static UUID a,b,c,d,e,peerD;private static Attachment source;private static Robot robot;
     private record Region(int index,int x,int width,int height,int band) {}
-    static void start(Consumer<String> check)throws Exception{pass=check;phase=0;ticks=0;source=Attachment.fromResource("landscape.png");robot=new Robot();robot.setAutoDelay(35);MC.setScreen(new ChatScreen(""));submit("A",Attachment.of("SPOILER_a.png",source.bytes()));}
+    static void start(Consumer<String> check)throws Exception{pass=check;phase=0;ticks=0;submissions=0;pendingLabel=null;pendingFile=null;send=null;source=Attachment.fromResource("landscape.png");robot=new Robot();robot.setAutoDelay(35);MC.setScreen(new ChatScreen(""));submit("A",Attachment.of("SPOILER_a.png",source.bytes()));}
     @net.minecraftforge.eventbus.api.SubscribeEvent public static void rendered(net.minecraftforge.client.event.RenderGuiOverlayEvent.Post event){if(event.getOverlay().id().equals(net.minecraftforge.client.gui.overlay.VanillaGuiOverlay.CHAT_PANEL.id()))frames++;}
     private static boolean rendered(){return frames>frameBefore;}
     static String state(){return " spoilerPhase="+phase;}
     private static void check(boolean ok,String label){if(!ok)throw new AssertionError("Spoiler privacy "+phase+": "+label);pass.accept(label);}
     private static void next(int n){phase=n;ticks=0;frameBefore=frames;System.out.println("SPOILER_PRIVACY phase="+n);}
-    private static void submit(String label,Attachment file){send=CompletableFuture.runAsync(()->{try{ClientBridge.send("privacy-"+label+(label.equals("E")?" :discraft:":""),file);}catch(Exception error){throw new CompletionException(error);}});}
+    private static void submit(String label,Attachment file){
+        if(pendingLabel!=null||send!=null&&!send.isDone())throw new AssertionError("Overlapping spoiler submissions");
+        // Earlier native/picker fixtures share the real five-token/one-token-per-second server budget.
+        // Wait for a new token before EVERY send, including the first after that fixture; never retry rejection.
+        pendingLabel=label;pendingFile=file;queuedAt=System.nanoTime();send=null;
+    }
+    private static void submitWhenReady(){
+        if(pendingLabel==null||System.nanoTime()-queuedAt<1_100_000_000L)return;
+        String label=pendingLabel;Attachment file=pendingFile;pendingLabel=null;pendingFile=null;submissions++;
+        System.out.println("SPOILER_PRIVACY pacedSubmission="+submissions+" waitedMillis="+(System.nanoTime()-queuedAt)/1_000_000L);
+        send=CompletableFuture.runAsync(()->{try{ClientBridge.send("privacy-"+label+(label.equals("E")?" :discraft:":""),file);}catch(Exception error){throw new CompletionException(error);}});
+    }
     @SuppressWarnings("unchecked") private static List<RelayRecord> records()throws Exception{return new ArrayList<>((Collection<RelayRecord>)get(ClientBridge.class,"history"));}
     private static RelayRecord message(String label,boolean peer)throws Exception{return records().stream().filter(r->r.author().equals(peer?"TEST peer (not Discord)":"Alice")&&r.text().startsWith((peer?"Peer received: ":"")+"privacy-"+label)).findFirst().orElse(null);}
-    private static boolean arrived(String label)throws Exception{if(!send.isDone())return false;send.join();return message(label,false)!=null&&message(label,true)!=null;}
+    private static boolean arrived(String label)throws Exception{if(send==null||!send.isDone())return false;send.join();return message(label,false)!=null&&message(label,true)!=null;}
     static boolean tick()throws Exception{
+        submitWhenReady();
         switch(phase){
         case 0 -> {if(!arrived("A"))return false;a=message("A",false).id();submit("B",Attachment.of("b.png",source.bytes()));next(1);}
         case 1 -> {if(!arrived("B"))return false;b=message("B",false).id();scroll(a);next(2);}
@@ -50,7 +63,7 @@ public final class SpoilerPrivacyAcceptance {
         case 11 -> {if(!rendered())return false;Region r=region(d,false);double[] xy=point(r,r.width()/2d,r.height()/2d);int[] wx={0},wy={0};long window=MC.getWindow().getWindow();GLFW.glfwFocusWindow(window);GLFW.glfwGetWindowPos(window,wx,wy);robot.mouseMove(wx[0]+(int)(xy[0]*MC.getWindow().getGuiScale()),wy[0]+(int)(xy[1]*MC.getWindow().getGuiScale()));robot.mousePress(InputEvent.BUTTON1_DOWN_MASK);robot.mouseRelease(InputEvent.BUTTON1_DOWN_MASK);next(12);}
         case 12 -> {if(!((Set<?>)get(NativeChat.class,"revealed")).contains(d))return false;next(14);}
         case 14 -> {if(!rendered())return false;pixels(d,false,false,"Revealed-one-message.png");scroll(peerD);next(13);}
-        case 13 -> {if(!rendered())return false;pixels(peerD,true,false,"Other-identical-message-still-hidden.png");check(((Set<?>)get(NativeChat.class,"revealed")).contains(d)&&!((Set<?>)get(NativeChat.class,"revealed")).contains(peerD),"Physical reveal is scoped to one authoritative message ID, never shared bytes");MC.gui.getChat().resetChatScroll();return true;}
+        case 13 -> {if(!rendered())return false;pixels(peerD,true,false,"Other-identical-message-still-hidden.png");check(((Set<?>)get(NativeChat.class,"revealed")).contains(d)&&!((Set<?>)get(NativeChat.class,"revealed")).contains(peerD),"Physical reveal is scoped to one authoritative message ID, never shared bytes");check(submissions==5&&pendingLabel==null,"Five spoiler submissions traverse the unchanged production rate gate once each without automatic retries");MC.gui.getChat().resetChatScroll();return true;}
         default -> throw new AssertionError("Unknown spoiler phase");
         }return false;
     }
