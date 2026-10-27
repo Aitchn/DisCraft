@@ -16,7 +16,8 @@ import dev.discraft.forge.bridge.RelayRecord;
 
 /** Original synthetic textures/models/font sheets; neither game assets nor third-party renderer code. */
 final class ItemFixtures {
-    static JsonObject sendToLocalDiscord(RelayRecord record)throws Exception{
+    static JsonObject sendToLocalDiscord(RelayRecord record)throws Exception{return sendToLocalDiscord(record,null);}
+    static JsonObject sendToLocalDiscord(RelayRecord record,Map<String,Long> timing)throws Exception{
         var post=new AtomicReference<byte[]>();var server=HttpServer.create(new InetSocketAddress("127.0.0.1",0),0);String channel="1234567890123456";
         server.createContext("/",exchange->{try{
             String path=exchange.getRequestURI().getPath(),response;
@@ -29,7 +30,8 @@ final class ItemFixtures {
             byte[] bytes=json(response);exchange.sendResponseHeaders(200,bytes.length);exchange.getResponseBody().write(bytes);
         }finally{exchange.close();}});server.start();
         try(var adapter=new DiscordBotAdapter(URI.create("http://127.0.0.1:"+server.getAddress().getPort()+"/api/v10/"),channel,"discraft-local-test-token",true)){
-            var prepared=adapter.prepare(record);String receipt=adapter.sendWithReceipt(prepared);if(!receipt.equals("4234567890123456"))throw new AssertionError("Wrong fixture receipt");
+            long started=System.nanoTime();var prepared=adapter.prepare(record);if(timing!=null)timing.put("prepare_ns",System.nanoTime()-started);started=System.nanoTime();String receipt=adapter.sendWithReceipt(prepared);if(timing!=null)timing.put("upload_ns",System.nanoTime()-started);if(!receipt.equals("4234567890123456"))throw new AssertionError("Wrong fixture receipt");
+            if(timing!=null){post.set(null);var warm=new RelayRecord(UUID.randomUUID(),record.author(),record.text(),record.attachments(),record.catalog(),record.emoji(),record.actor(),record.mentions(),record.nativeItems());started=System.nanoTime();var warmPrepared=adapter.prepare(warm);timing.put("warm_prepare_ns",System.nanoTime()-started);started=System.nanoTime();adapter.sendWithReceipt(warmPrepared);timing.put("warm_upload_ns",System.nanoTime()-started);}
             String body=new String(Objects.requireNonNull(post.get()),StandardCharsets.UTF_8);int start=body.indexOf("\r\n\r\n")+4,end=body.indexOf("\r\n--",start);String payload=body.startsWith("--")?body.substring(start,end):body;
             var parsed=JsonParser.parseString(payload).getAsJsonObject();if(!record.attachments().isEmpty()&&!body.contains("filename=\"item.png\""))throw new AssertionError("Missing rendered PNG multipart");return parsed;
         }finally{server.stop(0);}

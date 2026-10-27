@@ -70,6 +70,7 @@ tasks.named('jar', Jar) {
     exclude 'dev/discraft/forge/server/NativeHoverServerAcceptance*'
     exclude 'dev/discraft/forge/server/DiscordAuthorServerAcceptance*'
     exclude 'dev/discraft/forge/server/ItemFixtures*'
+    exclude 'dev/discraft/forge/server/ItemPipelineTiming*'
     exclude 'dev/discraft/forge/server/ItemTooltipAcceptance*'
     exclude 'dev/discraft/forge/server/InstalledLanguageAcceptance*'
     exclude 'dev/discraft/forge/server/OptionalServerAcceptance*'

@@ -60,10 +60,11 @@ public final class ServerBridge {
         if(mode.equals("test"))return true;
         return config.allows(p.getUUID());
     }
+    private static void background(Runnable work){worker.execute(BridgeWorkQueue.background(work));}
     @SubscribeEvent public static void starting(ServerAboutToStartEvent event){
         server=event.getServer();mode="disabled";config=ServerConfig.disabled();
         running=false;stopping=false;text=new ComponentText(ResourcePackIndex.empty(),"en_us");itemRenderer=null;
-        worker=new ThreadPoolExecutor(1,1,0,TimeUnit.SECONDS,new ArrayBlockingQueue<>(16),r->{var t=new Thread(r,"DisCraft server bridge");t.setDaemon(true);return t;});
+        worker=new ThreadPoolExecutor(1,1,0,TimeUnit.SECONDS,new BridgeWorkQueue(16),r->{var t=new Thread(r,"DisCraft server bridge");t.setDaemon(true);return t;});
         var startupStage=BridgeDiagnostics.Startup.CONFIG_INIT_FAILED;var configSource=BridgeDiagnostics.Source.UNRESOLVED;
         BridgeDiagnostics.startup(BridgeDiagnostics.Startup.INITIALIZING,configSource);
         try {
@@ -147,7 +148,7 @@ public final class ServerBridge {
         if(adapter==null||System.nanoTime()<nextPoll||!polling.compareAndSet(false,true))return;
         nextPoll=System.nanoTime()+2_000_000_000L;
         var active=server;var transport=adapter;
-        try {worker.execute(()->{try{var snapshot=transport.catalog();active.execute(()->{if(server==active)applyCatalog(snapshot);});for(var record:transport.poll())active.execute(()->{if(server==active)publish(record);});}
+        try {background(()->{try{var snapshot=transport.catalog();active.execute(()->{if(server==active)applyCatalog(snapshot);});for(var record:transport.poll())active.execute(()->{if(server==active)publish(record);});}
             catch(Exception unavailable){transport.failed(BridgeDiagnostics.Operation.BACKGROUND);}
             finally{polling.set(false);}});}catch(RejectedExecutionException full){polling.set(false);BridgeDiagnostics.queueFull(BridgeDiagnostics.Operation.BACKGROUND);}
     }
@@ -162,7 +163,7 @@ public final class ServerBridge {
         var ids=request.ids().stream().distinct().filter(id->{var e=guildCatalog.find(id);return e!=null&&e.usable();}).toList();if(ids.isEmpty())return;
         if(!thumbnailBusy.compareAndSet(false,true))return;
         peer.nextThumbnail=now+1_000_000_000L;nextThumbnail=now+500_000_000L;var active=server;var transport=adapter;
-        try{worker.execute(()->{try{var images=transport.thumbnails(ids);var current=transport.catalog();active.execute(()->{
+        try{background(()->{try{var images=transport.thumbnails(ids);var current=transport.catalog();active.execute(()->{
             if(server!=active||!peer.alive.get())return;applyCatalog(current);if(current.version()!=request.version())return;
             for(String id:ids)BridgeNetwork.thumbnail(player,current.version(),id,images.get(id));
         });}finally{thumbnailBusy.set(false);}});}catch(RejectedExecutionException ignored){thumbnailBusy.set(false);}

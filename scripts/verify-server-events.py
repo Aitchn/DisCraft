@@ -3,8 +3,9 @@
 from pathlib import Path
 import argparse,fcntl,json,os,signal,socket,subprocess
 ROOT=Path(__file__).resolve().parents[1]
-parser=argparse.ArgumentParser();modes=parser.add_mutually_exclusive_group();modes.add_argument('--startup-failure',action='store_true');modes.add_argument('--items',action='store_true');parser.add_argument('--vanilla-pack',type=Path);parser.add_argument('--language-pack',type=Path);args=parser.parse_args()
+parser=argparse.ArgumentParser();modes=parser.add_mutually_exclusive_group();modes.add_argument('--startup-failure',action='store_true');modes.add_argument('--items',action='store_true');parser.add_argument('--timing',action='store_true');parser.add_argument('--timing-tag',default='baseline',choices=('baseline','optimized'));parser.add_argument('--vanilla-pack',type=Path);parser.add_argument('--language-pack',type=Path);args=parser.parse_args()
 if args.vanilla_pack and not args.items:parser.error('--vanilla-pack requires --items')
+if args.timing and not args.items:parser.error('--timing requires --items')
 os.chdir(ROOT);OUT=ROOT/'build/evidence/server-events';OUT.mkdir(parents=True,exist_ok=True)
 lock=(OUT/'.runner.lock').open('w');fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
 result_name='startup-failure-result.txt' if args.startup_failure else 'items-result.txt' if args.items else 'result.txt'
@@ -19,6 +20,7 @@ if result.returncode:raise SystemExit('Server event launch preparation failed; s
 data=json.loads((ROOT/'build/mp-launch-server.json').read_text());command=data['command'];directory=ROOT/'run-mp/server-events';directory.mkdir(parents=True,exist_ok=True)
 command=command[:1]+['-Djava.awt.headless=true','-Ddiscraft.serverEventsSmoke=true','-Ddiscraft.serverEventsOutput='+str(OUT)]+command[1:]
 if args.startup_failure:command=command[:1]+['-Ddiscraft.serverEventsFailureSmoke=true']+command[1:]
+if args.timing:command=command[:1]+['-Ddiscraft.itemTimingSmoke=true','-Ddiscraft.itemTimingTag='+args.timing_tag]+command[1:]
 if args.items:command=command[:1]+['-Ddiscraft.serverItemsSmoke=true']+command[1:]
 if args.language_pack:command=command[:1]+['-Ddiscraft.languagePackEvidence='+str(args.language_pack.resolve())]+command[1:]
 if args.vanilla_pack:command=command[:1]+['-Ddiscraft.vanillaItemPack='+str(args.vanilla_pack.resolve())]+command[1:]

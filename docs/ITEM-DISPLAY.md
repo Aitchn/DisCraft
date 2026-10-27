@@ -250,3 +250,5 @@ are excluded before the eight-marker expansion limit. Variable token lengths
 remap both native and escaped Discord mention offsets. Empty hand, upload/item
 conflicts, output limits and safe native hover rules are unchanged. Expansion
 never recursively processes the generated item name.
+
+Preview.8 keeps one adapter worker and the existing 16-job capacity. Player submissions and notices retain foreground FIFO order; queued catalog/poll/thumbnail jobs run after foreground work, with a background turn after at most eight foreground jobs. Running HTTP requests are not interrupted, and Discord rate limits remain unchanged. A controlled loopback benchmark with one queued 100 ms background task reduced the actual item-render job's start wait from 101.03 ms to 0.77 ms; this is not a live Discord latency claim. The twelve generated PNG digests were unchanged. Separate local measurements found cold capture about 10 ms, warm capture median 0.76 ms, warm unique tooltip rendering about 5.38 ms, and a renderer-cache hit about 0.006 ms. A font-metrics cache experiment did not improve rendering and was discarded.
