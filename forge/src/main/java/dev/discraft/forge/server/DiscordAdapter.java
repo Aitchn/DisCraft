@@ -13,6 +13,8 @@ public interface DiscordAdapter extends AutoCloseable {
     default Map<String,Attachment> thumbnails(List<String> ids){return Map.of();}
     default void failed(BridgeDiagnostics.Operation operation){BridgeDiagnostics.failed(operation);}
     void send(RelayRecord message) throws Exception;
+    /** Explicit server-generated event route; never infer notice identity from a player display name. */
+    default void sendNotice(RelayRecord message)throws Exception{send(message);}
     List<RelayRecord> poll() throws Exception;
     @Override default void close(){}
 }

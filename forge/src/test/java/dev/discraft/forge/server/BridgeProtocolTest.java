@@ -103,6 +103,12 @@ public final class BridgeProtocolTest {
             check(captionless.text().isEmpty()&&captionless.attachments().size()==1,"REST preparation preserves captionless attachments");
             adapter.send(captionless);String imageOnly=new String(posts.get(posts.size()-1),StandardCharsets.ISO_8859_1);
             check(imageOnly.contains("files[0]")&&!imageOnly.contains("content/media unavailable"),"Captionless multipart send does not invent an unavailable-content caption");
+            var system=NoticeDelivery.record("Player has made the advancement [志向遠方]");adapter.sendNotice(system);
+            var systemPayload=JsonParser.parseString(new String(posts.get(posts.size()-1),StandardCharsets.UTF_8)).getAsJsonObject();
+            check(systemPayload.get("content").getAsString().equals(system.text())&&systemPayload.getAsJsonObject("allowed_mentions").getAsJsonArray("users").isEmpty(),"Explicit system event sends plain escaped content without an artificial Server prefix or pings");
+            adapter.send(new RelayRecord(UUID.randomUUID(),"Server","player message",List.of(),Map.of(),Map.of()));
+            var serverPlayer=JsonParser.parseString(new String(posts.get(posts.size()-1),StandardCharsets.UTF_8)).getAsJsonObject();
+            check(serverPlayer.get("content").getAsString().equals("<Server> player message"),"A player literally named Server retains the ordinary player author format");
             var target=new ActorRef(ActorRef.Kind.DISCORD,"4234567890123456","同名成員");var other=new ActorRef(ActorRef.Kind.DISCORD,"5234567890123456","同名成員");
             var sender=new ActorRef(ActorRef.Kind.MINECRAFT,UUID.randomUUID().toString(),"Alice");String prefix="<:smile:1111111111111111> ",text=prefix+target.label()+" @everyone <@6234567890123456>";
             var selected=new RelayRecord(UUID.randomUUID(),"Alice",text,List.of(),Map.of(),Map.of(),sender,List.of(new Mention(prefix.length(),prefix.length()+target.label().length(),target)));

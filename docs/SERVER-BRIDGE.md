@@ -41,7 +41,7 @@ Native `%item` expansion is configured with `itemDisplay=true`: see the
 an omitted key still means no categories in existing configurations. Existing files are not rewritten. Nothing automatically
 posts merely because the mod was upgraded or a test server was started. Player
 events follow the existing player allowlist; lifecycle notices are server-wide.
-All notices use the `Server` author prefix and have no selected mentions. Generated
+System notices have no synthetic `<Server>` author prefix and have no selected mentions; ordinary player messages retain their author prefix. Generated
 names/text escape Discord Markdown and neutralize `@` syntax. Overlong generated
 text is bounded. Delivery is best effort on the existing 16-job queue: overload,
 network failure or an uncertain POST can lose a notice; there is no automatic resend.

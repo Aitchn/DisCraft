@@ -154,7 +154,12 @@ public final class DiscordBotAdapter implements DiscordAdapter {
     private void readSucceeded(){if(!readReady){readReady=true;diagnostics.report(BridgeDiagnostics.Code.READ_READY,BridgeDiagnostics.Operation.POLL,0,BridgeDiagnostics.Terminal.NO);}}
     @Override public void send(RelayRecord message)throws Exception{sendWithReceipt(message);}
     // Receipt lets an explicit test harness read back only its own posts, without scanning history.
-    String sendWithReceipt(RelayRecord message)throws Exception{
+    @Override public void sendNotice(RelayRecord message)throws Exception{
+        if(message.actor()!=null||!message.mentions().isEmpty()||!message.attachments().isEmpty()||!message.nativeItems().isEmpty()||!message.catalog().isEmpty()||!message.emoji().isEmpty())throw new IllegalArgumentException("Invalid system notice");
+        sendWithReceipt(message,true);
+    }
+    String sendWithReceipt(RelayRecord message)throws Exception{return sendWithReceipt(message,false);}
+    private String sendWithReceipt(RelayRecord message,boolean notice)throws Exception{
         ready();var payload=new JsonObject();var text=new StringBuilder();var users=new JsonArray();var mentioned=new LinkedHashSet<String>();int at=0;
         for(var mention:message.mentions()){
             text.append(expandEmoji(message.text().substring(at,mention.start()),message.catalog()));
@@ -162,7 +167,7 @@ public final class DiscordBotAdapter implements DiscordAdapter {
             else text.append(mention.target().label());at=mention.end();
         }
         text.append(expandEmoji(message.text().substring(at),message.catalog()));mentioned.forEach(users::add);
-        payload.addProperty("content","<"+message.author()+"> "+text);
+        payload.addProperty("content",(notice?"":"<"+message.author()+"> ")+text);
         payload.addProperty("tts",false);payload.addProperty("nonce",message.id().toString().replace("-","").substring(0,24));payload.addProperty("enforce_nonce",true);
         var mentions=new JsonObject();mentions.add("parse",new JsonArray());mentions.add("users",users);payload.add("allowed_mentions",mentions);
         if(message.attachments().isEmpty())return accepted(request("POST","channels/"+channel+"/messages",payload.toString().getBytes(StandardCharsets.UTF_8),"application/json"));

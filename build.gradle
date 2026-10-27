@@ -1,6 +1,6 @@
 allprojects {
     group = 'dev.discraft'
-    version = '0.2.0-preview.7'
+    version = '0.2.0-preview.8'
 }
 subprojects {
     tasks.withType(JavaCompile).configureEach { options.encoding = 'UTF-8' }
