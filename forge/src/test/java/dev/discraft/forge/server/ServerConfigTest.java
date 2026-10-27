@@ -36,7 +36,10 @@ final class ServerConfigTest {
             Files.createDirectories(newPacks);check(DisCraftPaths.resourcePacks(root,warnings::add).equals(newPacks)&&Files.exists(oldPacks.resolve("marker")),"Empty unified resource directory wins without merging old resources");
             Path oldUploads=game.resolve("discraft-uploads"),newUploads=root.resolve("discraft/uploads");Files.createDirectories(oldUploads);
             check(DisCraftPaths.uploads(root,game,warnings::add).equals(oldUploads),"Client legacy uploads remain usable without relocation");
+            check(DisCraftPaths.uploadLabel(root,game,DisCraftPaths.uploads(root,game,warnings::add)).equals("discraft-uploads/"),"Legacy upload label follows selected directory without exposing host paths");
             Files.createDirectories(newUploads);check(DisCraftPaths.uploads(root,game,warnings::add).equals(newUploads),"Unified client uploads take priority");
+            check(DisCraftPaths.uploadLabel(root,game,DisCraftPaths.uploads(root,game,warnings::add)).equals("config/discraft/uploads/"),"Unified upload label follows selected directory without exposing host paths");
+            try{DisCraftPaths.uploadLabel(root,game,game.resolve("unrelated"));throw new AssertionError("Arbitrary path label accepted");}catch(IllegalArgumentException expected){check(!expected.getMessage().contains(game.toString()),"Unrecognized upload location cannot become a display path");}
             Files.delete(fresh);Files.createSymbolicLink(fresh,legacy);
             try{DisCraftPaths.serverConfig(root,warnings::add);throw new AssertionError("Preferred symlink accepted");}catch(IOException expected){check(true,"Preferred symlink cannot redirect credentials or trigger legacy fallback");}Files.delete(fresh);
             Files.delete(newUploads);Files.delete(newPacks);Files.delete(fresh.getParent());Files.createSymbolicLink(fresh.getParent(),root);

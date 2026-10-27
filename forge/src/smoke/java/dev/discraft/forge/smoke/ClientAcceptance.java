@@ -4,6 +4,7 @@ import com.mojang.blaze3d.platform.InputConstants;
 import dev.discraft.core.*;
 import dev.discraft.forge.*;
 import net.minecraft.client.KeyMapping;
+import net.minecraft.network.chat.Component;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.Screenshot;
 import net.minecraft.client.gui.components.Button;
@@ -31,6 +32,7 @@ public final class ClientAcceptance {
     private static int stage, ticks, checksBeforeSend;
     private static long deadline = System.nanoTime() + 240_000_000_000L;
     private static DisCraftScreen previous;
+    private static Path legacyRoot;
     private static boolean done;
     @SubscribeEvent public static void tick(TickEvent.ClientTickEvent event) {
         if (!Boolean.getBoolean("discraft.smoke") || done || event.phase != TickEvent.Phase.END) return;
@@ -60,14 +62,27 @@ public final class ClientAcceptance {
                 screen.onClose();
                 check(MC.screen instanceof TitleScreen, "Second close returns to title");
                 check(regressionFailures.isEmpty(), "Async editing regressions: " + regressionFailures);
-                Files.writeString(OUT.resolve("result.txt"), String.join("\n", checks) + "\nPASS " + checks.size() + " checks\n");
-                done = true; MC.stop(); return;
+                legacyRoot=Files.createTempDirectory(OUT,"legacy-upload-ui-");
+                Files.createDirectories(legacyRoot.resolve("discraft-uploads"));
+                var constructor=DisCraftScreen.class.getDeclaredConstructor(Screen.class,Path.class,Path.class);constructor.setAccessible(true);
+                MC.setScreen(constructor.newInstance(MC.screen,legacyRoot.resolve("config"),legacyRoot));stage=17;return;
+            }
+            if(stage==17){
+                if(!(MC.screen instanceof DisCraftScreen screen)||busy(screen))return;
+                check(((Path)field(screen,"uploadRoot")).equals(legacyRoot.resolve("discraft-uploads")),"Actual legacy-only UI reads the selected legacy upload directory");
+                check(((Component)field(edit(screen,"path"),"hint")).getString().equals("File inside discraft-uploads/"),"Legacy UI hint points to the active relative directory");
+                check(status(screen).contains("Files: discraft-uploads/")&&!status(screen).contains("config/discraft/uploads")&&!status(screen).contains(legacyRoot.toString()),"Legacy UI status never claims the new or absolute host path");
+                capture("legacy-upload-directory.png");screen.onClose();
+                try(var files=Files.walk(legacyRoot)){for(Path file:files.sorted(Comparator.reverseOrder()).toList())Files.delete(file);}
+                Files.writeString(OUT.resolve("result.txt"),String.join("\n",checks)+"\nPASS "+checks.size()+" checks\n");done=true;MC.stop();return;
             }
             if (!(MC.screen instanceof DisCraftScreen screen) || busy(screen)) return;
             var messages = session(screen).snapshot();
             switch (stage) {
                 case 1 -> {
                     check(((Path)field(screen,"uploadRoot")).equals(net.minecraftforge.fml.loading.FMLPaths.CONFIGDIR.get().resolve("discraft/uploads")), "Real client selects unified DisCraft upload directory over existing legacy data");
+                    check(((Component)field(edit(screen,"path"),"hint")).getString().equals("File inside config/discraft/uploads/"),"Unified UI hint points to the active relative directory");
+                    check(status(screen).contains("Files: config/discraft/uploads/")&&!status(screen).contains(MC.gameDirectory.getAbsolutePath()),"Unified UI status contains the selected label and no host path");
                     check(net.minecraftforge.fml.ModList.get().getModContainerById("discraft").orElseThrow().getModInfo().getDisplayName().equals("DisCraft"), "Forge displays the canonical DisCraft mod name");
                     check(messages.size() == 2 && messages.stream().allMatch(m -> m.origin() == Message.Origin.RELAY), "Initial inbound mock text and PNG/GIF attachments");
                     check(messages.get(0).attachments().get(0).media().frames().size() == 1, "Inbound PNG decoded");

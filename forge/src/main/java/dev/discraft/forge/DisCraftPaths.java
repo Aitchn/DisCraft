@@ -21,6 +21,13 @@ public final class DisCraftPaths {
     public static Path uploads(Path config,Path game,Consumer<String> warning)throws IOException{
         return choose(config.resolve("discraft/uploads"),game.resolve("discraft-uploads"),"config/discraft/uploads/","discraft-uploads/",warning);
     }
+    /** Display only a known relative label, never an operator's absolute filesystem path. */
+    public static String uploadLabel(Path config,Path game,Path selected){
+        Path actual=selected.toAbsolutePath().normalize();
+        if(actual.equals(config.resolve("discraft/uploads").toAbsolutePath().normalize()))return "config/discraft/uploads/";
+        if(actual.equals(game.resolve("discraft-uploads").toAbsolutePath().normalize()))return "discraft-uploads/";
+        throw new IllegalArgumentException("Unknown DisCraft upload location");
+    }
     private static boolean exists(Path path)throws IOException{
         try{Files.readAttributes(path,BasicFileAttributes.class,LinkOption.NOFOLLOW_LINKS);return true;}
         catch(NoSuchFileException missing){return false;}

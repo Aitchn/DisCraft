@@ -32,14 +32,20 @@ public final class DisCraftScreen extends Screen {
     private int scroll, contentHeight;
     private boolean scrollToBottom;
     private Path uploadRoot;
+    private String uploadDirectoryLabel="DisCraft upload folder";
     public DisCraftScreen(Screen parent) {
+        this(parent,net.minecraftforge.fml.loading.FMLPaths.CONFIGDIR.get(),Minecraft.getInstance().gameDirectory.toPath());
+    }
+    // Explicit roots keep location presentation independently testable with isolated local directories.
+    DisCraftScreen(Screen parent,Path configRoot,Path gameRoot) {
         super(Component.literal(Minecraft.getInstance().getConnection()==null?"DisCraft • LOCAL MOCK":"DisCraft • SERVER BRIDGE")); this.parent = parent;
         networked=Minecraft.getInstance().getConnection()!=null;
         worker.submit(() -> {
             try {
-                uploadRoot=DisCraftPaths.uploads(net.minecraftforge.fml.loading.FMLPaths.CONFIGDIR.get(),Minecraft.getInstance().gameDirectory.toPath(),DisCraftPaths::warn);
+                uploadRoot=DisCraftPaths.uploads(configRoot,gameRoot,DisCraftPaths::warn);
+                String label=DisCraftPaths.uploadLabel(configRoot,gameRoot,uploadRoot);
                 Files.createDirectories(uploadRoot);
-                if(networked){Minecraft.getInstance().execute(()->{if(!closed){busy=false;status=ClientBridge.status();}});return;}
+                if(networked){Minecraft.getInstance().execute(()->{if(!closed){applyUploadLabel(label);busy=false;status=ClientBridge.status();}});return;}
                 var loadedEmoji = new HashMap<String, Attachment>();
                 for (var definition : MockTransport.EMOJI.values())
                     loadedEmoji.put(definition.mediaKey(), Attachment.fromResource(definition.mediaKey()));
@@ -48,11 +54,16 @@ public final class DisCraftScreen extends Screen {
                 loaded.poll();
                 Minecraft.getInstance().execute(() -> {
                     if (closed) { loaded.close(); return; }
+                    applyUploadLabel(label);
                     session = loaded; emoji.putAll(loadedEmoji); busy = false;
-                    status = "Local fixture peer ready. Files: config/discraft/uploads/ (PNG/JPEG/GIF, ≤4 MiB).";
+                    status = "Local fixture peer ready. Files: "+uploadDirectoryLabel+" (PNG/JPEG/GIF, ≤4 MiB).";
                 });
             } catch (Exception failure) { finish("Fixture load failed: " + failure.getMessage()); }
         });
+    }
+    private void applyUploadLabel(String label){
+        uploadDirectoryLabel=label;
+        if(path!=null)path.setHint(Component.literal("File inside "+label));
     }
     @Override protected void init() {
         String draft = text == null ? "" : text.getValue();
@@ -62,7 +73,7 @@ public final class DisCraftScreen extends Screen {
         text.setResponder(value -> draftRevision++);
         addRenderableWidget(Button.builder(Component.literal("Send"), button -> send()).bounds(width - 82, height - 76, 70, 20).build());
         path = addRenderableWidget(new EditBox(font, 12, height - 50, Math.max(80, width - 230), 20, Component.literal("Upload filename")));
-        path.setMaxLength(240); path.setValue(file); path.setHint(Component.literal("File inside config/discraft/uploads/"));
+        path.setMaxLength(240); path.setValue(file); path.setHint(Component.literal("File inside "+uploadDirectoryLabel));
         addRenderableWidget(Button.builder(Component.literal("Attach file"), button -> attach(null)).bounds(width - 212, height - 50, 96, 20).build());
         addRenderableWidget(Button.builder(Component.literal("Demo GIF"), button -> attach("dance.gif")).bounds(width - 110, height - 50, 98, 20).build());
         addRenderableWidget(Button.builder(Component.literal(networked?"Emoji 1":":discraft:"), button -> text.insertText(networked?ClientBridge.emojiShortcut(0):":discraft:")).bounds(12, 28, 85, 20).build());
