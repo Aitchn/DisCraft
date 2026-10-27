@@ -114,3 +114,14 @@ Client preference saving uses the pinned NightConfig observed-map `putAll` API s
 Client settings acceptance additionally waits for the physical Robot task and two actual rendered frames before advancing. Every toggle and slider must visibly reach its intended draft state before Save; the final false/410×315 state, on-disk TOML and second-JVM restart remain required. Normal and `--stress-input` runs keep separate evidence. No original assertion or timeout was weakened.
 
 ChatPlus scroll/spoiler acceptance waits for two completed render frames after scroll/reset, then checks the real positive scrollbar and completed-frame sprite count. Failure diagnostics include requested/current scroll, completed/current sprites, frame count and fixture-record counts; a full original-resolution failure capture is retained. The older phase-96 failure did not identify which side of its combined assertion failed, so its exact historical cause cannot be inferred from a later passing run.
+
+The delayed-TEST-peer regression reproduces the later phase-96 race without changing
+production rendering: the local adapter holds the final attachment echo for four
+seconds. Before the fix, the actual pinned ChatPlus history had 16 displayed rows
+and a 19-row viewport, so `scrollChat(3)` correctly clamped to zero. Waiting a
+fixed number of ticks after the sender's own record did not imply receipt of the
+peer's echo. The fixture now waits for that exact TEST attachment echo and two
+completed frames, asserts that displayed history exceeds the real viewport, and
+then requires positive scroll and completed-frame sprites as before. The delay
+wrapper is TEST-only and excluded from the distributable JAR. This identifies
+the reproduced race, without assigning an unobserved cause to older failures.
