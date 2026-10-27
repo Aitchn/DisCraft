@@ -26,7 +26,7 @@ for key in ('discord_token','discord_channel','DISCRAFT_DISCORD_BOT_TOKEN','DISC
 environment.update(LIBGL_ALWAYS_SOFTWARE='true',ALSOFT_DRIVERS='null',LP_NUM_THREADS='2')
 for role in ('server','Alice'):
  with (OUT/(role+'-prepare.log')).open('w') as output:
-  result=subprocess.run(['./gradlew','-Pforge','-PmultiplayerSmoke']+(['-PcompatNcr'] if args.ncr else [])+['-PbridgeRole='+role,':forge:exportBridgeLaunch',':forge:optionalClientClasses','--console=plain'],env=environment,stdout=output,stderr=subprocess.STDOUT,timeout=300)
+  result=subprocess.run(['./gradlew','-Pforge','-PmultiplayerSmoke']+(['-PcompatNcr'] if args.ncr else [])+['-PbridgeRole='+role,':forge:exportBridgeLaunch',':forge:optionalClientClasses']+([':forge:createMcpToSrg'] if args.ncr else [])+['--console=plain'],env=environment,stdout=output,stderr=subprocess.STDOUT,timeout=300)
  if result.returncode:raise SystemExit('Optional launch preparation failed; see local prepare log')
 if args.ncr:
  # Published mixin refmaps use SRG selectors; the userdev runtime uses named methods.
