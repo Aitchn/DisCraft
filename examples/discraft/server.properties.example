@@ -24,7 +24,8 @@ itemDisplay=true
 # Mod item tooltips. A DisCraft client may report the tooltip lines it renders
 # (mod/client tooltip events included); the server re-renders them in its own style.
 #   strict  = accept only if id, count, name and every server-computed line match (default)
-#   lenient = accept if id, count and name match (for mods that rewrite vanilla lines)
+#   lenient = accept if id and count match (for mods that rename items or rewrite
+#             vanilla lines, e.g. Mine and Slash gear)
 #   off     = never use client lines
 itemTooltipClient=strict
 # Also run the item's own server-side tooltip code (appendHoverText, common tooltip

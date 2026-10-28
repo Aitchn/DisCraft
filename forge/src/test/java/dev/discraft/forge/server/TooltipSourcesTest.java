@@ -21,8 +21,10 @@ final class TooltipSourcesTest {
         check(!TooltipSources.extendsBase(base,altered)&&TooltipSources.select(base,altered,null,strict,false)==base,"A changed server line rejects a strict client report");
         var dropped=tooltip("Shell Horn","Summons Captain Cornelia.","Aquamirae");
         check(TooltipSources.select(base,dropped,null,strict,false)==base,"A removed server line rejects a strict client report");
-        check(TooltipSources.select(base,dropped,null,lenient,false)==dropped,"Lenient mode only requires the same item name");
-        check(TooltipSources.select(base,tooltip("Fake Name","Summons Captain Cornelia."),null,lenient,false)==base,"Even lenient mode rejects a different item name");
+        check(TooltipSources.select(base,dropped,null,lenient,false)==dropped,"Lenient mode accepts a report that drops vanilla lines");
+        var renamed=tooltip("Reinforced Leather Chestplate of the Snake","✔ Level 12","+8 Armor","Prefix: Reinforced");
+        check(TooltipSources.select(base,renamed,null,lenient,false)==renamed,"Lenient mode accepts a mod that renames the item and rewrites its lines (Mine and Slash gear)");
+        check(TooltipSources.select(base,renamed,null,strict,false)==base,"Strict mode still rejects a renamed item");
         check(TooltipSources.select(base,altered,richer,strict,false)==richer,"Native capture is the fallback when the client report is rejected");
         check(TooltipSources.select(base,null,altered,strict,false)==base,"Native capture must also extend the whitelist");
         var damaged=tooltip("Shell Horn","Sharpness V","Durability: 10 / 20");

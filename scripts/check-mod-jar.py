@@ -65,6 +65,8 @@ with zipfile.ZipFile(jar) as archive:
         'assets/discraft/font/ui.json',
         'assets/discraft/font/ui.otf',
         'assets/discraft/font/ofl.txt',
+        'assets/discraft/font/symbols.ttf',
+        'assets/discraft/font/symbols-ofl.txt',
         'dev/discraft/forge/server/DiscordBotAdapter.class',
         'dev/discraft/forge/server/DiscordGateway.class',
         'dev/discraft/forge/server/NativeConvertedPresentation.class',

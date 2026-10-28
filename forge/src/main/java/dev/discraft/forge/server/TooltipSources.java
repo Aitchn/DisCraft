@@ -22,7 +22,9 @@ final class TooltipSources {
         // separately and re-appended from the server value.
         var core=durability&&base.lines().size()>1?new ItemTooltip(base.lines().subList(0,base.lines().size()-1)):base;
         var extra=core==base?null:base.lines().get(base.lines().size()-1);
-        if(client!=null&&(mode==ServerConfig.ClientTooltips.LENIENT?sameTitle(core,client):extendsBase(core,client)))return with(client,extra);
+        // Lenient trusts the sender's own tooltip whole (ID and count are checked in client()): mods such as Mine and Slash
+        // rename the item and replace the vanilla attribute lines, so neither the title nor the base lines can match.
+        if(client!=null&&(mode==ServerConfig.ClientTooltips.LENIENT||extendsBase(core,client)))return with(client,extra);
         if(nativeLines!=null&&extendsBase(core,nativeLines))return with(nativeLines,extra);
         return base;
     }
