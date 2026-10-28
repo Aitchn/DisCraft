@@ -94,6 +94,16 @@ final class DiscordGatewayTest {
             records=adapter.poll();check(gets.get()==down+1&&records.size()==1&&records.get(0).text().equals("hello "+b),"REST polling takes over while the Gateway is down");
             f.advance(60001);f.gateway.tick();f.hello();f.input("{\"op\":0,\"s\":6,\"t\":\"RESUMED\",\"d\":{}}");f.input("{\"op\":0,\"s\":7,\"t\":\"MESSAGE_CREATE\",\"d\":"+message.apply(b)+"}");
             rest.set("[]");records=adapter.poll();check(records.isEmpty(),"A message seen by REST during the outage is not duplicated by the resumed Gateway");
+            // More than one batch queued: nothing may be skipped, and a full REST page keeps catch-up active.
+            f.listener.closed(4000);f.gateway.tick();var burst=new ArrayList<String>();for(int i=0;i<12;i++)burst.add("52345678901240"+(10+i));
+            f.advance(60001);f.gateway.tick();f.hello();f.input("{\"op\":0,\"s\":8,\"t\":\"RESUMED\",\"d\":{}}");int seq=9;
+            for(String id:burst)f.input("{\"op\":0,\"s\":"+(seq++)+",\"t\":\"MESSAGE_CREATE\",\"d\":"+message.apply(id)+"}");
+            rest.set("["+message.apply("5234567890124099")+"]");var got=new ArrayList<String>();for(int i=0;i<4;i++)adapter.poll().forEach(r->got.add(r.text()));
+            var want=new ArrayList<String>();burst.forEach(id->want.add("hello "+id));want.add("hello 5234567890124099");
+            check(got.equals(want),"A newer REST message cannot advance the cursor past still-queued Gateway messages");
+            f.listener.closed(4000);f.gateway.tick();f.advance(120001);f.gateway.tick();f.hello();f.input("{\"op\":0,\"s\":30,\"t\":\"RESUMED\",\"d\":{}}");
+            var bots=new StringBuilder("[");for(int i=1;i<=4;i++)bots.append(i>1?",":"").append("{\"id\":\"623456789000000"+i+"\",\"author\":{\"bot\":true,\"id\":\"6234567890123456\"}}");rest.set(bots.append("]").toString());
+            int full=gets.get();adapter.poll();adapter.poll();check(gets.get()==full+2,"A full REST page keeps catch-up active until history is exhausted");rest.set("[]");adapter.poll();
             int settled=gets.get();adapter.poll();check(gets.get()==settled,"REST stops polling once the post-outage catch-up completes");
         }finally{server.stop(0);}
     }

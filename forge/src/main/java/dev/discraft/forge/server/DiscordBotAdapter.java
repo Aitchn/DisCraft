@@ -26,6 +26,7 @@ public final class DiscordBotAdapter implements DiscordAdapter {
     // Gateway ingress: bounded queue of raw MESSAGE_CREATE payloads, drained by poll() on the bridge worker.
     private static final int PUSH_QUEUE=64,PUSH_BATCH=8;
     private final ConcurrentLinkedQueue<JsonObject> pushed=new ConcurrentLinkedQueue<>();private final java.util.concurrent.atomic.AtomicInteger pushedSize=new java.util.concurrent.atomic.AtomicInteger();
+    private final java.util.concurrent.ConcurrentSkipListMap<java.math.BigInteger,JsonObject> backlog=new java.util.concurrent.ConcurrentSkipListMap<>();
     private volatile boolean gatewayLive,catchUp=true;private final java.util.concurrent.atomic.AtomicLong downEpoch=new java.util.concurrent.atomic.AtomicLong();
     private boolean gatewayWanted,gatewayUnavailable;private long nextGatewayDiscovery;private DiscordGateway gateway;
     private final ExecutorService io=Executors.newFixedThreadPool(2,r->{var t=new Thread(r,"DisCraft HTTP");t.setDaemon(true);return t;});
@@ -146,7 +147,7 @@ public final class DiscordBotAdapter implements DiscordAdapter {
         if(pushedSize.incrementAndGet()>PUSH_QUEUE){pushedSize.decrementAndGet();downEpoch.incrementAndGet();catchUp=true;return;}
         pushed.add(message);
     }
-    @Override public boolean hasPending(){long now=System.nanoTime();return !pushed.isEmpty()&&now>=nextPoll&&now>=blockedUntil;}
+    @Override public boolean hasPending(){long now=System.nanoTime();return (!pushed.isEmpty()||!backlog.isEmpty())&&now>=nextPoll&&now>=blockedUntil;}
     void gatewayStatus(DiscordGateway.Status status){
         if(status==DiscordGateway.Status.READY||status==DiscordGateway.Status.RESUMED)gatewayLive=true;
         else if(status!=DiscordGateway.Status.CONNECTING||gatewayLive){gatewayLive=false;catchUp=true;downEpoch.incrementAndGet();}
@@ -221,13 +222,15 @@ public final class DiscordBotAdapter implements DiscordAdapter {
             if(rest){
                 response=array(request("GET","channels/"+channel+"/messages?limit="+(cursor==null?1:4)+(cursor==null?"":"&after="+cursor),null,null),BridgeDiagnostics.Operation.POLL);
                 if(response.size()>4)throw new IOException("Discord page budget exceeded");
-                if(cursor==null){cursor=response.isEmpty()?"0":response.get(0).getAsJsonObject().get("id").getAsString();if(!cursor.matches("[0-9]{1,22}"))throw new IOException("Invalid cursor");pushed.clear();pushedSize.set(0);readSucceeded();return records;}
+                if(cursor==null){cursor=response.isEmpty()?"0":response.get(0).getAsJsonObject().get("id").getAsString();if(!cursor.matches("[0-9]{1,22}"))throw new IOException("Invalid cursor");pushed.clear();pushedSize.set(0);backlog.clear();readSucceeded();return records;}
             }
             memberAttempts=0;memberNanosRemaining=TimeUnit.SECONDS.toNanos(2);
-            // One id-keyed map deduplicates the two paths; the cursor then rejects anything already delivered.
-            var byId=new TreeMap<java.math.BigInteger,JsonObject>();response.forEach(e->{var o=e.getAsJsonObject();byId.putIfAbsent(new java.math.BigInteger(o.get("id").getAsString()),o);});
-            for(int n=0;n<PUSH_BATCH;n++){var m=pushed.poll();if(m==null)break;pushedSize.decrementAndGet();byId.putIfAbsent(new java.math.BigInteger(m.get("id").getAsString()),m);}
-            var sorted=new ArrayList<JsonObject>(byId.values());
+            // One id-keyed backlog deduplicates both paths. Only the oldest PUSH_BATCH messages are taken, and the cursor
+            // advances solely through taken ids, so undelivered newer or older queued messages are never skipped.
+            for(var e:response){var o=e.getAsJsonObject();backlog.putIfAbsent(new java.math.BigInteger(o.get("id").getAsString()),o);}
+            for(JsonObject m;(m=pushed.poll())!=null;){pushedSize.decrementAndGet();backlog.putIfAbsent(new java.math.BigInteger(m.get("id").getAsString()),m);}
+            var floor=new java.math.BigInteger(cursor);var sorted=new ArrayList<JsonObject>();
+            for(var it=backlog.entrySet().iterator();it.hasNext()&&sorted.size()<PUSH_BATCH;){var entry=it.next();it.remove();if(entry.getKey().compareTo(floor)>0)sorted.add(entry.getValue());}
             for(var m:sorted){
                 String id=m.get("id").getAsString();if(!id.matches("[0-9]{1,22}")||new java.math.BigInteger(id).compareTo(new java.math.BigInteger(cursor))<=0)continue;
                 try{
@@ -238,7 +241,7 @@ public final class DiscordBotAdapter implements DiscordAdapter {
                 }catch(Exception malformed){/* Skip one malformed/unsupported event; never poison the polling cursor. */}
                 finally{cursor=id;}
             }
-            if(rest&&gatewayLive&&downEpoch.get()==epoch)catchUp=false;
+            if(rest&&response.size()<4&&gatewayLive&&downEpoch.get()==epoch)catchUp=false; // a full page means history may continue
             failures=0;nextPoll=0;readSucceeded();return records;
         }catch(Exception unavailable){readReady=false;failed(BridgeDiagnostics.Operation.POLL);failures=Math.min(6,failures+1);nextPoll=System.nanoTime()+Math.min(60,1L<<failures)*1_000_000_000L;throw new IOException("Discord polling temporarily unavailable");}
     }
