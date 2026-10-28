@@ -17,6 +17,25 @@ final class HeadlessItemRenderer {
     private record Face(Vec[] vertices,double[] uv,BufferedImage texture,double light,int tint,double depth){}
     private final ItemTooltipRenderer tooltipRenderer;
     ItemTooltipRenderer.Result tooltip(ItemSnapshot item)throws Exception{return tooltipRenderer.render(item.tooltip());}
+    static final int SLOT=80,SLOT_GAP=6,ICON=64;
+    /** Minecraft-style tooltip with the item's model icon in a matching slot on its left; falls back to the bare tooltip if the model is unsupported. */
+    Attachment card(ItemSnapshot item)throws Exception{
+        var tooltip=tooltipRenderer.render(item.tooltip());
+        var rendered=render(item);
+        if(!rendered.status().equals("Standard model"))return tooltip.attachment();
+        var source=ImageIO.read(new ByteArrayInputStream(rendered.attachment().bytes())).getSubimage(56,4,176,176);
+        var tip=ImageIO.read(new ByteArrayInputStream(tooltip.attachment().bytes()));
+        int width=SLOT+SLOT_GAP+tip.getWidth(),height=Math.max(SLOT,tip.getHeight());
+        var out=new BufferedImage(width,height,BufferedImage.TYPE_INT_ARGB);var g=out.createGraphics();
+        try{
+            g.setRenderingHint(RenderingHints.KEY_INTERPOLATION,RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+            g.setColor(new Color(16,0,16));g.fillRect(1,1,SLOT-2,SLOT-2);g.setColor(new Color(36,0,56));g.drawRect(0,0,SLOT-1,SLOT-1);g.setPaint(new GradientPaint(0,1,new Color(92,32,148),0,SLOT-2,new Color(42,11,72)));g.drawRect(2,2,SLOT-5,SLOT-5);
+            g.drawImage(source,(SLOT-ICON)/2,(SLOT-ICON)/2,ICON,ICON,null);g.drawImage(tip,SLOT+SLOT_GAP,0,null);
+        }finally{g.dispose();}
+        var bytes=new ByteArrayOutputStream();ImageIO.write(out,"png",bytes);
+        if(bytes.size()>256*1024)return tooltip.attachment();
+        return Attachment.of("item.png",bytes.toByteArray());
+    }
     private final ResourcePackIndex resources;private final ResourceImages images;private final PackBitmapFont font;
     private final Map<String,JsonObject> models=new LinkedHashMap<>(16,.75f,true);
     private final Map<ItemSnapshot,Result> cache=new LinkedHashMap<>(32,.75f,true);

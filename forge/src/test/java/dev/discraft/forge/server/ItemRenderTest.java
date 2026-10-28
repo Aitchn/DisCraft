@@ -34,6 +34,11 @@ final class ItemRenderTest {
             check(uv0.getRGB(105,53)==0xffff2020&&uv90.getRGB(105,53)==0xff2020ff,"Explicit face UV and 90-degree UV rotation preserve distinguishable corner colors");
             for(String id:List.of("test:loader","test:cycle","test:missing","test:texture_cycle","test:predicate"))check(renderer.render(item(id,0,"minecraft:default")).status().equals("Model unavailable / unsupported"),"Missing or unsupported model uses a labelled fallback: "+id);
             var custom=renderer.render(item("minecraft:diamond_sword",1,"test:custom"));image=ImageIO.read(new ByteArrayInputStream(custom.attachment().bytes()));boolean orange=false;for(int y=180;y<203;y++)for(int x=12;x<70;x++)orange|=image.getRGB(x,y)==0xffff8000;
+            var withIcon=renderer.card(item("minecraft:diamond_sword",0,"minecraft:default"));var cardImage=ImageIO.read(new ByteArrayInputStream(withIcon.bytes()));var tipOnly=renderer.tooltip(item("minecraft:diamond_sword",0,"minecraft:default"));
+            check(cardImage.getWidth()==HeadlessItemRenderer.SLOT+HeadlessItemRenderer.SLOT_GAP+tipOnly.width()&&cardImage.getHeight()>=Math.max(HeadlessItemRenderer.SLOT,tipOnly.height())&&withIcon.bytes().length<=256*1024,"Discord item card adds an icon slot beside the unchanged tooltip within the media budget");
+            boolean iconInk=false;for(int y=20;y<60;y++)for(int x=20;x<60;x++)iconInk|=(cardImage.getRGB(x,y)&0xffffff)==0xff2020;
+            check(iconInk,"Item card slot contains the rendered model icon");
+            check(renderer.card(item("test:missing",0,"minecraft:default")).bytes().length==renderer.tooltip(item("test:missing",0,"minecraft:default")).attachment().bytes().length,"Unsupported models fall back to the bare tooltip image");
             Path evidence=Path.of("../build/evidence/items");Files.createDirectories(evidence);Files.write(evidence.resolve("bitmap-font-card.png"),custom.attachment().bytes());
             check(orange&&!custom.fontFallback(),"Imported bitmap glyphs render through reference and space providers");
             check(renderer.render(item("minecraft:diamond_sword",0,"test:cycle")).fontFallback()&&renderer.render(item("minecraft:diamond_sword",0,"test:unsupported")).fontFallback(),"Cyclic and unsupported font providers report fallback without hanging");
