@@ -16,5 +16,7 @@ public interface DiscordAdapter extends AutoCloseable {
     /** Explicit server-generated event route; never infer notice identity from a player display name. */
     default void sendNotice(RelayRecord message)throws Exception{send(message);}
     List<RelayRecord> poll() throws Exception;
+    /** True when a push transport has queued messages, so the bridge need not wait for its REST poll interval. */
+    default boolean hasPending(){return false;}
     @Override default void close(){}
 }

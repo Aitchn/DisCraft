@@ -9,7 +9,7 @@ import java.util.concurrent.*;
 import java.util.concurrent.atomic.*;
 import java.util.function.*;
 
-/** Presence/session only. REST remains the sole message ingress; no gateway message is relayed. */
+/** Primary Discord message ingress: session lifecycle plus MESSAGE_CREATE dispatch to a bounded sink. REST polling is only the adapter's fallback. */
 final class DiscordGateway implements AutoCloseable {
     enum State { STOPPED, CONNECTING, HELLO, IDENTIFYING, RESUMING, READY, BACKOFF, TERMINAL }
     enum Status { CONNECTING, READY, RESUMED, ACK_TIMEOUT, RECONNECTING, IDENTIFY_LIMIT, INVALID_SESSION, TERMINAL, AUTH_FAILURE, CONFIG_FAILURE, BOUNDS, TRANSPORT, STOPPED }
@@ -21,17 +21,20 @@ final class DiscordGateway implements AutoCloseable {
     interface Connector {void connect(URI uri,Listener listener);}
     private record Input(long generation,int kind,String text,int code,Socket socket){}
     static final int FRAME=262144,QUEUE=16,TOTAL_CHARS=524288;
-    private final String token,botId;private final Connector connector;private final LongSupplier clock;private final DoubleSupplier jitter;private final Consumer<Status> report;
+    /** GUILD_MESSAGES (1<<9) and the privileged MESSAGE_CONTENT (1<<15); the latter must be enabled in the Developer Portal or Discord closes with 4014. */
+    static final int INTENTS=(1<<9)|(1<<15);
+    private final String token,botId;private final Connector connector;private final LongSupplier clock;private final DoubleSupplier jitter;private final Consumer<Status> report;private final Consumer<JsonObject> dispatch;
     private final ArrayBlockingQueue<Input> inputs=new ArrayBlockingQueue<>(QUEUE);private final AtomicInteger chars=new AtomicInteger();private final AtomicBoolean overflow=new AtomicBoolean();
     private final ScheduledThreadPoolExecutor loop;
     private State state=State.STOPPED;private Info info;private Socket socket;private long generation,sequence=-1,deadline,nextBeat,interval,ackDeadline,nextConnect,identifyAfter;private boolean awaitingAck,needsInfo,closed;
     private String session="";private URI resume;private int failures,remaining,identifies,sent;private long dailyReset,sentWindow,identifyNotBefore;
-    DiscordGateway(String token,String botId,Connector connector,LongSupplier clock,DoubleSupplier jitter,Consumer<Status> report,boolean automatic){
-        this.token=token;this.botId=botId;this.connector=connector;this.clock=clock;this.jitter=jitter;this.report=report;
+    DiscordGateway(String token,String botId,Connector connector,LongSupplier clock,DoubleSupplier jitter,Consumer<Status> report,boolean automatic){this(token,botId,connector,clock,jitter,report,automatic,d->{});}
+    DiscordGateway(String token,String botId,Connector connector,LongSupplier clock,DoubleSupplier jitter,Consumer<Status> report,boolean automatic,Consumer<JsonObject> dispatch){
+        this.token=token;this.botId=botId;this.connector=connector;this.clock=clock;this.jitter=jitter;this.report=report;this.dispatch=Objects.requireNonNull(dispatch);
         loop=automatic?new ScheduledThreadPoolExecutor(1,r->{var t=new Thread(r,"DisCraft gateway");t.setDaemon(true);return t;}):null;
         if(loop!=null)loop.setRemoveOnCancelPolicy(true);
     }
-    static DiscordGateway production(String token,String botId,HttpClient http,Consumer<Status> report){return new DiscordGateway(token,botId,jdk(http),()->TimeUnit.NANOSECONDS.toMillis(System.nanoTime()),Math::random,report,true);}
+    static DiscordGateway production(String token,String botId,HttpClient http,Consumer<Status> report,Consumer<JsonObject> dispatch){return new DiscordGateway(token,botId,jdk(http),()->TimeUnit.NANOSECONDS.toMillis(System.nanoTime()),Math::random,report,true,dispatch);}
     static URI endpoint(URI uri){
         String host=uri.getHost();if(!"wss".equals(uri.getScheme())||host==null||!host.matches("gateway(?:-[a-z0-9-]+)?\\.discord\\.gg")||uri.getUserInfo()!=null||uri.getRawQuery()!=null||uri.getRawFragment()!=null||(uri.getPort()!=-1&&uri.getPort()!=443)||!(uri.getPath().isEmpty()||uri.getPath().equals("/")))throw new IllegalArgumentException("Unsupported gateway endpoint");return uri;
     }
@@ -67,13 +70,14 @@ final class DiscordGateway implements AutoCloseable {
         switch(op){
             case 10->{if(state!=State.HELLO)throw new IllegalArgumentException();interval=number(root.getAsJsonObject("d").get("heartbeat_interval"),1000,300000);nextBeat=now+(long)(interval*random());deadline=now+30000;
                 var payload=new JsonObject();if(!session.isEmpty()&&resume!=null){payload.addProperty("op",6);var d=new JsonObject();d.addProperty("token",token);d.addProperty("session_id",session);d.addProperty("seq",sequence);payload.add("d",d);state=State.RESUMING;}
-                else{if(remaining<=0||identifies>=50){fail(Status.IDENTIFY_LIMIT,true,1000);return;}remaining--;identifies++;identifyNotBefore=now+5500;payload.addProperty("op",2);var d=new JsonObject();d.addProperty("token",token);d.addProperty("intents",0);var properties=new JsonObject();properties.addProperty("os","java");properties.addProperty("browser","DisCraft");properties.addProperty("device","DisCraft");d.add("properties",properties);var presence=new JsonObject();presence.add("since",JsonNull.INSTANCE);presence.add("activities",new JsonArray());presence.addProperty("status","online");presence.addProperty("afk",false);d.add("presence",presence);payload.add("d",d);state=State.IDENTIFYING;}send(payload);}
+                else{if(remaining<=0||identifies>=50){fail(Status.IDENTIFY_LIMIT,true,1000);return;}remaining--;identifies++;identifyNotBefore=now+5500;payload.addProperty("op",2);var d=new JsonObject();d.addProperty("token",token);d.addProperty("intents",INTENTS);var properties=new JsonObject();properties.addProperty("os","java");properties.addProperty("browser","DisCraft");properties.addProperty("device","DisCraft");d.add("properties",properties);var presence=new JsonObject();presence.add("since",JsonNull.INSTANCE);presence.add("activities",new JsonArray());presence.addProperty("status","online");presence.addProperty("afk",false);d.add("presence",presence);payload.add("d",d);state=State.IDENTIFYING;}send(payload);}
             case 11->awaitingAck=false;
             case 1->{if(socket==null||interval==0)throw new IllegalArgumentException();beat(now);}
             case 7->fail(Status.RECONNECTING,false,1000);
             case 9->{if(!root.get("d").isJsonPrimitive()||!root.getAsJsonPrimitive("d").isBoolean())throw new IllegalArgumentException();boolean resumable=root.get("d").getAsBoolean();fail(Status.INVALID_SESSION,!resumable,1000+(long)(4000*random()));}
-            case 0->{String event=root.get("t").getAsString();if(event.equals("READY")){if(state!=State.IDENTIFYING)throw new IllegalArgumentException();var data=root.getAsJsonObject("d");String id=data.getAsJsonObject("user").get("id").getAsString();String value=data.get("session_id").getAsString();URI url=endpoint(URI.create(data.get("resume_gateway_url").getAsString()));if(!id.equals(botId)||!value.matches("[A-Za-z0-9._-]{1,256}"))throw new IllegalArgumentException();session=value;resume=url;state=State.READY;failures=0;report.accept(Status.READY);}else if(event.equals("RESUMED")){if(state!=State.RESUMING)throw new IllegalArgumentException();state=State.READY;failures=0;report.accept(Status.RESUMED);}}
-            default->{/* No event/presence/member/message state is retained or delivered. */}
+            case 0->{String event=root.get("t").getAsString();if(event.equals("READY")){if(state!=State.IDENTIFYING)throw new IllegalArgumentException();var data=root.getAsJsonObject("d");String id=data.getAsJsonObject("user").get("id").getAsString();String value=data.get("session_id").getAsString();URI url=endpoint(URI.create(data.get("resume_gateway_url").getAsString()));if(!id.equals(botId)||!value.matches("[A-Za-z0-9._-]{1,256}"))throw new IllegalArgumentException();session=value;resume=url;state=State.READY;failures=0;report.accept(Status.READY);}else if(event.equals("RESUMED")){if(state!=State.RESUMING)throw new IllegalArgumentException();state=State.READY;failures=0;report.accept(Status.RESUMED);}
+                else if(event.equals("MESSAGE_CREATE")&&(state==State.READY||state==State.RESUMING)&&root.get("d").isJsonObject()){try{dispatch.accept(root.getAsJsonObject("d"));}catch(RuntimeException sinkFailure){/* A consumer fault must not tear down the session. */}}}
+            default->{/* Only MESSAGE_CREATE is forwarded; no other event state is retained. */}
         }
     }
     private void beat(long now){var p=new JsonObject();p.addProperty("op",1);if(sequence<0)p.add("d",JsonNull.INSTANCE);else p.addProperty("d",sequence);send(p);if(!awaitingAck){awaitingAck=true;ackDeadline=now+interval;}}

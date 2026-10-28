@@ -158,7 +158,7 @@ public final class ServerBridge {
             notice("advancement",Component.translatable("chat.type.advancement."+display.getFrame().getName(),p.getDisplayName().copy(),advancement.getChatComponent().copy()));
         }advancements.clear();
         transfers.entrySet().removeIf(e->{if(System.nanoTime()-e.getValue().started<15_000_000_000L)return false;var p=server.getPlayerList().getPlayer(e.getKey());if(p!=null)BridgeNetwork.notice(p,e.getValue().id,false,"Upload expired");return true;});
-        if(adapter==null||System.nanoTime()<nextPoll||!polling.compareAndSet(false,true))return;
+        if(adapter==null||System.nanoTime()<nextPoll&&!adapter.hasPending()||!polling.compareAndSet(false,true))return;
         nextPoll=System.nanoTime()+2_000_000_000L;
         var active=server;var transport=adapter;
         try {background(()->{try{var snapshot=transport.catalog();active.execute(()->{if(server==active)applyCatalog(snapshot);});for(var record:transport.poll())active.execute(()->{if(server==active)publish(record);});}

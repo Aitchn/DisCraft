@@ -14,7 +14,7 @@ import java.util.concurrent.*;
 import java.util.concurrent.Flow;
 import java.util.regex.Pattern;
 
-/** Official Bot REST v10 message ingress/egress with an independent minimal Gateway presence session. */
+/** Official Bot REST v10 egress; ingress is Gateway MESSAGE_CREATE, with REST polling only while the Gateway is not live. */
 public final class DiscordBotAdapter implements DiscordAdapter {
     private final String token,channel;
     private final URI api;
@@ -23,6 +23,10 @@ public final class DiscordBotAdapter implements DiscordAdapter {
     private final BridgeDiagnostics gatewayDiagnostics;
     private java.util.function.Function<DiscordGateway.Info,DiscordGateway> testGateway;
     private boolean readReady;
+    // Gateway ingress: bounded queue of raw MESSAGE_CREATE payloads, drained by poll() on the bridge worker.
+    private static final int PUSH_QUEUE=64,PUSH_BATCH=8;
+    private final ConcurrentLinkedQueue<JsonObject> pushed=new ConcurrentLinkedQueue<>();private final java.util.concurrent.atomic.AtomicInteger pushedSize=new java.util.concurrent.atomic.AtomicInteger();
+    private volatile boolean gatewayLive,catchUp=true;private final java.util.concurrent.atomic.AtomicLong downEpoch=new java.util.concurrent.atomic.AtomicLong();
     private boolean gatewayWanted,gatewayUnavailable;private long nextGatewayDiscovery;private DiscordGateway gateway;
     private final ExecutorService io=Executors.newFixedThreadPool(2,r->{var t=new Thread(r,"DisCraft HTTP");t.setDaemon(true);return t;});
     private final HttpClient http;
@@ -133,10 +137,19 @@ public final class DiscordBotAdapter implements DiscordAdapter {
         try{var value=object(request("GET","gateway/bot",null,null),BridgeDiagnostics.Operation.GATEWAY);if(value.get("shards").getAsInt()!=1){gatewayUnavailable=true;gatewayStatus(DiscordGateway.Status.TERMINAL);return;}
             var limit=value.getAsJsonObject("session_start_limit");if(limit.get("max_concurrency").getAsInt()<1)throw new IOException("Gateway discovery unavailable");
             var info=new DiscordGateway.Info(URI.create(value.get("url").getAsString()),limit.get("remaining").getAsInt(),limit.get("reset_after").getAsLong());
-            synchronized(this){if(closed||terminal)return;if(gateway==null){gateway=localTest?testGateway.apply(info):DiscordGateway.production(token,botId,http,this::gatewayStatus);gateway.start(info);}else gateway.discovery(info);}
+            synchronized(this){if(closed||terminal)return;if(gateway==null){gateway=localTest?testGateway.apply(info):DiscordGateway.production(token,botId,http,this::gatewayStatus,this::pushed);gateway.start(info);}else gateway.discovery(info);}
         }catch(Exception unavailable){gatewayStatus(DiscordGateway.Status.TRANSPORT);}
     }
-    private void gatewayStatus(DiscordGateway.Status status){
+    /** Gateway thread: accept only this channel's messages; overflow degrades to REST catch-up rather than blocking the session. */
+    void pushed(JsonObject message){
+        try{if(closed||terminal||!message.has("id")||!message.has("channel_id")||!channel.equals(message.get("channel_id").getAsString())||!message.get("id").getAsString().matches("[0-9]{1,22}"))return;}catch(RuntimeException malformed){return;}
+        if(pushedSize.incrementAndGet()>PUSH_QUEUE){pushedSize.decrementAndGet();downEpoch.incrementAndGet();catchUp=true;return;}
+        pushed.add(message);
+    }
+    @Override public boolean hasPending(){long now=System.nanoTime();return !pushed.isEmpty()&&now>=nextPoll&&now>=blockedUntil;}
+    void gatewayStatus(DiscordGateway.Status status){
+        if(status==DiscordGateway.Status.READY||status==DiscordGateway.Status.RESUMED)gatewayLive=true;
+        else if(status!=DiscordGateway.Status.CONNECTING||gatewayLive){gatewayLive=false;catchUp=true;downEpoch.incrementAndGet();}
         var code=switch(status){case CONNECTING->BridgeDiagnostics.Code.GATEWAY_CONNECTING;case READY,RESUMED->BridgeDiagnostics.Code.GATEWAY_READY;case IDENTIFY_LIMIT->BridgeDiagnostics.Code.GATEWAY_LIMIT;case TERMINAL->BridgeDiagnostics.Code.GATEWAY_TERMINAL;case AUTH_FAILURE->BridgeDiagnostics.Code.GATEWAY_AUTH;case CONFIG_FAILURE->BridgeDiagnostics.Code.GATEWAY_CONFIG;case ACK_TIMEOUT->BridgeDiagnostics.Code.GATEWAY_ACK_TIMEOUT;case STOPPED->BridgeDiagnostics.Code.GATEWAY_STOPPED;default->BridgeDiagnostics.Code.GATEWAY_RECONNECT;};
         gatewayDiagnostics.report(code,BridgeDiagnostics.Operation.GATEWAY,0,Set.of(DiscordGateway.Status.TERMINAL,DiscordGateway.Status.AUTH_FAILURE,DiscordGateway.Status.CONFIG_FAILURE).contains(status)?BridgeDiagnostics.Terminal.YES:BridgeDiagnostics.Terminal.NO);
     }
@@ -175,9 +188,16 @@ public final class DiscordBotAdapter implements DiscordAdapter {
         String name=file.name().replaceAll("[^A-Za-z0-9_.-]","_");if(name.length()>80)name=name.substring(0,80);
         var files=new JsonArray();var description=new JsonObject();description.addProperty("id",0);description.addProperty("filename",name);description.addProperty("is_spoiler",file.name().startsWith("SPOILER_"));files.add(description);payload.add("attachments",files);
         String boundary="DisCraft"+UUID.randomUUID().toString().replace("-","");var bytes=new ByteArrayOutputStream();
-        bytes.write(("--"+boundary+"\r\nContent-Disposition: form-data; name=\"payload_json\"\r\nContent-Type: application/json\r\n\r\n"+payload+"\r\n--"+boundary+"\r\nContent-Disposition: form-data; name=\"files[0]\"; filename=\""+name+"\"\r\nContent-Type: application/octet-stream\r\n\r\n").getBytes(StandardCharsets.UTF_8));
+        bytes.write(("--"+boundary+"\r\nContent-Disposition: form-data; name=\"payload_json\"\r\nContent-Type: application/json\r\n\r\n"+payload+"\r\n--"+boundary+"\r\nContent-Disposition: form-data; name=\"files[0]\"; filename=\""+name+"\"\r\nContent-Type: "+mediaType(file.bytes())+"\r\n\r\n").getBytes(StandardCharsets.UTF_8));
         bytes.write(file.bytes());bytes.write(("\r\n--"+boundary+"--\r\n").getBytes(StandardCharsets.UTF_8));
         return accepted(request("POST","channels/"+channel+"/messages",bytes.toByteArray(),"multipart/form-data; boundary="+boundary));
+    }
+    /** Sniff the already-decoded media so Discord embeds the file inline instead of treating it as an opaque upload. */
+    static String mediaType(byte[] b){
+        if(b.length>=8&&(b[0]&255)==0x89&&b[1]=='P'&&b[2]=='N'&&b[3]=='G')return "image/png";
+        if(b.length>=6&&b[0]=='G'&&b[1]=='I'&&b[2]=='F')return "image/gif";
+        if(b.length>=3&&(b[0]&255)==0xFF&&(b[1]&255)==0xD8)return "image/jpeg";
+        return "application/octet-stream";
     }
     private String accepted(byte[] body)throws IOException{
         try{var id=receipt(body);diagnostics.report(BridgeDiagnostics.Code.SEND_ACCEPTED,BridgeDiagnostics.Operation.SEND,0,BridgeDiagnostics.Terminal.NO);return id;}
@@ -194,12 +214,20 @@ public final class DiscordBotAdapter implements DiscordAdapter {
         if(closed||terminal||System.nanoTime()<nextPoll||System.nanoTime()<blockedUntil)return List.of();
         try{
             ready();
-            var response=array(request("GET","channels/"+channel+"/messages?limit="+(cursor==null?1:4)+(cursor==null?"":"&after="+cursor),null,null),BridgeDiagnostics.Operation.POLL);
             var records=new ArrayList<RelayRecord>();
-            if(response.size()>4)throw new IOException("Discord page budget exceeded");
-            if(cursor==null){cursor=response.isEmpty()?"0":response.get(0).getAsJsonObject().get("id").getAsString();if(!cursor.matches("[0-9]{1,22}"))throw new IOException("Invalid cursor");readSucceeded();return records;}
+            // Gateway-pushed messages are authoritative while live; REST runs for the baseline, while down, and once after each outage.
+            long epoch=downEpoch.get();boolean rest=cursor==null||!gatewayLive||catchUp;
+            JsonArray response=new JsonArray();
+            if(rest){
+                response=array(request("GET","channels/"+channel+"/messages?limit="+(cursor==null?1:4)+(cursor==null?"":"&after="+cursor),null,null),BridgeDiagnostics.Operation.POLL);
+                if(response.size()>4)throw new IOException("Discord page budget exceeded");
+                if(cursor==null){cursor=response.isEmpty()?"0":response.get(0).getAsJsonObject().get("id").getAsString();if(!cursor.matches("[0-9]{1,22}"))throw new IOException("Invalid cursor");pushed.clear();pushedSize.set(0);readSucceeded();return records;}
+            }
             memberAttempts=0;memberNanosRemaining=TimeUnit.SECONDS.toNanos(2);
-            var sorted=new ArrayList<JsonObject>();response.forEach(e->sorted.add(e.getAsJsonObject()));sorted.sort(Comparator.comparing(o->new java.math.BigInteger(o.get("id").getAsString())));
+            // One id-keyed map deduplicates the two paths; the cursor then rejects anything already delivered.
+            var byId=new TreeMap<java.math.BigInteger,JsonObject>();response.forEach(e->{var o=e.getAsJsonObject();byId.putIfAbsent(new java.math.BigInteger(o.get("id").getAsString()),o);});
+            for(int n=0;n<PUSH_BATCH;n++){var m=pushed.poll();if(m==null)break;pushedSize.decrementAndGet();byId.putIfAbsent(new java.math.BigInteger(m.get("id").getAsString()),m);}
+            var sorted=new ArrayList<JsonObject>(byId.values());
             for(var m:sorted){
                 String id=m.get("id").getAsString();if(!id.matches("[0-9]{1,22}")||new java.math.BigInteger(id).compareTo(new java.math.BigInteger(cursor))<=0)continue;
                 try{
@@ -210,6 +238,7 @@ public final class DiscordBotAdapter implements DiscordAdapter {
                 }catch(Exception malformed){/* Skip one malformed/unsupported event; never poison the polling cursor. */}
                 finally{cursor=id;}
             }
+            if(rest&&gatewayLive&&downEpoch.get()==epoch)catchUp=false;
             failures=0;nextPoll=0;readSucceeded();return records;
         }catch(Exception unavailable){readReady=false;failed(BridgeDiagnostics.Operation.POLL);failures=Math.min(6,failures+1);nextPoll=System.nanoTime()+Math.min(60,1L<<failures)*1_000_000_000L;throw new IOException("Discord polling temporarily unavailable");}
     }
