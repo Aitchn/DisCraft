@@ -1,6 +1,6 @@
 package dev.discraft.forge;
 
-import dev.discraft.forge.bridge.TooltipReport;
+import dev.discraft.forge.bridge.*;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
@@ -12,7 +12,7 @@ final class ClientTooltipReport {
     private ClientTooltipReport(){}
     static void send(UUID draft,net.minecraft.network.Connection connection){
         try{
-            var mc=Minecraft.getInstance();if(mc.player==null||!TooltipReport.supported(connection))return;
+            var mc=Minecraft.getInstance();if(mc.player==null||!TooltipChannel.supported(connection))return;
             var stack=mc.player.getMainHandItem();if(stack.isEmpty())return;
             var lines=new ArrayList<String>();int chars=0;
             for(var line:stack.getTooltipLines(mc.player,TooltipFlag.Default.NORMAL)){
@@ -20,7 +20,7 @@ final class ClientTooltipReport {
                 if(lines.size()>=TooltipReport.MAX_LINES||json.length()>TooltipReport.MAX_LINE||chars>TooltipReport.MAX_CHARS)return;lines.add(json);
             }
             var report=new TooltipReport(draft,BuiltInRegistries.ITEM.getKey(stack.getItem()).toString(),stack.getCount(),lines);
-            if(report.fits())TooltipReport.CHANNEL.sendToServer(report);
+            if(report.fits())TooltipChannel.CHANNEL.sendToServer(report);
         }catch(VirtualMachineError fatal){throw fatal;}
         catch(Throwable failure){/* A faulty client tooltip hook only costs the enrichment; the server uses its own capture. */}
     }
