@@ -31,3 +31,8 @@ itemTooltipClient=strict
 # Also run the item's own server-side tooltip code (appendHoverText, common tooltip
 # events) on a sanitized copy; failing or slow items fall back automatically.
 itemTooltipNative=true
+# Carry the item's mod NBT (e.g. Mine and Slash gear data) in the in-game chat hover so
+# other players' mods can show it. Container contents, book text, stored entities and
+# positions are always removed; oversize data falls back to the allowlist. Every DisCraft
+# client must run this version or newer when enabled.
+itemHoverModData=false

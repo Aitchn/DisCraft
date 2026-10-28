@@ -76,6 +76,9 @@ final class ServerConfigTest {
             Files.writeString(file,valid+"itemDisplay=true\n");check(ServerConfig.load(file).itemDisplay(),"Item display requires a server-local config switch");rejects(file,valid+"itemDisplay=maybe\n");
             check(config.clientTooltips()==ServerConfig.ClientTooltips.STRICT&&config.nativeTooltips(),"Mod tooltip sources default to strict client reports plus guarded native capture");
             Files.writeString(file,valid+"itemTooltipClient=lenient\nitemTooltipNative=false\n");var tooltips=ServerConfig.load(file);check(tooltips.clientTooltips()==ServerConfig.ClientTooltips.LENIENT&&!tooltips.nativeTooltips(),"Mod tooltip sources are server-local switches");
+            check(!config.hoverModData(),"Mod item data stays out of chat hovers by default");
+            Files.writeString(file,valid+"itemHoverModData=true\n");check(ServerConfig.load(file).hoverModData(),"Mod item data in chat hovers is a server opt-in");
+            Files.writeString(file,valid+"itemHoverModData=yes\n");try{ServerConfig.load(file);throw new AssertionError();}catch(java.io.IOException expected){check(true,"Mod hover data switch accepts only true/false");}
             Files.writeString(file,valid+"itemTooltipClient=off\n");check(ServerConfig.load(file).clientTooltips()==ServerConfig.ClientTooltips.OFF,"Client tooltip reports can be disabled");
             rejects(file,valid+"itemTooltipClient=trusted\n");rejects(file,valid+"itemTooltipNative=maybe\n");
             try{ServerConfig.testEvents();throw new AssertionError("Ungated fixture config accepted");}catch(IllegalStateException expected){check(true,"Event fixture config cannot activate outside isolated multiplayer smoke mode");}

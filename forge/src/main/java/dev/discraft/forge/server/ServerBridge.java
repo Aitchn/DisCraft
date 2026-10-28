@@ -205,7 +205,7 @@ public final class ServerBridge {
         final ItemSnapshot held;final HeadlessItemRenderer renderer=itemRenderer;
         final boolean itemEnabled=config.itemDisplay();
         var report=takeReport(uuid,packet.id());
-        try{held=itemEnabled&&ItemExpansion.requested(bytes)?ItemSnapshot.capture(p,text,report,config.clientTooltips(),config.nativeTooltips()):null;}
+        try{held=itemEnabled&&ItemExpansion.requested(bytes)?ItemSnapshot.capture(p,text,report,config.clientTooltips(),config.nativeTooltips(),config.hoverModData()):null;}
         catch(Exception invalid){BridgeNetwork.notice(p,packet.id(),false,"Invalid item display draft");return;}
         try {worker.execute(()->{
             try {
@@ -243,7 +243,7 @@ public final class ServerBridge {
     static boolean nativeObserverEnabled(ServerPlayer player){return server==player.server&&running&&!stopping&&adapter!=null&&(!mode.equals("test")||Boolean.getBoolean("discraft.optionalClientSmoke"));}
     static boolean vanillaChatEnabled(ServerPlayer player){return nativeObserverEnabled(player)&&allowed(player);}
     static boolean admitVanillaChat(ServerPlayer player){var peer=peers.get(player.getUUID());return vanillaChatEnabled(player)&&peer!=null&&peer.alive.get()&&peer.consume();}
-    static ItemSnapshot vanillaItem(ServerPlayer player,String raw){return config.itemDisplay()&&dev.discraft.core.ItemMarkers.contains(raw)?ItemSnapshot.capture(player,text,null,config.clientTooltips(),config.nativeTooltips()):null;}
+    static ItemSnapshot vanillaItem(ServerPlayer player,String raw){return config.itemDisplay()&&dev.discraft.core.ItemMarkers.contains(raw)?ItemSnapshot.capture(player,text,null,config.clientTooltips(),config.nativeTooltips(),config.hoverModData()):null;}
     static void relayVanilla(ServerPlayer player,String body,ItemSnapshot item){
         var peer=peers.get(player.getUUID());if(!vanillaChatEnabled(player)||peer==null||!peer.alive.get())return;var active=server;var transport=adapter;var renderer=itemRenderer;String author=player.getGameProfile().getName();var actor=new ActorRef(ActorRef.Kind.MINECRAFT,player.getUUID().toString(),author);
         try{worker.execute(()->{try{if(!peer.alive.get())return;var prepared=transport.prepare(new RelayRecord(UUID.randomUUID(),author,body,List.of(),Map.of(),Map.of(),actor,List.of()));var discord=ItemExpansion.expand(prepared,item,renderer).discord();discord.encode();transport.send(discord);}
