@@ -20,7 +20,9 @@ final class HeadlessItemRenderer {
     static final int SLOT=80,SLOT_GAP=6,ICON=64;
     /** Minecraft-style tooltip with the item's model icon in a matching slot on its left; falls back to the bare tooltip if the model is unsupported. */
     Attachment card(ItemSnapshot item)throws Exception{
-        var tooltip=tooltipRenderer.render(item.tooltip());
+        ItemTooltipRenderer.Result tooltip;
+        // A richer tooltip that exceeds the image budget falls back to the server whitelist instead of failing the send.
+        try{tooltip=tooltipRenderer.render(item.tooltip());}catch(IllegalArgumentException|IOException tooLarge){if(item.tooltip()==item.baseTooltip())throw tooLarge;tooltip=tooltipRenderer.render(item.baseTooltip());}
         var rendered=render(item);
         if(!rendered.status().equals("Standard model"))return tooltip.attachment();
         var source=ImageIO.read(new ByteArrayInputStream(rendered.attachment().bytes())).getSubimage(56,4,176,176);

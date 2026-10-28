@@ -1,33 +1,36 @@
-# 模組物品 tooltip：內容相容方案（待決策，未實作）
+# 模組物品 tooltip：通用相容
 
-使用者提供的「贝壳号角」對照中，Discord 只有名稱，而遊戲還有紫色召喚說明、灰色
-使用條件、來源標示及圖示／黃色框。這是目前擷取範圍不足，不能用載入語言 ZIP
-解釋或宣稱已完整支援。語言包只能替換存在的翻譯 key，不能自行產生模組 callback
-才加入的行，也無法重現 client-only tooltip 主題。
+舊版只用伺服器白名單重建 tooltip（名稱、附魔、NBT Lore、屬性、不可破壞、耐久度），
+所以像 CTE2 的「贝壳号角」在 Discord 只剩名稱：模組說明由物品自己的 `appendHoverText`
+產生，模組名稱行與 Mine and Slash 數值則是客戶端 tooltip 事件加上的，伺服器端看不到。
 
-建議先做「經審核的服務端內容 adapter」，保留現在的普通 tooltip 當安全基底：
+現在改成「白名單為底線，較完整的來源若能延伸底線就採用」，不逐模組寫死：
 
-1. 先取得物品 registry ID（可開 F3+H 查看）與所屬模組確切版本，核對官方 source
-   或已合法安裝的該版本實作；不需安裝整套模組包或傳送存檔／私人 NBT。
-2. 逐物品／模組白名單擷取必要的服務端權威語意；adapter 自己做有界、可測的
-   純資料轉換，輸出有樣式的 literal／translatable Component。共用現有語系索引、
-   逐 key 資源包覆蓋、翻譯展開／字數／行數／深度上限及 tooltip renderer。
-3. 只允許明訂欄位；不將完整 ItemStack tag、容器、書頁、命令、click action、
-   任意 URL 或本機路徑交給 Discord。來源、條件與數值以服務端 snapshot 為準。
-4. callback 若引用 client class、玩家 client 狀態或不明副作用，直接列為不支援。
-   不通用呼叫所有模組的 `appendHoverText`／tooltip event，也不宣稱 Future timeout
-   能硬性中止遊戲執行緒內的任意模組程式。未審核版本保留有限 fallback，清楚說明缺項。
-5. 可用同版本 fixture／本機正式 adapter 驗證新增語意行與原生對照，另測翻譯覆蓋、
-   缺 key、長文、敏感欄位、版本不符和 dedicated server 無 DISPLAY。未經另行授權
-   不發送或編輯真實 Discord 訊息。
+1. **客戶端回報（`itemTooltipClient`，預設 `strict`）**：送出含 `%item`／`%i` 的訊息時，
+   裝有 DisCraft 的客戶端以 `getTooltipLines(player, NORMAL)` 取得自己實際顯示的行
+   （含模組與客戶端 `ItemTooltipEvent`），以 Component JSON 透過獨立的 `discraft:tooltip`
+   頻道（版本 1，舊客戶端／舊伺服器自動略過）在草稿上傳前送出。
+2. **伺服器原生（`itemTooltipNative`，預設 `true`）**：在遊戲執行緒對已去除私密 NBT 的
+   複本呼叫原生 `getTooltipLines`。丟例外或超過 50 ms 的物品 ID 在本次執行期間停用並記錄一次。
+3. **白名單**：以上皆不合格時使用，行為與舊版相同。
 
-圖示和框線另外處理：只有 adapter 明確提供的安全資源 ID 才能從既有本地資源索引取圖；
-不執行模型 loader／client UI callback。黃色邊框、來源列圖示等 client theme 不能只由
-rarity 或漢化包推定。可以之後明確選擇有限的服務端樣式設定，但不保證像素級還原。
+## 驗證
 
-Optional client 不能取代權威來源。直接採信客戶端提供的 tooltip 行／截圖會允許偽造
-物品展示，因此不建議把它當作自動補全方案；目前也沒有實作這條路徑。
+- 物品 ID、數量與名稱必須與伺服器擷取一致。
+- `strict`：伺服器白名單的每一行都必須依序原樣出現，來源只能「加行」，不能改或刪。
+  耐久度是只在進階 tooltip 才有的行，單獨比對並一律以伺服器數值附加。
+- `lenient`：只要求 ID、數量、名稱一致，給會改寫原版行的模組使用。`off` 不用客戶端資料。
+- 客戶端 JSON 先檢查巢狀深度，只保留文字與樣式；點擊／懸停事件、NBT／選擇器／分數等
+  會讀取伺服器資料的元件一律不解析（顯示為 unsupported）。行數、字數、封包大小有上限。
+- 文字中的舊式 `§` 格式碼會像客戶端字型渲染一樣套用顏色與樣式，而不是原樣印出。
+- 較完整的 tooltip 若超過圖片預算，退回白名單版本，不會讓訊息送出失敗。
 
-最小下一步決策：提供該物品 registry ID 和模組版本後，先評估服務端內容 adapter；
-圖示／框線等裝飾留作獨立需求。若該版本只有 client-only 內容，再回報具體缺口與取捨，
-不把只有名稱的輸出標為完整相容。
+## 已知限制與風險
+
+- 改過的客戶端可以加入假的說明行（`strict` 下不能改動伺服器算出的行）。這與已授權玩家本來
+  就能上傳任意截圖是同等級；不接受時設 `itemTooltipClient=off`。
+- 只在 `RenderTooltipEvent.GatherComponents`（而非 `ItemTooltipEvent`）加入的內容、圖片型
+  tooltip 元件、以及自訂框線主題不會出現；Discord 圖片維持 DisCraft 的 Minecraft 風格。
+- 自訂字型字元需要伺服器端能載入該字型（已安裝模組的 `font/` 資源或設定的資源包），
+  缺字時圖片底部會列出缺少的字元。
+- 原生擷取無法硬性中止卡住的模組程式；只能事後停用該物品。

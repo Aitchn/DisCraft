@@ -47,6 +47,8 @@ public final class ClientBridge {
         var accepted=new CompletableFuture<String>();pending.put(id,accepted);
         Minecraft.getInstance().execute(()->{
             if(epoch!=generation||Minecraft.getInstance().getConnection()!=connection||!available()){accepted.completeExceptionally(new IOException("Connection changed"));return;}
+            // Sent first on the same connection, so the server has it when the draft's last chunk arrives.
+            if(ItemMarkers.contains(text))ClientTooltipReport.send(id,connection.getConnection());
             for(int at=0;at<bytes.length;at+=BridgeNetwork.CHUNK)BridgeNetwork.CHANNEL.sendToServer(new BridgeNetwork.Upload(id,bytes.length,at,Arrays.copyOfRange(bytes,at,Math.min(bytes.length,at+BridgeNetwork.CHUNK))));
         });
         try{return accepted.get(15,TimeUnit.SECONDS);}catch(TimeoutException timeout){throw new IOException("Delivery timed out and may be uncertain; no automatic retry");}finally{pending.remove(id);}

@@ -41,6 +41,9 @@ public final class ServerBridge {
     private static final Map<UUID,ServerPlayer> announcedDeaths=new HashMap<>();
     private static final Map<UUID,Transfer> transfers=new HashMap<>();
     private static final Map<UUID,Peer> peers=new HashMap<>();
+    private record PendingReport(TooltipReport report,long received){boolean expired(){return System.nanoTime()-received>15_000_000_000L;}}
+    // Per player, a few client tooltip reports awaiting their draft's last upload chunk.
+    private static final Map<UUID,Map<UUID,PendingReport>> reports=new HashMap<>();
     private static final Deque<RelayRecord> history=new ArrayDeque<>();
     private static final Map<String,ActorRef> actors=new LinkedHashMap<>();
     private static final Set<String> requests=new LinkedHashSet<>();
@@ -106,7 +109,7 @@ public final class ServerBridge {
     @SubscribeEvent public static void stop(ServerStoppingEvent event){
         if(server!=event.getServer()||stopping)return;stopping=true;
         if(vanillaAssets!=null){vanillaAssets.close();vanillaAssets=null;}
-        peers.values().forEach(p->p.alive.set(false));peers.clear();transfers.clear();history.clear();requests.clear();actors.clear();
+        peers.values().forEach(p->p.alive.set(false));peers.clear();transfers.clear();reports.clear();history.clear();requests.clear();actors.clear();
         Runnable finalNotice=running?noticeTask("lifecycle",Component.translatableWithFallback("discraft.notice.stopping","Server is shutting down normally")):null;
         NoticeDelivery.drain(worker,finalNotice,TimeUnit.SECONDS.toNanos(8));
         if(adapter!=null)adapter.close();worker=null;adapter=null;server=null;running=false;mode="disabled";config=ServerConfig.disabled();guildCatalog=GuildEmojiCatalog.empty(0);deaths.clear();advancements.clear();announcedAdvancements.clear();announcedDeaths.clear();text=new ComponentText(ResourcePackIndex.empty(),"en_us");itemRenderer=null;
@@ -115,7 +118,7 @@ public final class ServerBridge {
         // Startup failure can skip ServerStoppingEvent; release transport without claiming ready/normal shutdown.
         if(server==event.getServer()){
             if(vanillaAssets!=null){vanillaAssets.close();vanillaAssets=null;}
-            if(worker!=null)worker.shutdownNow();if(adapter!=null)adapter.close();worker=null;adapter=null;server=null;running=false;mode="disabled";config=ServerConfig.disabled();
+            reports.clear();if(worker!=null)worker.shutdownNow();if(adapter!=null)adapter.close();worker=null;adapter=null;server=null;running=false;mode="disabled";config=ServerConfig.disabled();
             deaths.clear();advancements.clear();announcedAdvancements.clear();announcedDeaths.clear();text=new ComponentText(ResourcePackIndex.empty(),"en_us");itemRenderer=null;
         }
     }
@@ -142,7 +145,7 @@ public final class ServerBridge {
         if(first&&running&&allowed(p))notice("join",Component.translatable("multiplayer.player.joined",p.getDisplayName().copy()));
     }
     @SubscribeEvent public static void logout(PlayerEvent.PlayerLoggedOutEvent event){
-        var peer=peers.remove(event.getEntity().getUUID());if(peer!=null)peer.alive.set(false);transfers.remove(event.getEntity().getUUID());BridgeNetwork.forget(event.getEntity().getUUID());
+        var peer=peers.remove(event.getEntity().getUUID());if(peer!=null)peer.alive.set(false);transfers.remove(event.getEntity().getUUID());reports.remove(event.getEntity().getUUID());BridgeNetwork.forget(event.getEntity().getUUID());
         deaths.remove(event.getEntity().getUUID());announcedDeaths.remove(event.getEntity().getUUID());
         if(peer!=null&&running&&!stopping&&event.getEntity() instanceof ServerPlayer p&&allowed(p))notice("quit",Component.translatable("multiplayer.player.left",p.getDisplayName().copy()));
     }
@@ -157,6 +160,7 @@ public final class ServerBridge {
             if(announcedAdvancements.size()>4096)announcedAdvancements.remove(announcedAdvancements.iterator().next());
             notice("advancement",Component.translatable("chat.type.advancement."+display.getFrame().getName(),p.getDisplayName().copy(),advancement.getChatComponent().copy()));
         }advancements.clear();
+        reports.values().forEach(own->own.values().removeIf(PendingReport::expired));reports.values().removeIf(Map::isEmpty);
         transfers.entrySet().removeIf(e->{if(System.nanoTime()-e.getValue().started<15_000_000_000L)return false;var p=server.getPlayerList().getPlayer(e.getKey());if(p!=null)BridgeNetwork.notice(p,e.getValue().id,false,"Upload expired");return true;});
         if(adapter==null||System.nanoTime()<nextPoll&&!adapter.hasPending()||!polling.compareAndSet(false,true))return;
         nextPoll=System.nanoTime()+2_000_000_000L;
@@ -200,7 +204,8 @@ public final class ServerBridge {
         transfers.remove(uuid);byte[] bytes=transfer.bytes;String author=p.getGameProfile().getName();var active=server;var transport=adapter;var knownActors=Map.copyOf(actors);var sender=new ActorRef(ActorRef.Kind.MINECRAFT,uuid.toString(),author);
         final ItemSnapshot held;final HeadlessItemRenderer renderer=itemRenderer;
         final boolean itemEnabled=config.itemDisplay();
-        try{held=itemEnabled&&ItemExpansion.requested(bytes)?ItemSnapshot.capture(p,text):null;}
+        var report=takeReport(uuid,packet.id());
+        try{held=itemEnabled&&ItemExpansion.requested(bytes)?ItemSnapshot.capture(p,text,report,config.clientTooltips(),config.nativeTooltips()):null;}
         catch(Exception invalid){BridgeNetwork.notice(p,packet.id(),false,"Invalid item display draft");return;}
         try {worker.execute(()->{
             try {
@@ -223,12 +228,22 @@ public final class ServerBridge {
             }catch(Exception rejected){transport.failed(BridgeDiagnostics.Operation.SEND);active.execute(()->{if(server==active&&peer.alive.get())BridgeNetwork.notice(p,packet.id(),false,"Rejected or delivery uncertain; no automatic retry");});}
         });}catch(RejectedExecutionException full){BridgeNetwork.notice(p,packet.id(),false,"Bridge queue full");}
     }
+    /** Game thread. Stored only for an authorized, bridged player and consumed by that player's matching draft. */
+    public static void tooltipReport(ServerPlayer p,TooltipReport report){
+        if(server==null||adapter==null||server.getPlayerList().getPlayer(p.getUUID())!=p||!peers.containsKey(p.getUUID())||!allowed(p)||!config.itemDisplay()||config.clientTooltips()==ServerConfig.ClientTooltips.OFF)return;
+        var own=reports.computeIfAbsent(p.getUUID(),k->new LinkedHashMap<>());own.remove(report.draft());if(own.size()>=4)own.remove(own.keySet().iterator().next());
+        own.put(report.draft(),new PendingReport(report,System.nanoTime()));
+    }
+    private static TooltipReport takeReport(UUID player,UUID draft){
+        var own=reports.get(player);if(own==null)return null;var pending=own.remove(draft);if(own.isEmpty())reports.remove(player);
+        return pending==null||pending.expired()?null:pending.report();
+    }
     private static void reject(ServerPlayer p,UUID id,String why){transfers.remove(p.getUUID());BridgeNetwork.notice(p,id,false,why);}
     private static void remember(ActorRef actor){if(actor==null)return;actors.put(actor.key(),actor);while(actors.size()>128)actors.remove(actors.keySet().iterator().next());}
     static boolean nativeObserverEnabled(ServerPlayer player){return server==player.server&&running&&!stopping&&adapter!=null&&(!mode.equals("test")||Boolean.getBoolean("discraft.optionalClientSmoke"));}
     static boolean vanillaChatEnabled(ServerPlayer player){return nativeObserverEnabled(player)&&allowed(player);}
     static boolean admitVanillaChat(ServerPlayer player){var peer=peers.get(player.getUUID());return vanillaChatEnabled(player)&&peer!=null&&peer.alive.get()&&peer.consume();}
-    static ItemSnapshot vanillaItem(ServerPlayer player,String raw){return config.itemDisplay()&&dev.discraft.core.ItemMarkers.contains(raw)?ItemSnapshot.capture(player,text):null;}
+    static ItemSnapshot vanillaItem(ServerPlayer player,String raw){return config.itemDisplay()&&dev.discraft.core.ItemMarkers.contains(raw)?ItemSnapshot.capture(player,text,null,config.clientTooltips(),config.nativeTooltips()):null;}
     static void relayVanilla(ServerPlayer player,String body,ItemSnapshot item){
         var peer=peers.get(player.getUUID());if(!vanillaChatEnabled(player)||peer==null||!peer.alive.get())return;var active=server;var transport=adapter;var renderer=itemRenderer;String author=player.getGameProfile().getName();var actor=new ActorRef(ActorRef.Kind.MINECRAFT,player.getUUID().toString(),author);
         try{worker.execute(()->{try{if(!peer.alive.get())return;var prepared=transport.prepare(new RelayRecord(UUID.randomUUID(),author,body,List.of(),Map.of(),Map.of(),actor,List.of()));var discord=ItemExpansion.expand(prepared,item,renderer).discord();discord.encode();transport.send(discord);}

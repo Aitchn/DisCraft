@@ -98,11 +98,10 @@ default item attributes, including after the existing native DTO budget downgrad
 
 The server first sanitizes the existing whitelist, then builds immutable localized
 semantic runs on the game thread. The Discord renderer receives these runs rather
-than an original stack or native SNBT DTO. Arbitrary item/mod `appendHoverText`, Forge
-ItemTooltipEvent callbacks, book pages, container contents, block/entity NBT, destroy/place
-lists, potion-effect callbacks and other additional item-specific sections are outside
-this profile. They are not executed to collect extra data. This is an explicitly bounded
-profile, not a claim of all mod tooltip compatibility.
+than an original stack or native SNBT DTO. This whitelist is the floor: a richer source
+(the sender's own client-reported tooltip, or the item's native server-side tooltip on the
+sanitized copy) replaces it only when it extends every whitelist line. See
+[mod tooltip compatibility](mod-tooltip-compatibility.md) for sources, validation and limits.
 
 Names, lore, nested translation arguments/siblings and numbered `%1$s` substitutions
 retain color, font, bold/italic, underline and strike styles. Obfuscated glyphs use a

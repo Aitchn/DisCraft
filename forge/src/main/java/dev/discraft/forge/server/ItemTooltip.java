@@ -59,9 +59,16 @@ record ItemTooltip(List<Line> lines) {
     static Line localize(Component input,ResourcePackIndex resources,String locale){return localize(input,resources,locale,new ExpansionBudget());}
     static Line localize(Component input,ResourcePackIndex resources,String locale,ExpansionBudget budget){
         Component component=localized(input,resources,locale,budget,new IdentityHashMap<>(),0);var runs=new ArrayList<Run>();final int[] length={0};
-        component.visit((style,text)->{length[0]+=text.length();if(length[0]>8192||runs.size()>1024)throw new IllegalArgumentException("Tooltip text budget exceeded");if(!text.isEmpty())runs.add(new Run(text,style.getColor()==null?0xffffff:style.getColor().getValue(),style.getFont().toString(),style.isBold(),style.isItalic(),style.isUnderlined(),style.isStrikethrough(),style.isObfuscated()));return Optional.<Object>empty();},Style.EMPTY);
+        component.visit((style,text)->{length[0]+=text.length();if(length[0]>8192||runs.size()>1024)throw new IllegalArgumentException("Tooltip text budget exceeded");
+            // Legacy section-sign codes inside literal or translated text are styled exactly as the client font renderer does.
+            if(text.indexOf('\u00a7')<0){if(!text.isEmpty())runs.add(run(text,style));}
+            else{var piece=new StringBuilder();Style[] current={null};
+                net.minecraft.util.StringDecomposer.iterateFormatted(text,style,(index,applied,codepoint)->{if(current[0]!=null&&!applied.equals(current[0])){runs.add(run(piece.toString(),current[0]));piece.setLength(0);if(runs.size()>1024)throw new IllegalArgumentException("Tooltip text budget exceeded");}current[0]=applied;piece.appendCodePoint(codepoint);return true;});
+                if(current[0]!=null&&piece.length()>0)runs.add(run(piece.toString(),current[0]));}
+            return Optional.<Object>empty();},Style.EMPTY);
         return new Line(runs);
     }
+    private static Run run(String text,Style style){return new Run(text,style.getColor()==null?0xffffff:style.getColor().getValue(),style.getFont().toString(),style.isBold(),style.isItalic(),style.isUnderlined(),style.isStrikethrough(),style.isObfuscated());}
     private static Component localized(Component input,ResourcePackIndex resources,String locale,ExpansionBudget budget,IdentityHashMap<Component,Boolean> path,int depth){
         if(depth>32||--budget.remainingInputs<0||path.put(input,true)!=null)throw new IllegalArgumentException("Tooltip component budget exceeded");var out=budget.empty().setStyle(input.getStyle().withClickEvent(null).withHoverEvent(null).withInsertion(null));
         if(input.getContents() instanceof LiteralContents literal)out.append(budget.literal(literal.text()));

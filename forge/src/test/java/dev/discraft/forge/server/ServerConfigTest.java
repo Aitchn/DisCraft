@@ -74,6 +74,10 @@ final class ServerConfigTest {
             check(!config.notifies("lifecycle")&&!blank.notifies("join"),"Automatic notifications default off even with a live-enabled configuration");
             check(!config.itemDisplay(),"Item display defaults off on existing configurations");
             Files.writeString(file,valid+"itemDisplay=true\n");check(ServerConfig.load(file).itemDisplay(),"Item display requires a server-local config switch");rejects(file,valid+"itemDisplay=maybe\n");
+            check(config.clientTooltips()==ServerConfig.ClientTooltips.STRICT&&config.nativeTooltips(),"Mod tooltip sources default to strict client reports plus guarded native capture");
+            Files.writeString(file,valid+"itemTooltipClient=lenient\nitemTooltipNative=false\n");var tooltips=ServerConfig.load(file);check(tooltips.clientTooltips()==ServerConfig.ClientTooltips.LENIENT&&!tooltips.nativeTooltips(),"Mod tooltip sources are server-local switches");
+            Files.writeString(file,valid+"itemTooltipClient=off\n");check(ServerConfig.load(file).clientTooltips()==ServerConfig.ClientTooltips.OFF,"Client tooltip reports can be disabled");
+            rejects(file,valid+"itemTooltipClient=trusted\n");rejects(file,valid+"itemTooltipNative=maybe\n");
             try{ServerConfig.testEvents();throw new AssertionError("Ungated fixture config accepted");}catch(IllegalStateException expected){check(true,"Event fixture config cannot activate outside isolated multiplayer smoke mode");}
             Files.writeString(file,valid+"notifications=join,quit,death,advancement,lifecycle\n");var notices=ServerConfig.load(file);
             check(notices.notifies("join")&&notices.notifies("quit")&&notices.notifies("death")&&notices.notifies("advancement")&&notices.notifies("lifecycle"),"All event categories require explicit server-config opt-in");
