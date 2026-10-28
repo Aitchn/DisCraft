@@ -8,15 +8,21 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.core.registries.BuiltInRegistries;
 import java.util.*;
 
-/** Allowlisted native SHOW_ITEM payload. Never retains an original ItemStack or arbitrary NBT. */
+/**
+ * Allowlisted native SHOW_ITEM payload. Never retains an original ItemStack. Other NBT (mod data such as Mine and
+ * Slash gear stats) is carried only when the server opts in, minus container, book, entity and location keys.
+ */
 public record NativeItemData(String itemId,int count,String tag) {
-    public static final int MAX_TAG=8192;
+    public static final int MAX_TAG=16384,ALLOWLIST_TAG=8192;
+    /** Compared case-insensitively at every depth: inventories, book text, stored entities/block entities, positions. */
+    private static final Set<String> PRIVATE=Set.of("items","inventory","blockentitytag","entitytag","pages","filtered_pages","filtered_title","lodestonepos","lodestonedimension","decorations");
     private static final Set<String> TOP=Set.of("display","Damage","CustomModelData","Enchantments","StoredEnchantments","AttributeModifiers","Unbreakable","HideFlags","Potion");
     public NativeItemData {
         id(itemId);if(count<0||count>9999||tag.length()>MAX_TAG)throw new IllegalArgumentException("Invalid native item bounds");
         try{validateTag(parse(tag));}catch(Exception invalid){throw new IllegalArgumentException("Invalid native item data");}
     }
-    public static NativeItemData capture(ItemStack stack,String fallback){
+    public static NativeItemData capture(ItemStack stack,String fallback){return capture(stack,fallback,false);}
+    public static NativeItemData capture(ItemStack stack,String fallback,boolean modData){
         if(stack.isEmpty())return new NativeItemData("minecraft:air",0,"{}");
         CompoundTag out=new CompoundTag(),display=new CompoundTag();Component name;
         try{name=sanitize(stack.getHoverName(),new IdentityHashMap<>(),new int[]{64},0);}catch(Exception oversized){name=Component.literal(fallback);}
@@ -40,17 +46,33 @@ public record NativeItemData(String itemId,int count,String tag) {
         }
         out.put("display",display);
         // Truncate optional detail before publishing the immutable snapshot, never the original stack.
-        if(out.toString().length()>MAX_TAG)display.remove("Lore");
-        if(out.toString().length()>MAX_TAG&&out.contains("AttributeModifiers",Tag.TAG_LIST))out.put("AttributeModifiers",new ListTag());
+        if(out.toString().length()>ALLOWLIST_TAG)display.remove("Lore");
+        if(out.toString().length()>ALLOWLIST_TAG&&out.contains("AttributeModifiers",Tag.TAG_LIST))out.put("AttributeModifiers",new ListTag());
+        if(modData&&source!=null){
+            var extra=new ArrayList<String>();
+            for(String key:source.getAllKeys())if(!TOP.contains(key)&&key.length()<=128&&!PRIVATE.contains(key.toLowerCase(Locale.ROOT))){var value=withoutPrivate(source.get(key));if(value!=null){out.put(key,value);extra.add(key);}}
+            // All or nothing: a partial mod payload could make the mod's own tooltip code misreport the item.
+            try{if(out.toString().length()>MAX_TAG)throw new IllegalArgumentException();nesting(out.toString(),16);}catch(IllegalArgumentException tooLarge){for(String key:extra)out.remove(key);}
+        }
         return new NativeItemData(BuiltInRegistries.ITEM.getKey(stack.getItem()).toString(),Math.min(9999,stack.getCount()),out.toString());
     }
     public CompoundTag safeTag(){try{return parse(tag);}catch(Exception impossible){throw new IllegalStateException("Validated item tag unreadable");}}
     private static void id(String value){if(value==null||value.length()>256||!value.matches("[a-z0-9_.-]+:[a-z0-9_./-]+"))throw new IllegalArgumentException("Invalid item identifier");}
     private static CompoundTag parse(String text)throws Exception{nesting(text,16);return TagParser.parseTag(text);}
     private static void nesting(String text,int limit){int depth=0;char quote=0;boolean escape=false;for(char c:text.toCharArray()){if(quote!=0){if(escape)escape=false;else if(c=='\\')escape=true;else if(c==quote)quote=0;}else if(c=='\''||c=='"')quote=c;else if(c=='{'||c=='['){if(++depth>limit)throw new IllegalArgumentException("Native item depth exceeded");}else if(c=='}'||c==']')depth--;}}
+    private static Tag withoutPrivate(Tag value){
+        if(value==null)return null;
+        if(value instanceof CompoundTag compound){var copy=new CompoundTag();for(String key:compound.getAllKeys())if(!PRIVATE.contains(key.toLowerCase(Locale.ROOT))){var child=withoutPrivate(compound.get(key));if(child!=null)copy.put(key,child);}return copy;}
+        if(value instanceof ListTag list){var copy=new ListTag();for(var child:list){var clean=withoutPrivate(child);if(clean!=null)copy.add(clean);}return copy;}
+        return value.copy();
+    }
+    private static void noPrivate(Tag value){
+        if(value instanceof CompoundTag compound)for(String key:compound.getAllKeys()){if(PRIVATE.contains(key.toLowerCase(Locale.ROOT)))throw new IllegalArgumentException();noPrivate(compound.get(key));}
+        else if(value instanceof ListTag list)for(var child:list)noPrivate(child);
+    }
     private static void validateTag(CompoundTag tag){
-        if(!TOP.containsAll(tag.getAllKeys()))throw new IllegalArgumentException();
-        for(String key:tag.getAllKeys()){int type=switch(key){case "display"->Tag.TAG_COMPOUND;case "Damage","CustomModelData","HideFlags"->Tag.TAG_INT;case "Unbreakable"->Tag.TAG_BYTE;case "Potion"->Tag.TAG_STRING;default->Tag.TAG_LIST;};if(!tag.contains(key,type))throw new IllegalArgumentException();if(type==Tag.TAG_LIST){var list=(ListTag)tag.get(key);if(!list.isEmpty()&&list.getElementType()!=Tag.TAG_COMPOUND)throw new IllegalArgumentException();}}
+        for(String key:tag.getAllKeys())if(!TOP.contains(key)){if(key.length()>128||PRIVATE.contains(key.toLowerCase(Locale.ROOT)))throw new IllegalArgumentException();noPrivate(tag.get(key));}
+        for(String key:tag.getAllKeys()){if(!TOP.contains(key))continue;int type=switch(key){case "display"->Tag.TAG_COMPOUND;case "Damage","CustomModelData","HideFlags"->Tag.TAG_INT;case "Unbreakable"->Tag.TAG_BYTE;case "Potion"->Tag.TAG_STRING;default->Tag.TAG_LIST;};if(!tag.contains(key,type))throw new IllegalArgumentException();if(type==Tag.TAG_LIST){var list=(ListTag)tag.get(key);if(!list.isEmpty()&&list.getElementType()!=Tag.TAG_COMPOUND)throw new IllegalArgumentException();}}
         if(tag.contains("display")){var display=tag.getCompound("display");if(!Set.of("Name","Lore","color").containsAll(display.getAllKeys()))throw new IllegalArgumentException();if(display.contains("Name")){if(!display.contains("Name",Tag.TAG_STRING))throw new IllegalArgumentException();json(display.getString("Name"),2048);}if(display.contains("color")&&(!display.contains("color",Tag.TAG_INT)||display.getInt("color")<0||display.getInt("color")>0xffffff))throw new IllegalArgumentException();if(display.contains("Lore")){if(!display.contains("Lore",Tag.TAG_LIST))throw new IllegalArgumentException();var list=(ListTag)display.get("Lore");if(!list.isEmpty()&&list.getElementType()!=Tag.TAG_STRING)throw new IllegalArgumentException();}var lore=display.getList("Lore",Tag.TAG_STRING);if(lore.size()>8)throw new IllegalArgumentException();for(int i=0;i<lore.size();i++)json(lore.getString(i),512);}
         for(String key:List.of("Enchantments","StoredEnchantments")){var entries=tag.getList(key,Tag.TAG_COMPOUND);if(entries.size()>8)throw new IllegalArgumentException();for(int i=0;i<entries.size();i++){var e=entries.getCompound(i);if(!Set.of("id","lvl").containsAll(e.getAllKeys())||!e.contains("id",Tag.TAG_STRING)||!e.contains("lvl",Tag.TAG_SHORT))throw new IllegalArgumentException();id(e.getString("id"));if(e.getInt("lvl")<0||e.getInt("lvl")>255)throw new IllegalArgumentException();}}
         var attributes=tag.getList("AttributeModifiers",Tag.TAG_COMPOUND);if(attributes.size()>8)throw new IllegalArgumentException();for(int i=0;i<attributes.size();i++){var e=attributes.getCompound(i);if(!Set.of("AttributeName","Name","Amount","Operation","UUID","Slot").containsAll(e.getAllKeys())||!e.contains("AttributeName",Tag.TAG_STRING)||!e.contains("Name",Tag.TAG_STRING)||!e.contains("Amount",Tag.TAG_DOUBLE)||!e.contains("Operation",Tag.TAG_INT)||!e.getString("Name").equals("DisCraft tooltip")||!e.hasUUID("UUID")||!Double.isFinite(e.getDouble("Amount"))||Math.abs(e.getDouble("Amount"))>1000000||e.getInt("Operation")<0||e.getInt("Operation")>2)throw new IllegalArgumentException();id(e.getString("AttributeName"));if(e.contains("Slot")&&(!e.contains("Slot",Tag.TAG_STRING)||!Set.of("mainhand","offhand","head","chest","legs","feet").contains(e.getString("Slot"))))throw new IllegalArgumentException();}

@@ -16,11 +16,16 @@ final class ServerConfig {
     private final List<String> packs;
     private final Set<String> notifications;
     private final boolean itemDisplay;
-    private ServerConfig(boolean enabled,String channel,String token,Set<String> players,String locale,List<String> packs,Set<String> notifications,boolean itemDisplay){
+    /** How a DisCraft client's own rendered tooltip lines may enrich the Discord item image; see docs/mod-tooltip-compatibility.md. */
+    enum ClientTooltips { OFF, STRICT, LENIENT }
+    private final ClientTooltips clientTooltips;
+    private final boolean nativeTooltips,hoverModData;
+    private ServerConfig(boolean enabled,String channel,String token,Set<String> players,String locale,List<String> packs,Set<String> notifications,boolean itemDisplay){this(enabled,channel,token,players,locale,packs,notifications,itemDisplay,ClientTooltips.STRICT,true,false);}
+    private ServerConfig(boolean enabled,String channel,String token,Set<String> players,String locale,List<String> packs,Set<String> notifications,boolean itemDisplay,ClientTooltips clientTooltips,boolean nativeTooltips,boolean hoverModData){
         this.enabled=enabled;this.channel=channel;this.token=token;this.players=Set.copyOf(players);
         this.locale=locale;this.packs=List.copyOf(packs);
         this.notifications=Set.copyOf(notifications);
-        this.itemDisplay=itemDisplay;
+        this.itemDisplay=itemDisplay;this.clientTooltips=clientTooltips;this.nativeTooltips=nativeTooltips;this.hoverModData=hoverModData;
     }
     static ServerConfig disabled(){return new ServerConfig(false,"","",Set.of(),"en_us",List.of(),Set.of(),false);}
     static ServerConfig testEvents(){
@@ -80,7 +85,7 @@ final class ServerConfig {
             if(bytes.length>MAX_BYTES)throw new IOException();
             var properties=new Properties();
             properties.load(new StringReader(new String(bytes,java.nio.charset.StandardCharsets.UTF_8)));
-            if(!Set.of("enabled","channel","botToken","allowedPlayers","locale","resourcePacks","notifications","itemDisplay").containsAll(properties.stringPropertyNames()))throw new IOException();
+            if(!Set.of("enabled","channel","botToken","allowedPlayers","locale","resourcePacks","notifications","itemDisplay","itemTooltipClient","itemTooltipNative","itemHoverModData").containsAll(properties.stringPropertyNames()))throw new IOException();
             String flag=properties.getProperty("enabled","false").trim();
             if(!flag.equals("true")&&!flag.equals("false"))throw new IOException();
             boolean enabled=flag.equals("true");
@@ -100,7 +105,10 @@ final class ServerConfig {
             var notifications=new HashSet<String>();String notices=properties.getProperty("notifications","").trim();
             if(!notices.isEmpty())for(String entry:notices.split(",",-1)){String kind=entry.trim();if(!Set.of("join","quit","death","advancement","lifecycle").contains(kind)||!notifications.add(kind))throw new IOException();}
             String item=properties.getProperty("itemDisplay","false").trim();if(!item.equals("true")&&!item.equals("false"))throw new IOException();
-            return new ServerConfig(enabled,channel,token,players,locale,packs,notifications,item.equals("true"));
+            String client=properties.getProperty("itemTooltipClient","strict").trim();if(!Set.of("off","strict","lenient").contains(client))throw new IOException();
+            String nativeLines=properties.getProperty("itemTooltipNative","true").trim();if(!nativeLines.equals("true")&&!nativeLines.equals("false"))throw new IOException();
+            String modData=properties.getProperty("itemHoverModData","false").trim();if(!modData.equals("true")&&!modData.equals("false"))throw new IOException();
+            return new ServerConfig(enabled,channel,token,players,locale,packs,notifications,item.equals("true"),ClientTooltips.valueOf(client.toUpperCase(Locale.ROOT)),nativeLines.equals("true"),modData.equals("true"));
         }catch(MissingCredentials missing){throw missing;}catch(Exception rejected){
             // Properties/UUID/path exceptions can quote input; never preserve their message or cause.
             throw new IOException("Invalid or unreadable DisCraft server configuration");
@@ -120,5 +128,8 @@ final class ServerConfig {
     List<String> resourcePacks(){return packs;}
     boolean notifies(String kind){return notifications.contains(kind);}
     boolean itemDisplay(){return itemDisplay;}
+    ClientTooltips clientTooltips(){return clientTooltips;}
+    boolean nativeTooltips(){return nativeTooltips;}
+    boolean hoverModData(){return hoverModData;}
     @Override public String toString(){return "ServerConfig[redacted]";}
 }

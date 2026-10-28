@@ -23,3 +23,5 @@ xvfb-run -a -s '-screen 0 1800x1200x24 -nolisten tcp' \
 ```
 
 The multiplayer CI job runs this acceptance after the normal two-client checks and uploads both evidence directories. Existing core, protocol, catalog/thumbnail, original mock-client and native gameplay checks remain in place. Windows/macOS rendering and unusual font/resource packs have not been verified.
+
+Server-rendered Discord tooltip images also bundle **DisCraft Symbols**, a renamed U+2070–U+2E7F subset (3,600 glyphs, about 0.43 MB) of GNU Unifont under SIL OFL 1.1, used only when the UI subset lacks a symbol (✔ ✦ ☠ ❤ …), matching the font Minecraft itself falls back to. It is not a client font provider. Attribution and digest are in `vendor/symbol-font/`; regenerate with `scripts/build-symbol-font.py`.

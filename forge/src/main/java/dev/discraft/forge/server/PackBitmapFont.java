@@ -7,13 +7,13 @@ import java.io.*;
 import java.util.*;
 import java.util.List;
 
-/** Bounded bitmap/space/reference font profile. Unsupported providers use the bundled OFL text font. */
+/** Bounded bitmap/space/reference font profile. Unsupported providers use the bundled OFL text font, then the Unifont symbol subset. */
 final class PackBitmapFont {
     private record Glyph(long identity,BufferedImage sheet,int x,int y,int w,int h,int height,int ascent,double advance){}
     private record Face(Map<Integer,Glyph> glyphs,boolean fallback,long pixels){}
     private final ResourcePackIndex resources;private final ResourceImages images;
     private final Map<String,Face> faces=new LinkedHashMap<>(8,.75f,true);
-    private final Font fallback;
+    private final Font fallback,symbols;
     // Primitive identity never retains a Glyph, its source sheet, or a shared raster.
     private long nextGlyphIdentity;
     private long glyphIdentity(){if(nextGlyphIdentity==Long.MAX_VALUE)throw new IllegalStateException("Font glyph identity exhausted");return ++nextGlyphIdentity;}
@@ -27,6 +27,8 @@ final class PackBitmapFont {
     PackBitmapFont(ResourcePackIndex resources,ResourceImages images)throws Exception{
         this.resources=resources;this.images=images;
         try(var in=PackBitmapFont.class.getResourceAsStream("/assets/discraft/font/ui.otf")){fallback=Font.createFont(Font.TRUETYPE_FONT,Objects.requireNonNull(in));}
+        // Minecraft draws symbols such as ✔ ✦ ☠ ❤ from Unifont; the CJK text subset lacks them.
+        try(var in=PackBitmapFont.class.getResourceAsStream("/assets/discraft/font/symbols.ttf")){symbols=Font.createFont(Font.TRUETYPE_FONT,Objects.requireNonNull(in));}
     }
     private Face face(String id){
         if(faces.containsKey(id))return faces.get(id);Face face;
@@ -62,15 +64,19 @@ final class PackBitmapFont {
         path.remove(id);return unsupported;
     }
     boolean usesFallback(int cp,String id){return !face(id).glyphs().containsKey(cp);}
-    boolean missing(int cp,String id){return usesFallback(cp,id)&&!fallback.canDisplay(cp);}
-    private Font styledFont(ItemTooltip.Run run,int size){return fallback.deriveFont((run.bold()?Font.BOLD:Font.PLAIN)|(run.italic()?Font.ITALIC:Font.PLAIN),(float)size);}
+    boolean missing(int cp,String id){return usesFallback(cp,id)&&!fallback.canDisplay(cp)&&!symbols.canDisplay(cp);}
+    private Font styledFont(int cp,ItemTooltip.Run run,int size){
+        int style=(run.bold()?Font.BOLD:Font.PLAIN)|(run.italic()?Font.ITALIC:Font.PLAIN);
+        // Unifont is a 16px pixel font: snap to a multiple of 16 so its pixels stay sharp.
+        return fallback.canDisplay(cp)||!symbols.canDisplay(cp)?fallback.deriveFont(style,(float)size):symbols.deriveFont(style,(float)Math.max(16,size/16*16));
+    }
     int measure(Graphics2D g,int cp,ItemTooltip.Run run,int size){
-        Glyph glyph=face(run.font()).glyphs().get(cp);if(glyph==null){g.setFont(styledFont(run,size));return Math.max(0,g.getFontMetrics().stringWidth(new String(Character.toChars(missing(cp,run.font())?'?':cp))));}
+        Glyph glyph=face(run.font()).glyphs().get(cp);if(glyph==null){g.setFont(styledFont(cp,run,size));return Math.max(0,g.getFontMetrics().stringWidth(new String(Character.toChars(missing(cp,run.font())?'?':cp))));}
         return Math.max(0,(int)Math.ceil(glyph.advance()*(double)size/Math.max(9,glyph.height()))+(run.bold()?1:0)+(run.italic()?2:0));
     }
     void glyph(Graphics2D g,int cp,ItemTooltip.Run run,int size,int x,int baseline){
         Glyph glyph=face(run.font()).glyphs().get(cp);int advance=measure(g,cp,run,size);
-        if(glyph==null){g.setFont(styledFont(run,size));g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING,RenderingHints.VALUE_TEXT_ANTIALIAS_ON);g.drawString(new String(Character.toChars(missing(cp,run.font())?'?':cp)),x,baseline);}
+        if(glyph==null){g.setFont(styledFont(cp,run,size));g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING,RenderingHints.VALUE_TEXT_ANTIALIAS_ON);g.drawString(new String(Character.toChars(missing(cp,run.font())?'?':cp)),x,baseline);}
         else if(glyph.sheet()!=null){
             double scale=(double)size/Math.max(9,glyph.height());int h=(int)Math.round(glyph.height()*scale),w=(int)Math.round((double)glyph.w()*glyph.height()/glyph.h()*scale),top=baseline-(int)Math.round(glyph.ascent()*scale);var transform=g.getTransform();
             if(run.italic()){g.translate(x,top);g.shear(-.15,0);g.translate(-x,-top);}
