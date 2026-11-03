@@ -393,7 +393,7 @@ public final class DiscordBotAdapter implements DiscordAdapter {
         if(closed||terminal||System.nanoTime()<blockedUntil)throw new IOException("Discord adapter unavailable or rate limited");
         var operation=operation(method,path);
         long remaining=deadline==Long.MAX_VALUE?TimeUnit.SECONDS.toNanos(10):deadline-System.nanoTime();if(remaining<=0)throw new IOException("Discord metadata deadline exceeded");
-        var builder=HttpRequest.newBuilder(api.resolve(path)).timeout(Duration.ofNanos(Math.min(remaining,TimeUnit.SECONDS.toNanos(10)))).header("Authorization","Bot "+token).header("User-Agent","DisCraft/0.2 (server bridge)");
+        var builder=HttpRequest.newBuilder(api.resolve(path)).timeout(Duration.ofNanos(Math.min(remaining,TimeUnit.SECONDS.toNanos(10)))).header("Authorization","Bot "+token).header("User-Agent","DisCraft/0.3 (server bridge)");
         if(type!=null)builder.header("Content-Type",type);
         builder.method(method,body==null?HttpRequest.BodyPublishers.noBody():HttpRequest.BodyPublishers.ofByteArray(body));
         var r=execute(builder.build(),maxBytes,deadline,operation);

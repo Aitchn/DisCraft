@@ -1,6 +1,7 @@
 package dev.discraft.forge;
 
 import dev.discraft.core.*;
+import dev.discraft.forge.bridge.EmojiDraft;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.*;
@@ -74,7 +75,7 @@ public final class NativeInteractions {
     private static void pick(Item item){
         if(!item.id().isEmpty()){
             var snapshot=ClientGuildEmoji.snapshot();var current=snapshot.find(item.id());if(current==null||!current.usable())return;
-            NativeComposer.insertEmoji(snapshot.fixture()?":"+current.name()+":":current.markup(),true);closePicker();return;
+            NativeComposer.insertEmoji(EmojiDraft.insertion(snapshot,current),true);closePicker();return;
         }
         if(item.file()){NativeComposer.stage(()->item.media());}else NativeComposer.insertEmoji(item.value(),item.custom());closePicker();screen.setFocused(input);input.setFocused(true);}
     @SubscribeEvent(priority=EventPriority.HIGH) public static void mouse(ScreenEvent.MouseButtonPressed.Pre event){
@@ -101,6 +102,7 @@ public final class NativeInteractions {
         // A relocated input can overlap chat history; typing controls own that area.
         if(input!=null&&input.isMouseOver(x,y)||smiley!=null&&inside(x,y,smiley.getX(),smiley.getY(),18,16))return;
         var actor=NativeChat.actorAt(x,y);if(actor!=null){NativeComposer.insertMention(actor);event.setCanceled(true);return;}
+        var view=NativeChat.viewAt(x,y,net.minecraft.client.gui.screens.Screen.hasShiftDown());if(view!=null){MediaViewer.open(view.digest(),view.name(),view.asset());event.setCanceled(true);return;}
         if(NativeChat.revealAt(x,y))event.setCanceled(true);
     }
     @SubscribeEvent public static void scroll(ScreenEvent.MouseScrolled.Pre event){if(!open||MC.screen!=screen)return;var area=compact()?footer().bounds():picker();if(area.contains(event.getMouseX(),event.getMouseY())){if(!compact())scroll=Math.max(0,scroll+(event.getScrollDelta()<0?1:-1));event.setCanceled(true);}}
@@ -115,9 +117,9 @@ public final class NativeInteractions {
         try{
             if(open&&compact()&&(!pending()||ph()<26||pw()<68))closePicker();
             displayedFooter=null;
-            card(g,event.getMouseX(),event.getMouseY());if(!open){ClientGuildEmoji.visible(List.of());return;}
+            card(g,event.getMouseX(),event.getMouseY());drawDraftEmoji(g);if(!open){wantEmoji(List.of());return;}
             if(compact()){
-                search.visible=false;search.active=false;if(search.isFocused()){screen.setFocused(input);input.setFocused(true);}hits.clear();ClientGuildEmoji.visible(List.of());var box=footer().bounds();g.fill(box.x(),box.y(),box.x()+box.width(),box.y()+box.height(),0xff1e1f22);displayedFooter=box;drawHeader(g,footer(),event.getMouseX(),event.getMouseY(),true);return;
+                search.visible=false;search.active=false;if(search.isFocused()){screen.setFocused(input);input.setFocused(true);}hits.clear();wantEmoji(List.of());var box=footer().bounds();g.fill(box.x(),box.y(),box.x()+box.width(),box.y()+box.height(),0xff1e1f22);displayedFooter=box;drawHeader(g,footer(),event.getMouseX(),event.getMouseY(),true);return;
             }
             int x=px(),y=py(),w=pw(),h=ph();g.fill(x,y,x+w,y+h,0xff2b2d31);g.fill(x,y,x+w,y+30,0xff232428);
             String[] tabs={"貼圖","表情符號"};for(int i=0;i<2;i++){if(i+1==tab)g.fill(x+8+i*64,y+5,x+66+i*64,y+26,0xff404249);UiText.draw(g,tabs[i],x+16+i*64,y+9,0xffeeeeee);}
@@ -136,9 +138,27 @@ public final class NativeInteractions {
                     var builtin=item.glyph().isEmpty()?null:TwemojiCatalog.exact(item.glyph());var builtinImage=builtin==null?null:TwemojiCatalog.asset(builtin);if(builtinImage!=null)draw(g,builtinImage,ix+3,iy+3,cell-8,cell-8);else if(item.media()!=null)draw(g,item.media(),ix+3,iy+3,cell-8,cell-8);else if(!item.id().isEmpty()){g.drawCenteredString(MC.font,item.enabled()?"…":"×",ix+cell/2,iy+8,item.enabled()?0xffb5bac1:0xff66686b);}else{g.pose().pushPose();g.pose().translate(ix+3,iy+4,0);g.pose().scale(2,2,1);g.drawString(MC.font,item.glyph(),0,0,0xffffcf55,false);g.pose().popPose();}
                 }
             }
-            ClientGuildEmoji.visible(visible);
+            wantEmoji(visible);
             if(pending()&&displayedCard!=null&&displayedCard.mode()==PendingCardLayout.Mode.HIDDEN){displayedFooter=footer().bounds();drawHeader(g,footer(),event.getMouseX(),event.getMouseY(),true);}else if(hover!=null)UiText.draw(g,UiText.fit(hover.name()+" · "+hover.source(),w-16),x+8,y+h-20,0xffdbdee1);else UiText.draw(g,UiText.fit(tab==1?"貼圖來源不可用":(guild?ClientGuildEmoji.snapshot().label()+" · "+all.size()+(ClientGuildEmoji.snapshot().complete()?"":" · 目錄已達上限"):"Twemoji "+TwemojiCatalog.VERSION+" · "+all.size()),w-16),x+8,y+h-20,0xffb5bac1);
         }finally{textures.end();}
+    }
+    /** Emoji recognised in the draft: shortcodes and raw Discord markup the server catalog says are usable. */
+    private static List<EmojiDraft.Span> draftEmoji(){
+        if(input==null)return List.of();var catalog=ClientGuildEmoji.snapshot();if(!catalog.ready())return List.of();
+        String value=input.getValue();if(value.isEmpty()||value.startsWith("/"))return List.of();
+        return EmojiDraft.spans(value,catalog,DraftMentions.snapshot(value));
+    }
+    /** Keeps thumbnails for the emoji in the draft loaded alongside the picker's visible ones. */
+    private static void wantEmoji(Collection<String> pickerIds){
+        var ids=new LinkedHashSet<String>(pickerIds);for(var span:draftEmoji())if(ids.size()<64)ids.add(span.entry().id());ClientGuildEmoji.visible(ids);
+    }
+    /** Discord-style confirmation: a correctly formed token is shown as the actual emoji just above the input. */
+    private static void drawDraftEmoji(GuiGraphics g){
+        if(input==null||open&&!compact())return;var spans=draftEmoji();if(spans.isEmpty())return;
+        var unique=new LinkedHashMap<String,dev.discraft.forge.bridge.GuildEmojiCatalog.Entry>();for(var span:spans)unique.putIfAbsent(span.entry().id(),span.entry());
+        int count=Math.min(8,unique.size()),x=input.getX(),y=input.getY()-15;if(y<2)return;
+        g.fill(x-2,y-2,x+count*14+2,y+13,0xd0101018);
+        int at=x;for(var entry:unique.values()){if(count--<=0)break;var image=ClientGuildEmoji.preview(entry.id());if(image!=null)draw(g,image,at,y,12,12);else g.drawString(MC.font,"…",at+3,y+2,0xffb5bac1,false);at+=14;}
     }
     private static void card(GuiGraphics g,int mx,int my){
         if(input==null||!pending()){displayedCard=null;displayedAttachment=null;return;}displayedCard=layoutCard();displayedOpen=open;displayedInputX=input.getX();displayedInputY=input.getY();displayedInputWidth=input.getWidth();displayedInputHeight=input.getHeight();displayedAttachment=NativeComposer.selected();displayedLoading=NativeComposer.validating();cardScreen=screen;cardScreenWidth=screen.width;cardScreenHeight=screen.height;

@@ -41,7 +41,8 @@ public final class NativeComposer {
         if(dev.discraft.core.ItemMarkers.contains(text))return true;
         var catalog=ClientGuildEmoji.snapshot();
         // Catalog is server-bound and capped. Selecting/deleting an emoji cannot leave a sticky routing mode.
-        return catalog.entries().stream().anyMatch(e->e.usable()&&text.contains(catalog.fixture()?":"+e.name()+":":e.markup()));
+        // A recognised :name: shortcode or Discord markup routes through the bridge so it can be sent as real emoji.
+        return dev.discraft.forge.bridge.EmojiDraft.contains(text,catalog,mentions);
     }
     private static void notice(String text){MC.gui.getChat().addMessage(Component.literal("[DisCraft] "+text));}
     private static final java.lang.reflect.Field CHAT_INPUT=net.minecraftforge.fml.util.ObfuscationReflectionHelper.findField(ChatScreen.class,"f_95573_");
@@ -98,7 +99,13 @@ public final class NativeComposer {
     static boolean submitCustom(String message){
         if(message.startsWith("/"))return false;
         String raw=MC.screen instanceof ChatScreen screen?input(screen).getValue():message;var selected=DraftMentions.snapshot(raw);if(!requiresPayload(message,selected))return false;
-        try{var mapped=dev.discraft.forge.bridge.MentionDraft.normalized(raw,selected,message);send(message,mapped);}catch(Exception invalid){notice("Enhanced draft changed or exceeded its bounds; message was not sent.");}return true;
+        try{
+            var mapped=dev.discraft.forge.bridge.MentionDraft.normalized(raw,selected,message);
+            // :name: shortcodes become Discord's own <:name:id> / <a:name:id> markup; mention spans are re-aligned exactly.
+            var wire=dev.discraft.forge.bridge.EmojiDraft.expand(message,mapped,ClientGuildEmoji.snapshot());
+            if(wire.text().codePointCount(0,wire.text().length())>1800){notice("表情符號展開後訊息過長，尚未傳送。");return true;}
+            send(wire.text(),wire.mentions());
+        }catch(Exception invalid){notice("Enhanced draft changed or exceeded its bounds; message was not sent.");}return true;
     }
     private static boolean send(String text,java.util.List<dev.discraft.forge.bridge.Mention> mentions){
         if(sending||loading){notice("Attachment validation or a bridge acknowledgement is still pending.");return false;}

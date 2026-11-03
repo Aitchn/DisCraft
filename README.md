@@ -1,4 +1,4 @@
-# DisCraft — Forge 1.20.1 server bridge preview
+# DisCraft 0.3.0 — Forge 1.20.1 server bridge preview
 
 Minecraft **1.20.1**, Forge **47.4.0**, Java **17**. Install the mod on the dedicated
 server; the client mod is optional and adds the native picker, images, clipboard,
@@ -26,7 +26,9 @@ rewriting the signed body or automatically retrying delivery.
 Twemoji **17.0.3** is bundled and checksum pinned, including artwork CC BY 4.0,
 MIT and Unicode notices. It is the same artwork family used by Discord, not an
 exact Discord release synchronization claim. Guild static/animated emoji remain
-a separate bounded server-owned catalog. GIF provider/sticker search is disabled;
+a separate bounded server-owned catalog. 0.3.0 adds Discord stickers (PNG/APNG/GIF),
+click-to-zoom image/sticker/GIF viewing, readable user/role/channel mentions and
+Discord-style `:name:` emoji input; see [SERVER-BRIDGE](docs/SERVER-BRIDGE.md). GIF provider search is disabled;
 explicit local TEST/demo fixtures are never a real provider.
 
 ```bash
@@ -35,7 +37,7 @@ explicit local TEST/demo fixtures are never a real provider.
 python3 scripts/check-mod-jar.py
 ```
 
-The distributable is `forge/build/libs/DisCraft-0.2.0-preview.8.jar`; no
+The distributable is `forge/build/libs/DisCraft-0.3.0.jar`; no
 separate core JAR is needed. Smoke/test drivers and local credentials are excluded.
 [CI](docs/CI.md) retains JAR and test evidence. Full client/native tests require a
 display or Xvfb; production headless servers do not.
