@@ -86,6 +86,8 @@ final class DiscordContentTest {
             // Oversized attachments are reported by name rather than silently dropped.
             var big=message("");var files=new JsonArray();var file=new JsonObject();file.addProperty("size",RelayRecord.FILE_BYTES+1);file.addProperty("filename","huge.png");file.addProperty("url","http://127.0.0.1:1/huge.png");files.add(file);big.add("attachments",files);
             record=convert(adapter,big);check(record.attachments().isEmpty()&&record.text().equals("[附件：huge.png]"),"An attachment over the relay limit is named instead of 'unavailable'");
+            var emojiName=message("hello");var ef=new JsonArray();var efile=new JsonObject();efile.addProperty("size",RelayRecord.FILE_BYTES+1);efile.addProperty("filename","a".repeat(39)+"😀.png");efile.addProperty("url","http://127.0.0.1:1/x.png");ef.add(efile);emojiName.add("attachments",ef);
+            check(convert(adapter,emojiName).text().startsWith("hello [附件："),"Fallback filenames are truncated on code point boundaries");
             check(convert(adapter,message("")).text().equals("[Discord content/media unavailable]"),"Truly empty content keeps the generic placeholder");
             var oversize=message("x".repeat(1900)+"<@&5234567890123458>".repeat(5));var expanded=convert(adapter,oversize).text();check(expanded.codePointCount(0,expanded.length())<=Limits.TEXT_CODEPOINTS&&expanded.endsWith("…"),"Expanded names can never push a message over the text limit");
             // Directory failures are non-fatal and never disable the bridge.
@@ -94,6 +96,7 @@ final class DiscordContentTest {
                 second.poll();second.poll();directoryStatus.set(403);
                 check(convert(second,message("<@&"+ROLE+"> <#"+ROOM+">")).text().equals("@unknown-role #unknown-channel"),"Forbidden directory listings fall back to placeholders");
                 check(second.poll().isEmpty(),"A forbidden directory listing does not make the adapter terminal");
+                int before=roleRequests.get();convert(second,message("<@&"+ROLE+">"));check(roleRequests.get()==before,"A failed first directory load honors the retry interval");
             }
             // Outbound text must not be rewritten: raw markup typed in game stays exactly as typed.
             var out=adapter.prepare(RelayRecord.draft(UUID.randomUUID(),"literal <@&"+ROLE+"> <t:0>",null));check(out.text().equals("literal <@&"+ROLE+"> <t:0>"),"Minecraft to Discord text is never rewritten by the readable-mention pass");

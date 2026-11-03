@@ -63,7 +63,7 @@ public final class DiscordBotAdapter implements DiscordAdapter {
     private String directoryName(boolean role,String id){
         if(guild.isEmpty()||closed||terminal)return null;
         var directory=role?roles:channels;long now=System.nanoTime();String name=directory.names().get(id);
-        boolean stale=!directory.loaded()||now-directory.fetched()>=DIRECTORY_TTL_NANOS||name==null&&now-directory.fetched()>=DIRECTORY_MISS_NANOS;
+        boolean stale=directory.fetched()==0||now-directory.fetched()>=DIRECTORY_TTL_NANOS||name==null&&now-directory.fetched()>=DIRECTORY_MISS_NANOS;
         if(stale&&directoryAttempts<2){
             directoryAttempts++;
             try{
@@ -332,7 +332,7 @@ public final class DiscordBotAdapter implements DiscordAdapter {
         if(object==null||!object.has(field)||!object.get(field).isJsonPrimitive()||!object.getAsJsonPrimitive(field).isString())return null;
         String name=object.get(field).getAsString();try{Limits.text(name,64,"Discord display");if(name.isBlank()||name.chars().anyMatch(Character::isISOControl))return null;return name;}catch(IllegalArgumentException invalid){return null;}
     }
-    private static String unsent(String kind,String name){String shown=name==null?"":name.replaceAll("[\\p{Cntrl}]"," ");if(shown.length()>40)shown=shown.substring(0,40)+"…";return "["+kind+"："+shown+"]";}
+    private static String unsent(String kind,String name){String shown=name==null?"":name.replaceAll("[\\p{Cntrl}]"," ");if(shown.codePointCount(0,shown.length())>40)shown=shown.substring(0,shown.offsetByCodePoints(0,40))+"…";return "["+kind+"："+shown+"]";}
     /** Users the message itself says it mentions (Gateway and REST both include them); capped so a hostile payload cannot bloat the map. */
     private static Map<String,JsonObject> mentionedUsers(JsonObject message){
         var result=new HashMap<String,JsonObject>();
