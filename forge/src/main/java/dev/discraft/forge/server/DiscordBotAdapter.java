@@ -55,6 +55,28 @@ public final class DiscordBotAdapter implements DiscordAdapter {
     private record MemberName(String nick,String global,String username,long expires){}
     private final Map<String,MemberName> memberNames=new LinkedHashMap<>(128,.75f,true);
     private int memberAttempts;private long memberNanosRemaining;
+    // Role and channel names for readable mentions: one bounded guild listing each, refreshed lazily and never fatal.
+    private record Directory(Map<String,String> names,long fetched,boolean loaded) {}
+    private Directory roles=new Directory(Map.of(),0,false),channels=new Directory(Map.of(),0,false);
+    private int directoryAttempts;
+    private static final long DIRECTORY_MISS_NANOS=TimeUnit.SECONDS.toNanos(30),DIRECTORY_TTL_NANOS=TimeUnit.SECONDS.toNanos(300);
+    private String directoryName(boolean role,String id){
+        if(guild.isEmpty()||closed||terminal)return null;
+        var directory=role?roles:channels;long now=System.nanoTime();String name=directory.names().get(id);
+        boolean stale=!directory.loaded()||now-directory.fetched()>=DIRECTORY_TTL_NANOS||name==null&&now-directory.fetched()>=DIRECTORY_MISS_NANOS;
+        if(stale&&directoryAttempts<2){
+            directoryAttempts++;
+            try{
+                var list=array(request("GET","guilds/"+guild+(role?"/roles":"/channels"),null,null,System.nanoTime()+TimeUnit.SECONDS.toNanos(3),384*1024),BridgeDiagnostics.Operation.DIRECTORY);
+                if(list.size()>1000)throw new IOException("Guild directory budget");
+                var names=new HashMap<String,String>();
+                for(var value:list){var entry=value.getAsJsonObject();if(!entry.has("id"))continue;String entryId=entry.get("id").getAsString(),entryName=nameField(entry,"name");if(entryId.matches("[0-9]{15,22}")&&entryName!=null)names.put(entryId,entryName);}
+                directory=new Directory(Map.copyOf(names),System.nanoTime(),true);
+            }catch(Exception unavailable){directory=new Directory(directory.names(),System.nanoTime(),directory.loaded());}
+            if(role)roles=directory;else channels=directory;name=directory.names().get(id);
+        }
+        return name;
+    }
     private GuildEmojiCatalog guildCatalog=GuildEmojiCatalog.empty(0);
     private long nextCatalog;
     private final EmojiThumbnailCache thumbnails=new EmojiThumbnailCache();
@@ -224,7 +246,7 @@ public final class DiscordBotAdapter implements DiscordAdapter {
                 if(response.size()>4)throw new IOException("Discord page budget exceeded");
                 if(cursor==null){cursor=response.isEmpty()?"0":response.get(0).getAsJsonObject().get("id").getAsString();if(!cursor.matches("[0-9]{1,22}"))throw new IOException("Invalid cursor");pushed.clear();pushedSize.set(0);backlog.clear();readSucceeded();return records;}
             }
-            memberAttempts=0;memberNanosRemaining=TimeUnit.SECONDS.toNanos(2);
+            memberAttempts=0;directoryAttempts=0;memberNanosRemaining=TimeUnit.SECONDS.toNanos(2);
             // One id-keyed backlog deduplicates both paths. Only the oldest PUSH_BATCH messages are taken, and the cursor
             // advances solely through taken ids, so undelivered newer or older queued messages are never skipped.
             for(var e:response){var o=e.getAsJsonObject();backlog.putIfAbsent(new java.math.BigInteger(o.get("id").getAsString()),o);}
@@ -253,10 +275,15 @@ public final class DiscordBotAdapter implements DiscordAdapter {
         String text=m.has("content")?m.get("content").getAsString():"";Limits.text(text,2000,"Discord content");
         var edits=new ArrayList<Edit>();
         var budget=new ConversionBudget();var resolved=new HashMap<EmojiKey,Optional<Attachment>>();
-        var catalog=new LinkedHashMap<String,Content.CustomEmoji>();var emoji=new HashMap<String,Attachment>();var matcher=EMOJI.matcher(text);var converted=new StringBuffer();
+        var catalog=new LinkedHashMap<String,Content.CustomEmoji>();var emoji=new HashMap<String,Attachment>();var matcher=(outbound?EMOJI:DiscordMarkup.TOKENS).matcher(text);var converted=new StringBuffer();
+        var hints=outbound?Map.<String,JsonObject>of():mentionedUsers(m);
         while(matcher.find()){
             boolean inside=false;for(var mention:inputMentions)if(matcher.start()<mention.end()&&matcher.end()>mention.start()){inside=true;break;}
             if(inside){matcher.appendReplacement(converted,java.util.regex.Matcher.quoteReplacement(matcher.group()));continue;}
+            if(matcher.group(3)==null){
+                String readable=readable(matcher,hints);
+                matcher.appendReplacement(converted,java.util.regex.Matcher.quoteReplacement(readable));edits.add(new Edit(matcher.end(),readable.length()-(matcher.end()-matcher.start())));continue;
+            }
             String id=matcher.group(3);boolean animated=!matcher.group(1).isEmpty();String emojiName=matcher.group(2);
             if(outbound){var definition=guildCatalog.find(id);if(definition==null||!definition.usable())throw new IOException("Guild emoji unavailable or not permitted");animated=definition.animated();emojiName=definition.name();}
             var identity=new EmojiKey(id,animated);String alias=(animated?"a":"e")+id,key="emoji-"+id+(animated?".gif":".png");
@@ -273,14 +300,28 @@ public final class DiscordBotAdapter implements DiscordAdapter {
             }else replacement=":"+matcher.group(2)+":";
             matcher.appendReplacement(converted,java.util.regex.Matcher.quoteReplacement(replacement));edits.add(new Edit(matcher.end(),replacement.length()-(matcher.end()-matcher.start())));
         }
-        matcher.appendTail(converted);var files=new ArrayList<Attachment>();
+        matcher.appendTail(converted);var files=new ArrayList<Attachment>();var notes=new ArrayList<String>();
         if(m.has("attachments"))for(var f:m.getAsJsonArray("attachments")){
             if(!files.isEmpty()||budget.attempts>=MEDIA_ATTEMPTS||System.nanoTime()>=budget.deadline)break;
-            var a=f.getAsJsonObject();
-            try{if(a.get("size").getAsLong()>RelayRecord.FILE_BYTES)continue;String name=a.get("filename").getAsString();boolean hidden=a.has("is_spoiler")&&a.get("is_spoiler").getAsBoolean()||a.has("flags")&&(a.get("flags").getAsInt()&8)!=0;if(hidden&&!name.startsWith("SPOILER_")){if(name.length()>112)name=name.substring(0,112);name="SPOILER_"+name;}files.add(budget.resolve(name,URI.create(a.get("url").getAsString())));}
-            catch(Exception unsupported){/* Shared attempt/deadline budget includes unsuccessful attachment downloads. */}
+            var a=f.getAsJsonObject();String name="file";
+            try{name=a.get("filename").getAsString();if(a.get("size").getAsLong()>RelayRecord.FILE_BYTES){notes.add(unsent("附件",name));continue;}boolean hidden=a.has("is_spoiler")&&a.get("is_spoiler").getAsBoolean()||a.has("flags")&&(a.get("flags").getAsInt()&8)!=0;if(hidden&&!name.startsWith("SPOILER_")){if(name.length()>112)name=name.substring(0,112);name="SPOILER_"+name;}files.add(budget.resolve(name,URI.create(a.get("url").getAsString())));}
+            catch(Exception unsupported){/* Shared attempt/deadline budget includes unsuccessful attachment downloads. */notes.add(unsent("附件",name));}
         }
+        if(!outbound&&files.isEmpty()&&m.has("sticker_items")&&m.get("sticker_items").isJsonArray())for(var item:m.getAsJsonArray("sticker_items")){
+            String label="貼圖";
+            try{
+                var sticker=item.getAsJsonObject();String id=sticker.get("id").getAsString();int format=sticker.has("format_type")?sticker.get("format_type").getAsInt():1;String name=nameField(sticker,"name");if(name==null)name="sticker";label=name;
+                if(!id.matches("[0-9]{15,22}"))throw new IOException("Invalid sticker identity");
+                if(format!=1&&format!=2&&format!=4)throw new IOException("Lottie stickers are vector animations and have no raster form");
+                boolean gif=format==4;
+                URI uri=URI.create(localTest?api.resolve("sticker/"+id).toString():(gif?"https://media.discordapp.net/stickers/"+id+".gif":"https://cdn.discordapp.com/stickers/"+id+".png"));
+                files.add(budget.resolve(name+(gif?".gif":".png"),uri));
+            }catch(Exception unsupported){notes.add(unsent("貼圖",label));}
+            break; // A message carries one displayable sticker slot, like one displayable attachment.
+        }
+        if(!notes.isEmpty()){if(!converted.toString().isBlank())converted.append(' ');converted.append(String.join(" ",notes.subList(0,Math.min(2,notes.size()))));}
         if(converted.toString().isBlank()&&files.isEmpty())converted.append("[Discord content/media unavailable]");
+        if(converted.codePointCount(0,converted.length())>Limits.TEXT_CODEPOINTS){int keep=converted.offsetByCodePoints(0,Limits.TEXT_CODEPOINTS-1);converted.setLength(keep);converted.append('…');}
         String author=display;
         var mentions=new ArrayList<Mention>();for(var mention:inputMentions){int delta=edits.stream().filter(e->e.end()<=mention.start()).mapToInt(Edit::delta).sum();mentions.add(new Mention(mention.start()+delta,mention.end()+delta,mention.target()));}
         ActorRef actor=authorJson.has("id")?new ActorRef(ActorRef.Kind.DISCORD,authorJson.get("id").getAsString(),author):null;
@@ -291,9 +332,35 @@ public final class DiscordBotAdapter implements DiscordAdapter {
         if(object==null||!object.has(field)||!object.get(field).isJsonPrimitive()||!object.getAsJsonPrimitive(field).isString())return null;
         String name=object.get(field).getAsString();try{Limits.text(name,64,"Discord display");if(name.isBlank()||name.chars().anyMatch(Character::isISOControl))return null;return name;}catch(IllegalArgumentException invalid){return null;}
     }
+    private static String unsent(String kind,String name){String shown=name==null?"":name.replaceAll("[\\p{Cntrl}]"," ");if(shown.length()>40)shown=shown.substring(0,40)+"…";return "["+kind+"："+shown+"]";}
+    /** Users the message itself says it mentions (Gateway and REST both include them); capped so a hostile payload cannot bloat the map. */
+    private static Map<String,JsonObject> mentionedUsers(JsonObject message){
+        var result=new HashMap<String,JsonObject>();
+        if(message.has("mentions")&&message.get("mentions").isJsonArray())for(var value:message.getAsJsonArray("mentions")){
+            if(result.size()>=100)break;
+            try{var user=value.getAsJsonObject();String id=user.get("id").getAsString();if(id.matches("[0-9]{15,22}"))result.putIfAbsent(id,user);}catch(RuntimeException malformed){/* ignore one malformed entry */}
+        }
+        return result;
+    }
+    /** Readable text for one non-emoji token. Unknown identities get a fixed placeholder; a raw {@code <@id>} never reaches the game. */
+    private String readable(java.util.regex.Matcher token,Map<String,JsonObject> hints){
+        if(token.group(4)!=null){
+            String id=token.group(4);var user=hints.get(id);String nick=null;
+            if(user!=null&&user.has("member")&&user.get("member").isJsonObject())nick=nameField(user.getAsJsonObject("member"),"nick");
+            if(nick!=null)return "@"+nick;
+            var probe=user;if(probe==null){probe=new JsonObject();probe.addProperty("id",id);}
+            return "@"+memberDisplay(probe,user==null?DiscordMarkup.UNKNOWN_USER:basicName(user));
+        }
+        if(token.group(5)!=null){String name=directoryName(true,token.group(5));return "@"+(name==null?DiscordMarkup.UNKNOWN_ROLE:name);}
+        if(token.group(6)!=null){String name=directoryName(false,token.group(6));return "#"+(name==null?DiscordMarkup.UNKNOWN_CHANNEL:name);}
+        if(token.group(7)!=null)return "/"+token.group(7);
+        if(token.group(9)!=null)return DiscordMarkup.timestamp(token.group(9),token.group(10),java.time.Instant.now().getEpochSecond());
+        return DiscordMarkup.guildNavigation(token.group(11));
+    }
     private static String basicName(JsonObject user){String global=nameField(user,"global_name"),username=nameField(user,"username");return global!=null?global:username!=null?username:"Discord user";}
-    private String memberDisplay(JsonObject author){
-        String id=author.has("id")?author.get("id").getAsString():"";if(guild.isEmpty()||!id.matches("[0-9]{15,22}"))return basicName(author);
+    private String memberDisplay(JsonObject author){return memberDisplay(author,basicName(author));}
+    private String memberDisplay(JsonObject author,String fallback){
+        String id=author.has("id")?author.get("id").getAsString():"";if(guild.isEmpty()||!id.matches("[0-9]{15,22}"))return fallback;
         String key=guild+":"+id;long now=System.nanoTime();MemberName member=memberNames.get(key);
         if(member!=null&&now>=member.expires()){memberNames.remove(key);member=null;}
         if(member==null&&memberAttempts<4&&memberNanosRemaining>0){
@@ -307,13 +374,13 @@ public final class DiscordBotAdapter implements DiscordAdapter {
             memberNames.put(key,member);while(memberNames.size()>128)memberNames.remove(memberNames.keySet().iterator().next());
         }
         if(member!=null){if(member.nick()!=null)return member.nick();if(member.global()!=null)return member.global();if(nameField(author,"global_name")!=null)return nameField(author,"global_name");if(member.username()!=null)return member.username();}
-        return basicName(author);
+        return fallback;
     }
     private byte[] fetchMedia(URI uri)throws Exception{
         if(localTest){if(!uri.getHost().equals("127.0.0.1")||uri.getPort()!=api.getPort())throw new IOException("Invalid local media URL");}
         else{
             if(!"https".equals(uri.getScheme())||uri.getRawUserInfo()!=null||uri.getFragment()!=null||(uri.getPort()!=-1&&uri.getPort()!=443)
-                ||!Set.of("cdn.discordapp.com","media.discordapp.net").contains(uri.getHost())||!(uri.getPath().startsWith("/attachments/")||uri.getPath().matches("/emojis/[0-9]{15,22}\\.(png|gif)")))throw new IOException("Unapproved media location");
+                ||!Set.of("cdn.discordapp.com","media.discordapp.net").contains(uri.getHost())||!(uri.getPath().startsWith("/attachments/")||uri.getPath().matches("/emojis/[0-9]{15,22}\\.(png|gif)")||uri.getPath().matches("/stickers/[0-9]{15,22}\\.(png|gif)")))throw new IOException("Unapproved media location");
             for(var ip:InetAddress.getAllByName(uri.getHost()))if(ip.isAnyLocalAddress()||ip.isLoopbackAddress()||ip.isLinkLocalAddress()||ip.isSiteLocalAddress()||ip.isMulticastAddress())throw new IOException("Unsafe CDN resolution");
         }
         var r=execute(HttpRequest.newBuilder(uri).timeout(Duration.ofSeconds(10)).GET().build(),RelayRecord.FILE_BYTES);
@@ -335,6 +402,8 @@ public final class DiscordBotAdapter implements DiscordAdapter {
             if(!Double.isFinite(seconds)||seconds<0||seconds>3600)seconds=3600;
             blockedUntil=System.nanoTime()+(long)Math.ceil(Math.max(1,seconds)*1e9);diagnostics.report(BridgeDiagnostics.Code.RATE_LIMITED,operation,429,BridgeDiagnostics.Terminal.NO);throw new IOException("Discord rate limited");
         }
+        // Role/channel names only prettify mentions: a refusal must never disable the bridge.
+        if(operation==BridgeDiagnostics.Operation.DIRECTORY&&(r.statusCode()<200||r.statusCode()>=300)){diagnostics.report(BridgeDiagnostics.Code.HTTP_FAILED,operation,r.statusCode(),BridgeDiagnostics.Terminal.NO);throw new IOException("Guild directory unavailable");}
         if(r.statusCode()==401||r.statusCode()==403){if(operation==BridgeDiagnostics.Operation.GATEWAY){gatewayUnavailable=true;gatewayDiagnostics.report(BridgeDiagnostics.Code.GATEWAY_TERMINAL,operation,r.statusCode(),BridgeDiagnostics.Terminal.YES);throw new IOException("Gateway discovery rejected");}terminal=true;if(gateway!=null)gateway.close();unavailableCatalog();diagnostics.report(r.statusCode()==401?BridgeDiagnostics.Code.AUTH_REJECTED:BridgeDiagnostics.Code.PERMISSION_REJECTED,operation,r.statusCode(),BridgeDiagnostics.Terminal.YES);throw new IOException("Discord credentials/permissions rejected; restart after operator correction");}
         if(r.statusCode()<200||r.statusCode()>=300){diagnostics.report(r.statusCode()==404?BridgeDiagnostics.Code.NOT_FOUND:BridgeDiagnostics.Code.HTTP_FAILED,operation,r.statusCode(),BridgeDiagnostics.Terminal.NO);throw new IOException("Discord request failed or uncertain; not automatically retried");}
         return r.body();
@@ -355,6 +424,7 @@ public final class DiscordBotAdapter implements DiscordAdapter {
         if(path.equals("users/@me"))return BridgeDiagnostics.Operation.IDENTITY;
         if(path.contains("/members/"))return BridgeDiagnostics.Operation.MEMBER;
         if(path.endsWith("/emojis"))return BridgeDiagnostics.Operation.CATALOG;
+        if(path.startsWith("guilds/")&&(path.endsWith("/roles")||path.endsWith("/channels")))return BridgeDiagnostics.Operation.DIRECTORY;
         if(path.contains("/messages"))return method.equals("POST")?BridgeDiagnostics.Operation.SEND:BridgeDiagnostics.Operation.POLL;
         return BridgeDiagnostics.Operation.CHANNEL;
     }

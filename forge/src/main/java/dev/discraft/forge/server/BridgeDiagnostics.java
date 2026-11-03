@@ -7,7 +7,7 @@ import java.util.concurrent.TimeUnit;
 
 /** Only closed enums/numeric HTTP status reach logs. No Throwable, URI, body, IDs or user text API. */
 public final class BridgeDiagnostics {
-    public enum Operation { IDENTITY, CHANNEL, CATALOG, MEMBER, POLL, SEND, NOTICE, MEDIA, BACKGROUND, GATEWAY, NATIVE }
+    public enum Operation { IDENTITY, CHANNEL, CATALOG, MEMBER, POLL, SEND, NOTICE, MEDIA, BACKGROUND, GATEWAY, NATIVE, DIRECTORY }
     enum Terminal { YES, NO, UNKNOWN }
     enum Code {
         NATIVE_ADMITTED(false,"Native chat admission recorded; no send is implied"),
