@@ -27,8 +27,12 @@ public final class NativeChat {
     private static final Field LINES=ObfuscationReflectionHelper.findField(ChatComponent.class,"f_93761_");
     private static final Field ALL=ObfuscationReflectionHelper.findField(ChatComponent.class,"f_93760_");
     private static final Field SCROLL=ObfuscationReflectionHelper.findField(ChatComponent.class,"f_93763_");
-    private record Tile(String digest,int width,int height,int x,int y,int cell,int band,UUID owner,boolean spoiler) {}
+    private record Tile(String digest,int width,int height,int x,int y,int cell,int band,UUID owner,boolean spoiler,boolean viewable,String name) {}
     private record SpoilerHit(double x,double y,double w,double h,UUID owner) {}
+    private record MediaHit(double x,double y,double w,double h,UUID owner,String digest,String name,boolean spoiler) {}
+    /** What a click on a chat image opens: the decoded media, never a URL or raw bytes. */
+    record ViewTarget(String digest,String name,MediaAsset asset) {}
+    private static final List<MediaHit> mediaHits=new ArrayList<>();
     private static final List<SpoilerHit> spoilerHits=new ArrayList<>();
     private static final Set<UUID> revealed=new HashSet<>();
     private static final Map<ClickEvent,ActorRef> nameEvents=new IdentityHashMap<>();
@@ -49,7 +53,7 @@ public final class NativeChat {
     private static final long started=System.nanoTime();
     private static boolean externalFrameOpen;
 
-    public static void reset(){nativeOriginals.clear();nativeComponents.clear();unicodeMedia.clear();TwemojiCatalog.clearAssets();assets.clear();tiles.clear();markers.clear();components.clear();records.clear();layout=null;spoilerHits.clear();revealed.clear();nameEvents.clear();ownedNames.clear();textures.close();NativeComposer.reset();}
+    public static void reset(){nativeOriginals.clear();nativeComponents.clear();unicodeMedia.clear();TwemojiCatalog.clearAssets();assets.clear();tiles.clear();markers.clear();components.clear();records.clear();layout=null;spoilerHits.clear();mediaHits.clear();MediaViewer.close();revealed.clear();nameEvents.clear();ownedNames.clear();textures.close();NativeComposer.reset();}
     public static void receive(RelayRecord record,Collection<RelayRecord> retained){
         reflow();var ids=new HashSet<UUID>();assets.clear();
         var wanted=new LinkedHashMap<String,TwemojiCatalog.Entry>();
@@ -75,12 +79,12 @@ public final class NativeChat {
             at=item.end();
         }appendBody(component,record,at,record.text().length(),owned);
         for(var a:record.attachments()){
-            component.append(Component.literal("\n["+a.name()+"]").withStyle(ChatFormatting.GRAY));
+            component.append(Component.literal("\n["+a.name()+"]").withStyle(Style.EMPTY.withColor(ChatFormatting.GRAY).withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT,Component.translatableWithFallback("discraft.media.view","點擊圖片放大檢視")))));
             if(!ChatPlusCompat.canRender())continue;
             int available=Math.max(layout.cell(),layout.width()/layout.cell()*layout.cell());
             double scale=Math.min(Math.min(96,available)/(double)a.media().width(),54d/a.media().height());
             int width=Math.max(1,(int)Math.round(a.media().width()*scale)),height=Math.max(1,(int)Math.round(a.media().height()*scale));
-            for(int y=0;y<height;y+=layout.band()){component.append("\n");row(component,a,width,height,y,layout.cell(),layout.band(),"\u00a0",owned,record.id(),a.name().startsWith("SPOILER_"));}
+            for(int y=0;y<height;y+=layout.band()){component.append("\n");row(component,a,width,height,y,layout.cell(),layout.band(),"\u00a0",owned,record.id(),a.name().startsWith("SPOILER_"),true);}
         }
         return component;
     }
@@ -128,9 +132,10 @@ public final class NativeChat {
         for(var record:records.values()){int at=0;for(var item:record.nativeItems()){wantUnicode(record,record.text().substring(at,item.start()),wanted);at=item.end();}wantUnicode(record,record.text().substring(at),wanted);}syncUnicode(wanted);
         var owned=new HashSet<Integer>();markers.put(id,owned);var replacement=nativeEmoji(event.getMessage(),id,owned);nativeComponents.put(id,replacement);event.setMessage(replacement);
     }
-    private static void row(MutableComponent text,Attachment a,int width,int height,int y,int cell,int band,String glyph,Set<Integer> owned,UUID owner,boolean spoiler){
+    private static void row(MutableComponent text,Attachment a,int width,int height,int y,int cell,int band,String glyph,Set<Integer> owned,UUID owner,boolean spoiler){row(text,a,width,height,y,cell,band,glyph,owned,owner,spoiler,false);}
+    private static void row(MutableComponent text,Attachment a,int width,int height,int y,int cell,int band,String glyph,Set<Integer> owned,UUID owner,boolean spoiler,boolean viewable){
         for(int x=0;x<width;x+=cell){
-            int color;do{color=nextColor++ & 0xffffff;}while(tiles.containsKey(color));owned.add(color);tiles.put(color,new Tile(a.digest(),width,height,x,y,cell,band,owner,spoiler));
+            int color;do{color=nextColor++ & 0xffffff;}while(tiles.containsKey(color));owned.add(color);tiles.put(color,new Tile(a.digest(),width,height,x,y,cell,band,owner,spoiler,viewable,a.name()));
             // NBSP reserves native glyph advance without a visible character or clickable metadata.
             text.append(Component.literal(glyph).withStyle(Style.EMPTY.withFont(Minecraft.DEFAULT_FONT).withColor(color)));
         }
@@ -148,6 +153,14 @@ public final class NativeChat {
         var hover=style.getHoverEvent();if(hover==null||MC.getConnection()==null)return null;
         var entity=hover.getValue(HoverEvent.Action.SHOW_ENTITY);if(entity==null||entity.type!=net.minecraft.world.entity.EntityType.PLAYER)return null;
         var player=MC.getConnection().getPlayerInfo(entity.id);return player==null?null:new ActorRef(ActorRef.Kind.MINECRAFT,player.getProfile().getId().toString(),player.getProfile().getName());
+    }
+    /** Topmost viewable image under the pointer. A hidden spoiler is never viewable; a revealed one needs Shift so a plain click still re-hides it. */
+    static ViewTarget viewAt(double x,double y,boolean shift){
+        for(int i=mediaHits.size()-1;i>=0;i--){
+            var hit=mediaHits.get(i);if(x<hit.x()||x>=hit.x()+hit.w()||y<hit.y()||y>=hit.y()+hit.h())continue;
+            if(hit.spoiler()&&(!shift||!revealed.contains(hit.owner())))return null;
+            var media=assets.get(hit.digest());return media==null?null:new ViewTarget(hit.digest(),hit.name(),media);
+        }return null;
     }
     static boolean revealAt(double x,double y){if(ChatPlusCompat.custom()){for(int i=spoilerHits.size()-1;i>=0;i--){var hit=spoilerHits.get(i);if(x>=hit.x()&&x<hit.x()+hit.w()&&y>=hit.y()&&y<hit.y()+hit.h()){if(!revealed.add(hit.owner()))revealed.remove(hit.owner());return true;}}return false;}for(var hit:spoilerHits)if(x>=hit.x()&&x<hit.x()+hit.w()&&y>=hit.y()&&y<hit.y()+hit.h()){if(!revealed.add(hit.owner()))revealed.remove(hit.owner());return true;}return false;}
     private static void reflow(){
@@ -171,7 +184,7 @@ public final class NativeChat {
     }
     @SubscribeEvent(priority=EventPriority.LOWEST) public static void position(CustomizeGuiOverlayEvent.Chat event){chatX=event.getPosX();chatY=event.getPosY();reflow();}
     @SubscribeEvent public static void externalFrame(net.minecraftforge.event.TickEvent.RenderTickEvent event){
-        if(event.phase==net.minecraftforge.event.TickEvent.Phase.START){if(!ChatPlusCompat.active())return;renderedTiles=0;spoilerHits.clear();textures.begin();externalFrameOpen=true;}else if(externalFrameOpen){textures.end();externalFrameOpen=false;}
+        if(event.phase==net.minecraftforge.event.TickEvent.Phase.START){if(!ChatPlusCompat.active())return;renderedTiles=0;spoilerHits.clear();mediaHits.clear();textures.begin();externalFrameOpen=true;}else if(externalFrameOpen){textures.end();externalFrameOpen=false;}
     }
     static void externalLine(net.minecraft.client.gui.GuiGraphics graphics,net.minecraft.util.FormattedCharSequence content,float x,float y,int lineHeight,ChatPlusCompat.Bounds bounds,float opacity){
         if(!Float.isFinite(x)||!Float.isFinite(y)||opacity<=.01f||MC.options.hideGui||bounds.width()<=0||bounds.height()<=0)return;
@@ -185,7 +198,7 @@ public final class NativeChat {
                 int sx=tile.x()*a.width()/tile.width(),sy=tile.y()*a.height()/tile.height();
                 int sw=Math.max(1,(tile.x()+dw)*a.width()/tile.width()-sx),sh=Math.max(1,(tile.y()+dh)*a.height()/tile.height()-sy);
                 int px=Math.round(advance[0]),py=Math.round(y+tile.y()-(tile.y()/tile.band())*lineHeight);
-                if(tile.spoiler()&&spoilerHits.size()<4096){var matrix=graphics.pose().last().pose();var a0=matrix.transformPosition(new org.joml.Vector3f(px,py,0));var b0=matrix.transformPosition(new org.joml.Vector3f(px+dw,py+dh,0));double hx=Math.max(left,Math.min(a0.x(),b0.x())),hy=Math.max(top,Math.min(a0.y(),b0.y())),ex=Math.min(right,Math.max(a0.x(),b0.x())),ey=Math.min(bottom,Math.max(a0.y(),b0.y()));if(ex>hx&&ey>hy)spoilerHits.add(new SpoilerHit(hx,hy,ex-hx,ey-hy,tile.owner()));}
+                if((tile.spoiler()||tile.viewable())&&spoilerHits.size()+mediaHits.size()<4096){var matrix=graphics.pose().last().pose();var a0=matrix.transformPosition(new org.joml.Vector3f(px,py,0));var b0=matrix.transformPosition(new org.joml.Vector3f(px+dw,py+dh,0));double hx=Math.max(left,Math.min(a0.x(),b0.x())),hy=Math.max(top,Math.min(a0.y(),b0.y())),ex=Math.min(right,Math.max(a0.x(),b0.x())),ey=Math.min(bottom,Math.max(a0.y(),b0.y()));if(ex>hx&&ey>hy){if(tile.spoiler())spoilerHits.add(new SpoilerHit(hx,hy,ex-hx,ey-hy,tile.owner()));if(tile.viewable())mediaHits.add(new MediaHit(hx,hy,ex-hx,ey-hy,tile.owner(),tile.digest(),tile.name(),tile.spoiler()));}}
                 if(tile.spoiler()&&!revealed.contains(tile.owner()))graphics.fill(px,py,px+dw,py+dh,0xff3d3e45);
                 else{var texture=textures.frame((a.animated()?tile.owner()+":":"")+tile.digest(),a,elapsed);RenderSystem.enableBlend();RenderSystem.setShaderColor(1,1,1,opacity);graphics.blit(texture,px,py,dw,dh,sx,sy,sw,sh,a.width(),a.height());renderedTiles++;}
             }}advance[0]+=MC.font.width(Component.literal(new String(Character.toChars(point))).setStyle(style));return true;
@@ -193,7 +206,7 @@ public final class NativeChat {
     }
     @SubscribeEvent public static void render(RenderGuiOverlayEvent.Post event){
         if(!event.getOverlay().id().equals(VanillaGuiOverlay.CHAT_PANEL.id())||ChatPlusCompat.rendering())return;
-        renderedTiles=0;spoilerHits.clear();
+        renderedTiles=0;spoilerHits.clear();mediaHits.clear();
         if(MC.options.hideGui||MC.options.chatVisibility().get()==ChatVisiblity.HIDDEN||assets.isEmpty())return;
         var chat=MC.gui.getChat();var graphics=event.getGuiGraphics();double scale=chat.getScale();
         try{
@@ -219,6 +232,7 @@ public final class NativeChat {
                             int sw=Math.max(1,(tile.x()+dw)*a.width()/tile.width()-sx),sh=Math.max(1,(tile.y()+dh)*a.height()/tile.height()-sy);
                             boolean secret=tile.spoiler();
                             if(secret)spoilerHits.add(new SpoilerHit(chatX+scale*(4+x[0]),(chatY-graphics.guiHeight()+40)/scale+scale*y,dw*scale,dh*scale,tile.owner()));
+                            if(tile.viewable()&&mediaHits.size()<4096)mediaHits.add(new MediaHit(chatX+scale*(4+x[0]),(chatY-graphics.guiHeight()+40)/scale+scale*y,dw*scale,dh*scale,tile.owner(),tile.digest(),tile.name(),secret));
                             if(secret&&!revealed.contains(tile.owner()))graphics.fill(x[0],y,x[0]+dw,y+dh,0xff3d3e45);
                             else{var texture=textures.frame((a.animated()?tile.owner()+":":"")+tile.digest(),a,elapsed);RenderSystem.enableBlend();RenderSystem.setShaderColor(1,1,1,opacity);graphics.blit(texture,x[0],y,dw,dh,sx,sy,sw,sh,a.width(),a.height());renderedTiles++;}
                         }}

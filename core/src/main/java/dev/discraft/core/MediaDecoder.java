@@ -21,6 +21,7 @@ public final class MediaDecoder {
                 reader.setInput(input, false, false);
                 String format = reader.getFormatName().toLowerCase(Locale.ROOT);
                 if (!Set.of("png", "jpeg", "gif").contains(format)) throw new IOException("Unsupported media format");
+                if (format.equals("png")) { var animatedPng = ApngDecoder.tryDecode(bytes); if (animatedPng != null) return animatedPng; }
                 int width = reader.getWidth(0), height = reader.getHeight(0);
                 if (format.equals("gif")) {
                     Node logical = find(tree(reader.getStreamMetadata()), "LogicalScreenDescriptor");

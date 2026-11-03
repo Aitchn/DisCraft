@@ -9,6 +9,10 @@ import java.util.*;
 
 /** Render-thread only. Keep one uploaded frame per asset, release when no longer visible. */
 final class TextureCache implements AutoCloseable {
+    private final boolean smooth;
+    TextureCache() { this(false); }
+    /** {@code smooth} selects bilinear sampling, used by the full-size viewer; chat tiles stay pixel-exact. */
+    TextureCache(boolean smooth) { this.smooth = smooth; }
     private record Entry(ResourceLocation location, DynamicTexture texture, int frame, long origin) {}
     private final Map<String, Entry> entries = new HashMap<>();
     private final Map<String,Long> origins=new LinkedHashMap<>(128,.75f,true);
@@ -32,6 +36,7 @@ final class TextureCache implements AutoCloseable {
         var pixels = new NativeImage(media.width(), media.height(), false);
         write(pixels, source);
         var texture = new DynamicTexture(pixels);
+        if (smooth) texture.setFilter(true, false);
         var location = Minecraft.getInstance().getTextureManager().register("discraft_preview", texture);
         entries.put(key, new Entry(location, texture, frame, origin));
         return location;
